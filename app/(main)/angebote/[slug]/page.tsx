@@ -31,24 +31,31 @@ async function loadParticipatingProducts(p: ReturnType<typeof toPromotionPublicV
   const ids = new Set<string>();
   const products: Array<{ id: string; name: string; image?: string; basePrice: number }> = [];
 
-  if (p.targetProductIds.length > 0) {
-    const docs = await Product.find({
-      _id: { $in: p.targetProductIds },
-      available: true,
-    })
-      .select('name image basePrice')
-      .lean();
+  const pushDocs = (docs: Array<{ _id: unknown; name: string; image?: string; basePrice: number }>) => {
     for (const doc of docs) {
       const id = String(doc._id);
       if (ids.has(id)) continue;
       ids.add(id);
-      products.push({
-        id,
-        name: doc.name,
-        image: doc.image,
-        basePrice: doc.basePrice,
-      });
+      products.push({ id, name: doc.name, image: doc.image, basePrice: doc.basePrice });
     }
+  };
+
+  // Собираем id товаров из всех источников таргетинга: новая модель Lieferando
+  // (targetItems/rewardItems по товар+размер) + легаси-поле targetProductIds.
+  const productIds = new Set<string>();
+  for (const it of [...(p.targetItems || []), ...(p.rewardItems || [])]) {
+    if (it.productId) productIds.add(String(it.productId));
+  }
+  for (const pid of p.targetProductIds) productIds.add(String(pid));
+
+  if (productIds.size > 0) {
+    const docs = await Product.find({
+      _id: { $in: Array.from(productIds) },
+      available: true,
+    })
+      .select('name image basePrice')
+      .lean();
+    pushDocs(docs as any);
   }
 
   if (p.targetCategoryIds.length > 0) {
@@ -58,17 +65,7 @@ async function loadParticipatingProducts(p: ReturnType<typeof toPromotionPublicV
     })
       .select('name image basePrice')
       .lean();
-    for (const doc of docs) {
-      const id = String(doc._id);
-      if (ids.has(id)) continue;
-      ids.add(id);
-      products.push({
-        id,
-        name: doc.name,
-        image: doc.image,
-        basePrice: doc.basePrice,
-      });
-    }
+    pushDocs(docs as any);
   }
 
   return products.sort((a, b) => a.name.localeCompare(b.name, 'de'));

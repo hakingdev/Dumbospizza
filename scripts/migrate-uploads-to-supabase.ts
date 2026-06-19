@@ -41,7 +41,7 @@ for (const [name, val] of Object.entries({
 
 // Таблица → колонки, в которых лежат пути к картинкам.
 const TARGETS: { table: string; columns: string[] }[] = [
-  { table: 'categories', columns: ['image'] },
+  { table: 'categories', columns: ['image', 'icon'] },
   { table: 'products', columns: ['image'] },
   { table: 'promotions', columns: ['image', 'banner_image', 'og_image'] },
 ];

@@ -98,6 +98,35 @@ function lineMatchesPromo(line: PromotionCartItem, promo: PromoLike): boolean {
   return false;
 }
 
+/**
+ * Матч товара с акцией для бейджа на карточке каталога — БЕЗ учёта размера.
+ * Карточка представляет товар целиком (конкретный размер ещё не выбран), поэтому
+ * бейдж нужно показывать, если товар участвует в акции в любом размере.
+ * (Точный size-таргетинг применяется позже — в пикере/корзине через lineMatchesPromo.)
+ */
+function productMatchesPromoForBadge(
+  productId: string,
+  categoryId: string | undefined,
+  promo: PromoLike
+): boolean {
+  const pid = String(productId);
+  const cid = normalizeObjectId(categoryId);
+
+  const targetItems = (promo as any).targetItems as
+    | Array<{ productId?: unknown }>
+    | undefined;
+  if (targetItems && targetItems.length > 0) {
+    return targetItems.some((it) => String(it.productId) === pid);
+  }
+
+  const productIds = (promo.targetProductIds || []).map(String);
+  const categoryIds = (promo.targetCategoryIds || []).map(String);
+  if (productIds.length === 0 && categoryIds.length === 0) return true;
+  if (productIds.includes(pid)) return true;
+  if (cid && categoryIds.includes(cid)) return true;
+  return false;
+}
+
 function roundMoney(n: number): number {
   return Math.round(n * 100) / 100;
 }
@@ -531,20 +560,13 @@ export function getProductPromotionBadges(
   const channel = options.channel || 'web';
   const customerContext = options.customerContext;
   const now = options.now || new Date();
-  const line: PromotionCartItem = {
-    productId,
-    categoryId,
-    name: '',
-    quantity: 1,
-    unitPrice: 0,
-  };
 
   return promotions
     .filter(
       (p) =>
         isPromotionEffectivelyActive(p, now) &&
         promoMatchesFilters(p, channel, customerContext) &&
-        lineMatchesPromo(line, p)
+        productMatchesPromoForBadge(productId, categoryId, p)
     )
     .map((p) => ({
       promotionId: promoId(p),
