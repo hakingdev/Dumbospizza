@@ -1,47 +1,24 @@
-import { NextRequest } from 'next/server';
-import fs from 'fs';
-import path from 'path';
+import { NextRequest, NextResponse } from 'next/server';
+import { STORAGE_BUCKET } from '../../../../lib/supabase/admin';
 
-function getSafePath(segments: string[]) {
-  const uploadsRoot = path.resolve(process.cwd(), 'public', 'uploads');
-  const requestedPath = path.resolve(uploadsRoot, ...segments);
-  const relativePath = path.relative(uploadsRoot, requestedPath);
+/**
+ * Легаси-совместимость: раньше картинки лежали на диске и отдавались отсюда.
+ * Теперь они в Supabase Storage. Любой запрос к /uploads/<path> (через rewrite
+ * из next.config.js) редиректим на публичный CDN-URL Supabase с тем же путём.
+ *
+ * После миграции (scripts/migrate-uploads-to-supabase.ts) в БД хранятся уже
+ * полные URL, поэтому этот роут — лишь подстраховка для несмигрированных ссылок.
+ */
+export function GET(_request: NextRequest, { params }: { params: { path: string[] } }) {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const segments = (params.path || []).filter((s) => s && s !== '..');
 
-  if (!relativePath || relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
-    return null;
+  if (!supabaseUrl || segments.length === 0) {
+    return new NextResponse('Not found', { status: 404 });
   }
 
-  return requestedPath;
+  const objectPath = segments.map(encodeURIComponent).join('/');
+  const publicUrl = `${supabaseUrl.replace(/\/$/, '')}/storage/v1/object/public/${STORAGE_BUCKET}/${objectPath}`;
+
+  return NextResponse.redirect(publicUrl, 308);
 }
-
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { path: string[] } }
-) {
-  const safePath = getSafePath(params.path || []);
-  if (!safePath) {
-    return new Response('Invalid path', { status: 400 });
-  }
-
-  if (!fs.existsSync(safePath) || !fs.statSync(safePath).isFile()) {
-    return new Response('Not found', { status: 404 });
-  }
-
-  const fileBuffer = fs.readFileSync(safePath);
-  const ext = path.extname(safePath).toLowerCase();
-  const contentType =
-    ext === '.png' ? 'image/png' :
-    ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' :
-    ext === '.webp' ? 'image/webp' :
-    ext === '.gif' ? 'image/gif' :
-    'application/octet-stream';
-
-  return new Response(fileBuffer, {
-    status: 200,
-    headers: {
-      'Content-Type': contentType,
-      'Cache-Control': 'public, max-age=31536000, immutable'
-    }
-  });
-}
-

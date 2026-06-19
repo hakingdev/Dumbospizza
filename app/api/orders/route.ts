@@ -421,8 +421,9 @@ export async function POST(request: NextRequest) {
       desiredDeliveryTime: order.desiredDeliveryTime
     };
 
-    // Send to Telegram, WhatsApp (order placed + tracking link), and print receipts asynchronously (don't block response)
-    Promise.all([
+    // ВАЖНО (Vercel serverless): уведомления нужно ДОЖДАТЬСЯ до ответа,
+    // иначе функция замораживается и Telegram/WhatsApp/конверсии не отправляются.
+    await Promise.all([
       sendServerPurchaseConversionEvents(order.toObject() as IOrder, request).catch((err) => {
         console.error('Server conversion events (Meta / TikTok):', err);
       }),
@@ -437,7 +438,20 @@ export async function POST(request: NextRequest) {
       }).catch(err => {
         console.error('Error sending Telegram notification:', err);
       }),
-      printOrderReceipts({
+    ]).catch(err => {
+      console.error('Error in async notifications:', err);
+    });
+
+    // Печать: прямая термопечать только на локальном сервере (где задан интерфейс
+    // принтера и он в той же сети). На Vercel принтер недоступен → оставляем статус
+    // 'pending', и заказ печатает принт-агент, опрашивающий /api/orders.
+    const hasLocalPrinter = Boolean(
+      process.env.KITCHEN_PRINTER_INTERFACE ||
+      process.env.PRINTER_INTERFACE ||
+      process.env.CUSTOMER_PRINTER_INTERFACE
+    );
+    if (hasLocalPrinter) {
+      await printOrderReceipts({
         ...notification,
         notes: order.notes,
         deliveryFee: order.deliveryFee,
@@ -452,12 +466,15 @@ export async function POST(request: NextRequest) {
           order.kitchenPrintStatus = 'pending';
           order.customerPrintStatus = 'pending';
           return order.save();
-        }),
-    ]).catch(err => {
-      console.error('Error in async operations:', err);
-    });
+        });
+    } else {
+      // Vercel: помечаем как ожидающие печати — подхватит принт-агент
+      order.kitchenPrintStatus = 'pending';
+      order.customerPrintStatus = 'pending';
+      await order.save();
+    }
 
-    return NextResponse.json({ 
+    return NextResponse.json({
       success: true, 
       order: {
         id: order._id.toString(),

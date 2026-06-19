@@ -9,7 +9,11 @@ if (i18n && i18n.localeDetection === undefined) {
 const nextConfig = {
   reactStrictMode: true,
   images: {
-    domains: ['localhost', 'res.cloudinary.com'],
+    remotePatterns: [
+      { protocol: 'https', hostname: '**.supabase.co' },
+      { protocol: 'https', hostname: 'res.cloudinary.com' },
+      { protocol: 'http', hostname: 'localhost' },
+    ],
   },
   i18n,
   // Настройки для Docker

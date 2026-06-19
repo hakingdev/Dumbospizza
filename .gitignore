@@ -44,6 +44,25 @@ pnpm-debug.log*
 .vscode/
 .claude/
 
+# deploy / hosting local state
+.vercel/
+.turbo/
+.cache/
+coverage/
+
+# secrets / certs / keys
+*.pem
+*.key
+*.p12
+*.pfx
+auth_info*/
+.wwebjs_auth/
+.wwebjs_cache/
+
+# screen recordings / heavy media (не нужны в репо)
+*.mov
+*.mp4
+
 # misc
 package-lock.js333on
 Dockerfile.new

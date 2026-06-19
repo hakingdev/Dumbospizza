@@ -6,6 +6,7 @@ import { Footer } from '../components/footer'
 import Script from 'next/script'
 import TranslationProvider from '../components/TranslationProvider'
 import { GoogleAnalytics } from '@next/third-parties/google'
+import { Analytics } from '@vercel/analytics/react'
 import Providers from '../components/Providers'
 
 const inter = Inter({ subsets: ['latin', 'cyrillic'] })
@@ -128,6 +129,7 @@ export default function RootLayout({
             <GoogleAnalytics gaId="G-XXXXXXXX" />
           </TranslationProvider>
         </Providers>
+        <Analytics />
         
         {/* Structured data for local business */}
         <Script
