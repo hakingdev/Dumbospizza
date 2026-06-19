@@ -18,23 +18,38 @@ declare global {
   var __drizzleDb: ReturnType<typeof drizzle<typeof schema>> | undefined;
 }
 
-function createClient() {
-  if (!DATABASE_URL) {
-    throw new Error(
-      'DATABASE_URL не задан. Укажи строку подключения Supabase (Session pooler) в .env'
-    );
+function getClient() {
+  if (!global.__pgClient) {
+    if (!DATABASE_URL) {
+      throw new Error(
+        'DATABASE_URL не задан. Укажи строку подключения Supabase (Session pooler) в .env'
+      );
+    }
+    // prepare:false — совместимость с транзакционным пулером Supabase (PgBouncer).
+    global.__pgClient = postgres(DATABASE_URL, { prepare: false });
   }
-  // prepare:false — совместимость с транзакционным пулером Supabase (PgBouncer).
-  return postgres(DATABASE_URL, { prepare: false });
+  return global.__pgClient;
 }
 
-const client = global.__pgClient ?? createClient();
-export const db = global.__drizzleDb ?? drizzle(client, { schema });
-
-if (process.env.NODE_ENV !== 'production') {
-  global.__pgClient = client;
-  global.__drizzleDb = db;
+function getDb() {
+  if (!global.__drizzleDb) {
+    global.__drizzleDb = drizzle(getClient(), { schema });
+  }
+  return global.__drizzleDb;
 }
+
+/**
+ * Ленивый прокси: подключение к БД создаётся при первом реальном обращении к `db`,
+ * а не при импорте модуля. Это позволяет Next.js собирать роуты на этапе билда
+ * без DATABASE_URL — ошибка возникнет только при фактическом запросе в рантайме.
+ */
+export const db = new Proxy({} as ReturnType<typeof drizzle<typeof schema>>, {
+  get(_target, prop, receiver) {
+    const real = getDb();
+    const value = Reflect.get(real as object, prop, receiver);
+    return typeof value === 'function' ? value.bind(real) : value;
+  },
+});
 
 export { schema };
 export default db;
