@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useCart } from '../../lib/contexts/CartContext';
 import { useLanguage } from '../../lib/contexts/LanguageContext';
 import { loadTranslation } from '../../lib/i18n';
+import type { PromotionCalculationResult } from '../../lib/promotions/types';
 import BogoHalfPricePickerModal from './BogoHalfPricePickerModal';
 import GratisGiftPickerModal from './GratisGiftPickerModal';
 
@@ -26,6 +27,10 @@ export default function PromotionOfferManager() {
   const [giftSlot, setGiftSlot] = useState<Record<string, string>>({});
   const dismissed = useRef<Set<string>>(new Set());
   const lastCartSig = useRef<string>('');
+  // Расчёт, по которому пользователь уже сделал выбор/отказ. До прихода СВЕЖЕГО
+  // расчёта (новая ссылка из API) попап не переоткрываем — иначе после выбора
+  // stale-оффер мгновенно открывает окно повторно (мигание).
+  const handledCalc = useRef<PromotionCalculationResult | null>(null);
 
   useEffect(() => {
     loadTranslation(language).then(({ t: translation }) => setT(() => translation)).catch(() => {});
@@ -36,16 +41,17 @@ export default function PromotionOfferManager() {
 
   const onCartPage = pathname?.startsWith('/cart') || pathname?.startsWith('/checkout');
 
-  // при изменении состава корзины снимаем «Nein danke» — новая пара снова предлагает награду
+  // При изменении состава корзины сбрасываем «обработанные/отклонённые» офферы —
+  // это новое Angebot-событие, попап снова может предложить награду. Делаем сброс
+  // в фазе рендера (до вычисления pendingBogo), чтобы изменение применилось сразу,
+  // а не на следующий рендер (иначе после смены корзины попап не откроется).
   const cartSig = state.items
     .map((i) => `${i.productId || i.id}:${i.size?.name || ''}:${i.quantity}`)
     .join('|');
-  useEffect(() => {
-    if (cartSig !== lastCartSig.current) {
-      lastCartSig.current = cartSig;
-      dismissed.current.clear();
-    }
-  }, [cartSig]);
+  if (cartSig !== lastCartSig.current) {
+    lastCartSig.current = cartSig;
+    dismissed.current.clear();
+  }
 
   const pendingBogo = bogoOffers.filter((o) => !dismissed.current.has(o.promotionId));
   // оффер подарка присутствует, пока не выбран; dismissed — отказ
@@ -53,10 +59,13 @@ export default function PromotionOfferManager() {
 
   useEffect(() => {
     if (onCartPage || open) return;
+    // Уже обработали этот расчёт (выбор/отказ) — ждём свежий пересчёт корзины,
+    // прежде чем снова предлагать оффер. Защита от повторного открытия попапа.
+    if (state.promotionCalculation && state.promotionCalculation === handledCalc.current) return;
     if (pendingBogo.length > 0) setOpen('bogo');
     else if (pendingGift.length > 0) setOpen('gift');
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onCartPage, open, pendingBogo.length, pendingGift.length]);
+  }, [onCartPage, open, pendingBogo.length, pendingGift.length, state.promotionCalculation]);
 
   if (onCartPage || !open) return null;
 
@@ -71,11 +80,16 @@ export default function PromotionOfferManager() {
           for (const [pid, oid] of Object.entries(slot)) {
             if (oid) setSelectedBogoSecond(pid, oid);
           }
+          // Оффер обработан: не переоткрывать его авто-попапом до изменения корзины
+          // (иначе при 2+ подходящих товарах движок снова вернёт оффер → дубль-модалка).
+          bogoOffers.forEach((o) => dismissed.current.add(o.promotionId));
+          handledCalc.current = state.promotionCalculation;
           setSlot({});
           setOpen(null);
         }}
         onClose={() => {
           bogoOffers.forEach((o) => dismissed.current.add(o.promotionId));
+          handledCalc.current = state.promotionCalculation;
           setSlot({});
           setOpen(null);
         }}
@@ -94,11 +108,14 @@ export default function PromotionOfferManager() {
           for (const [pid, oid] of Object.entries(giftSlot)) {
             if (oid) setSelectedFreeGift(pid, oid);
           }
+          giftOffers.forEach((o) => dismissed.current.add(o.promotionId));
+          handledCalc.current = state.promotionCalculation;
           setGiftSlot({});
           setOpen(null);
         }}
         onClose={() => {
           giftOffers.forEach((o) => dismissed.current.add(o.promotionId));
+          handledCalc.current = state.promotionCalculation;
           setGiftSlot({});
           setOpen(null);
         }}

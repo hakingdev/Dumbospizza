@@ -63,6 +63,21 @@ auth_info*/
 *.mov
 *.mp4
 
+# test / lint caches
+coverage/
+.vitest/
+.eslintcache
+
+# temp / scratch (диагностические скрипты, дампы)
+tmp/
+temp/
+*.tmp
+_*.ts
+_*.mjs
+*.output
+
 # misc
-package-lock.js333on
+# ВНИМАНИЕ: package-lock.json НЕ игнорируем — он нужен для воспроизводимых
+# установок (npm ci) и сборки на Vercel. Раньше тут была опечатка, удалена.
 Dockerfile.new
+Thumbs.db

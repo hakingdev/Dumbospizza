@@ -3,6 +3,7 @@ import { useLanguage } from '../../lib/contexts/LanguageContext';
 import { loadTranslation } from '../../lib/i18n';
 import { validateCoupon, validatePromotionCode } from '../../lib/api-client';
 import { Loader2, CheckCircle, XCircle } from 'lucide-react';
+import PromoConflictDialog from './PromoConflictDialog';
 
 interface CouponInputProps {
   orderAmount: number;
@@ -10,6 +11,10 @@ interface CouponInputProps {
   onCouponRemoved: () => void;
   onPromotionCodeApplied?: (code: string) => void;
   onPromotionCodeRemoved?: () => void;
+  /** Активна денежная акция (Rabatt/BOGO) — купон с ней не комбинируется. */
+  angebotConflictActive?: boolean;
+  /** Название конфликтующей акции (для диалога). */
+  angebotName?: string;
 }
 
 export default function CouponInput({
@@ -18,6 +23,8 @@ export default function CouponInput({
   onCouponRemoved,
   onPromotionCodeApplied,
   onPromotionCodeRemoved,
+  angebotConflictActive = false,
+  angebotName,
 }: CouponInputProps) {
   const { language } = useLanguage();
   const [t, setT] = useState<any>(() => (k: string) => k);
@@ -26,6 +33,8 @@ export default function CouponInput({
   const [error, setError] = useState<string | null>(null);
   const [appliedCoupon, setAppliedCoupon] = useState<any>(null);
   const [appliedPromotionCode, setAppliedPromotionCode] = useState<string | null>(null);
+  // Купон, прошедший валидацию, но ожидающий решения по конфликту с акцией.
+  const [pendingCoupon, setPendingCoupon] = useState<any>(null);
 
   useEffect(() => {
     const loadTranslations = async () => {
@@ -46,6 +55,12 @@ export default function CouponInput({
       try {
         const result = await validateCoupon(couponCode, orderAmount);
         if (result.success) {
+          // Конфликт: активна денежная акция — не применяем купон автоматически,
+          // показываем пользователю выбор (оставить акцию / применить промокод).
+          if (angebotConflictActive) {
+            setPendingCoupon(result.coupon);
+            return;
+          }
           setAppliedCoupon(result.coupon);
           setAppliedPromotionCode(null);
           onCouponApplied(result.coupon);
@@ -89,6 +104,22 @@ export default function CouponInput({
     setError(null);
     onCouponRemoved();
     onPromotionCodeRemoved?.();
+  };
+
+  // Конфликт: пользователь решил применить промокод вместо акции.
+  const handleApplyPendingCoupon = () => {
+    const coupon = pendingCoupon;
+    setPendingCoupon(null);
+    if (!coupon) return;
+    setAppliedCoupon(coupon);
+    setAppliedPromotionCode(null);
+    onCouponApplied(coupon);
+  };
+
+  // Конфликт: пользователь решил оставить акцию — купон не применяется.
+  const handleKeepAngebot = () => {
+    setPendingCoupon(null);
+    setCouponCode('');
   };
 
   const hasApplied = appliedCoupon || appliedPromotionCode;
@@ -137,6 +168,14 @@ export default function CouponInput({
           </button>
         </div>
       )}
+
+      <PromoConflictDialog
+        open={!!pendingCoupon}
+        angebotName={angebotName}
+        promoCode={pendingCoupon?.code}
+        onKeepAngebot={handleKeepAngebot}
+        onApplyPromoCode={handleApplyPendingCoupon}
+      />
     </div>
   );
 }

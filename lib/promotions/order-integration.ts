@@ -32,6 +32,8 @@ export async function calculateOrderPromotions(
     promoCode?: string;
     phoneNumber?: string;
     selectedBogoSecond?: Array<{ promotionId: string; productId: string }>;
+    /** Активен купон → денежные акции подавляются (не комбинируются с купоном). */
+    excludeMoneyDiscounts?: boolean;
   } = {}
 ): Promise<PromotionCalculationResult> {
   const promotions = await Promotion.find({ enabled: true }).lean();
@@ -43,6 +45,7 @@ export async function calculateOrderPromotions(
     customerContext,
     selectedBogoSecond: options.selectedBogoSecond,
     bogoCatalog,
+    excludeMoneyDiscounts: options.excludeMoneyDiscounts,
   });
 }
 

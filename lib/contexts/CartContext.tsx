@@ -50,6 +50,12 @@ export interface CartState {
   loyaltyPointsDiscount: number;
   couponCode?: string;
   couponDiscount: number;
+  /**
+   * Доступна ли денежная акция (percent/fixed/bogo) для текущей корзины.
+   * Когда активен купон, денежные акции подавляются, но этот флаг остаётся true —
+   * по нему показываем пользователю выбор «оставить купон или применить акцию».
+   */
+  moneyPromotionAvailable: boolean;
   promotionPromoCode?: string;
   promotionCalculation: PromotionCalculationResult | null;
   /** promotionId → productId для Gratis-Auswahl (1 aus N) */
@@ -87,6 +93,7 @@ type CartAction =
   | { type: 'APPLY_COUPON'; payload: { code: string; discount: number } }
   | { type: 'REMOVE_COUPON' }
   | { type: 'SET_PROMOTION_CALCULATION'; payload: PromotionCalculationResult | null }
+  | { type: 'SET_MONEY_PROMOTION_AVAILABLE'; payload: boolean }
   | { type: 'SET_PROMOTION_PROMO_CODE'; payload: string | undefined }
   | { type: 'SET_SELECTED_FREE_GIFT'; payload: { promotionId: string; productId: string } }
   | { type: 'CLEAR_SELECTED_FREE_GIFTS' }
@@ -106,6 +113,7 @@ const initialState: CartState = {
   loyaltyPointsToRedeem: 0,
   loyaltyPointsDiscount: 0,
   couponDiscount: 0,
+  moneyPromotionAvailable: false,
   promotionCalculation: null,
   selectedFreeGifts: {},
   selectedBogoSecond: {},
@@ -126,8 +134,13 @@ const calculateTotals = (state: CartState): Partial<CartState> => {
 
   const loyaltyPointsDiscount = state.loyaltyPointsToRedeem / 100; // 100 points = 1 euro
   const couponDiscount = state.couponDiscount || 0;
-  const bogoSecondTotal = getBogoPickerMerchandise(state.promotionCalculation);
-  const promotionDiscount = getAppliedPromotionDiscount(state.promotionCalculation);
+  // Купон и денежная акция не комбинируются: при активном купоне денежные акции
+  // (включая BOGO-награду) не учитываем в total — Gratis-Artikel не даёт скидки и так.
+  // (Серверный расчёт уже подавляет их; это убирает мгновенный двойной вычет в UI
+  //  до возврата пересчёта.)
+  const couponActive = !!state.couponCode;
+  const bogoSecondTotal = couponActive ? 0 : getBogoPickerMerchandise(state.promotionCalculation);
+  const promotionDiscount = couponActive ? 0 : getAppliedPromotionDiscount(state.promotionCalculation);
 
   // Free delivery for orders >= 30 euros
   const FREE_DELIVERY_THRESHOLD = 30;
@@ -358,6 +371,10 @@ function cartReducer(state: CartState, action: CartAction): CartState {
       return { ...newState, ...calculateTotals(newState) };
     }
 
+    case 'SET_MONEY_PROMOTION_AVAILABLE':
+      if (state.moneyPromotionAvailable === action.payload) return state;
+      return { ...state, moneyPromotionAvailable: action.payload };
+
     case 'SET_SELECTED_FREE_GIFT': {
       const newState = {
         ...state,
@@ -515,9 +532,15 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         selectedFreeGifts: Object.entries(state.selectedFreeGifts).map(
           ([promotionId, productId]) => ({ promotionId, productId })
         ),
+        // Купон активен → денежные акции подавляются (несовместимы с купоном).
+        couponActive: !!state.couponCode,
       });
       if (res.success) {
         dispatch({ type: 'SET_PROMOTION_CALCULATION', payload: res.calculation });
+        dispatch({
+          type: 'SET_MONEY_PROMOTION_AVAILABLE',
+          payload: res.moneyPromotionAvailable === true,
+        });
       }
     } catch (e) {
       console.error('Promotion calculation failed:', e);
@@ -528,6 +551,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     state.contactInfo.phoneNumber,
     state.selectedBogoSecond,
     state.selectedFreeGifts,
+    state.couponCode,
   ]);
 
   useEffect(() => {

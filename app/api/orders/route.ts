@@ -216,6 +216,8 @@ export async function POST(request: NextRequest) {
       promoCode: promotionPromoCode || undefined,
       phoneNumber: orderData.phoneNumber,
       selectedBogoSecond,
+      // AC #7: при активном купоне денежные акции не комбинируем (никогда обе скидки).
+      excludeMoneyDiscounts: couponDiscount > 0,
     });
 
     const giftProductIds = new Set<string>();

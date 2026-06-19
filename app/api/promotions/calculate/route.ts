@@ -3,6 +3,7 @@ import { connectToDatabase } from '../../../../lib/models';
 import { Promotion } from '../../../../lib/models/promotion.model';
 import { Product } from '../../../../lib/models/product.model';
 import { calculatePromotions } from '../../../../lib/promotions/engine';
+import { hasActiveMoneyDiscount } from '../../../../lib/promotions/coupon-conflict';
 import { enrichFreeGiftOffers, applySelectedFreeGifts } from '../../../../lib/promotions/gifts';
 import { buildBogoCatalog } from '../../../../lib/promotions/bogo-catalog';
 import { resolvePromotionCustomerContext } from '../../../../lib/promotions/audience';
@@ -32,6 +33,8 @@ export async function POST(request: NextRequest) {
       typeof body.promoCode === 'string' ? body.promoCode.trim().toUpperCase() : undefined;
     const phoneNumber =
       typeof body.phoneNumber === 'string' ? body.phoneNumber.trim() : undefined;
+    // Активен купон → денежные акции (percent/fixed/bogo) не комбинируем; Gratis остаётся.
+    const couponActive = body.couponActive === true;
     const parseSelections = (arr: unknown) =>
       Array.isArray(arr)
         ? arr.filter(
@@ -72,7 +75,22 @@ export async function POST(request: NextRequest) {
       customerContext,
       selectedBogoSecond,
       bogoCatalog,
+      excludeMoneyDiscounts: couponActive,
     });
+
+    // Доступна ли денежная акция (для подсказки о конфликте, когда купон активен).
+    // Если купон не активен — она уже отражена в calculation; иначе считаем отдельным проходом.
+    const moneyPromotionAvailable = couponActive
+      ? hasActiveMoneyDiscount(
+          calculatePromotions(items, promotions as any, {
+            channel,
+            promoCode,
+            customerContext,
+            selectedBogoSecond,
+            bogoCatalog,
+          })
+        )
+      : hasActiveMoneyDiscount(calculation);
 
     const giftProductIds = new Set<string>();
     for (const offer of calculation.freeGiftOffers || []) {
@@ -97,7 +115,7 @@ export async function POST(request: NextRequest) {
       calculation = applySelectedFreeGifts(calculation, selectedFreeGifts);
     }
 
-    return NextResponse.json({ success: true, calculation });
+    return NextResponse.json({ success: true, calculation, moneyPromotionAvailable });
   } catch (error) {
     console.error('POST /api/promotions/calculate', error);
     return NextResponse.json({ success: false, error: 'Calculation failed' }, { status: 500 });

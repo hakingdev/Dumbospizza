@@ -116,6 +116,8 @@ export const calculatePromotions = async (
   selections?: {
     selectedBogoSecond?: Array<{ promotionId: string; productId: string }>;
     selectedFreeGifts?: Array<{ promotionId: string; productId: string }>;
+    /** Активен купон → денежные акции подавляются (несовместимы с купоном). */
+    couponActive?: boolean;
   }
 ) => {
   const response = await apiClient.post('/api/promotions/calculate', {
@@ -125,6 +127,7 @@ export const calculatePromotions = async (
     phoneNumber,
     selectedBogoSecond: selections?.selectedBogoSecond,
     selectedFreeGifts: selections?.selectedFreeGifts,
+    couponActive: selections?.couponActive,
   });
   return response.data;
 };

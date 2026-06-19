@@ -1,3 +1,4 @@
+import { cache } from 'react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -6,14 +7,23 @@ import { connectToDatabase } from '../../../../lib/models';
 import { Promotion } from '../../../../lib/models/promotion.model';
 import { Product } from '../../../../lib/models/product.model';
 import { toPromotionPublicView } from '../../../../lib/promotions/serialize';
+import { loadParticipatingProducts } from '../../../../lib/promotions/angebote-page-data';
 
-export const dynamic = 'force-dynamic';
+// ISR: страница акции кэшируется и ревалидируется (товары/акция меняются редко).
+// Раньше был force-dynamic → каждый заход = 3 запроса к удалённой БД, отсюда долгая загрузка.
+export const revalidate = 120;
 
 type Props = { params: { slug: string } };
 
-export async function generateMetadata({ params }: Props): Promise<Metadata> {
+// React cache(): один запрос промо на рендер-проход — generateMetadata и компонент
+// страницы больше НЕ дублируют запрос (раньше акция грузилась дважды).
+const getPromotionBySlug = cache(async (slug: string) => {
   await connectToDatabase();
-  const doc = await Promotion.findOne({ slug: params.slug.toLowerCase() });
+  return Promotion.findOne({ slug: slug.toLowerCase() });
+});
+
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const doc = await getPromotionBySlug(params.slug);
   if (!doc) return { title: 'Angebot nicht gefunden' };
   const p = toPromotionPublicView(doc);
   return {
@@ -27,56 +37,13 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   };
 }
 
-async function loadParticipatingProducts(p: ReturnType<typeof toPromotionPublicView>) {
-  const ids = new Set<string>();
-  const products: Array<{ id: string; name: string; image?: string; basePrice: number }> = [];
-
-  const pushDocs = (docs: Array<{ _id: unknown; name: string; image?: string; basePrice: number }>) => {
-    for (const doc of docs) {
-      const id = String(doc._id);
-      if (ids.has(id)) continue;
-      ids.add(id);
-      products.push({ id, name: doc.name, image: doc.image, basePrice: doc.basePrice });
-    }
-  };
-
-  // Собираем id товаров из всех источников таргетинга: новая модель Lieferando
-  // (targetItems/rewardItems по товар+размер) + легаси-поле targetProductIds.
-  const productIds = new Set<string>();
-  for (const it of [...(p.targetItems || []), ...(p.rewardItems || [])]) {
-    if (it.productId) productIds.add(String(it.productId));
-  }
-  for (const pid of p.targetProductIds) productIds.add(String(pid));
-
-  if (productIds.size > 0) {
-    const docs = await Product.find({
-      _id: { $in: Array.from(productIds) },
-      available: true,
-    })
-      .select('name image basePrice')
-      .lean();
-    pushDocs(docs as any);
-  }
-
-  if (p.targetCategoryIds.length > 0) {
-    const docs = await Product.find({
-      category: { $in: p.targetCategoryIds },
-      available: true,
-    })
-      .select('name image basePrice')
-      .lean();
-    pushDocs(docs as any);
-  }
-
-  return products.sort((a, b) => a.name.localeCompare(b.name, 'de'));
-}
-
 export default async function AngebotDetailPage({ params }: Props) {
-  await connectToDatabase();
-  const doc = await Promotion.findOne({ slug: params.slug.toLowerCase() });
+  const doc = await getPromotionBySlug(params.slug);
   if (!doc) notFound();
   const p = toPromotionPublicView(doc);
-  const participatingProducts = await loadParticipatingProducts(p);
+  const participatingProducts = await loadParticipatingProducts(p, (query) =>
+    Product.find(query).select('name image basePrice').lean() as any
+  );
 
   return (
     <div className="container mx-auto px-4 py-10 max-w-4xl">

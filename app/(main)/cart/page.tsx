@@ -13,6 +13,8 @@ import GratisGiftPickerModal from '../../../components/promotions/GratisGiftPick
 import BogoHalfPricePickerModal from '../../../components/promotions/BogoHalfPricePickerModal'
 import { SafeImage } from '../../../components/SafeImage'
 import { useCart } from '../../../lib/contexts/CartContext'
+import { getConflictingPromotions } from '../../../lib/promotions/coupon-conflict'
+import { PROMO_CONFLICT_MESSAGE } from '../../../components/cart/PromoConflictDialog'
 
 export default function CartPage() {
   const router = useRouter();
@@ -41,6 +43,18 @@ export default function CartPage() {
   );
   // оффер присутствует только когда есть незаполненный слот награды (движок так решает)
   const needsBogoSelection = bogoOffers.length > 0;
+
+  // Конфликт «купон vs денежная акция»
+  const couponActive = !!state.couponCode;
+  const conflictAngebotName =
+    getConflictingPromotions(state.promotionCalculation)[0]?.promotionName || undefined;
+  // Баннер обратного направления: купон уже активен, но доступна денежная акция.
+  const [conflictBannerDismissed, setConflictBannerDismissed] = useState(false);
+  useEffect(() => {
+    if (!couponActive || !state.moneyPromotionAvailable) setConflictBannerDismissed(false);
+  }, [couponActive, state.moneyPromotionAvailable]);
+  const showSwitchToAngebotBanner =
+    couponActive && state.moneyPromotionAvailable && !conflictBannerDismissed;
   
   useEffect(() => {
     const loadTranslations = async () => {
@@ -244,13 +258,38 @@ export default function CartPage() {
               </div>
               
               {/* Coupon input */}
-              <CouponInput 
-                orderAmount={subtotal} 
+              <CouponInput
+                orderAmount={subtotal}
                 onCouponApplied={(coupon) => applyCoupon(coupon.code, coupon.discount || 0)}
                 onCouponRemoved={() => removeCoupon()}
                 onPromotionCodeApplied={(code) => setPromotionPromoCode(code)}
                 onPromotionCodeRemoved={() => setPromotionPromoCode(undefined)}
+                angebotConflictActive={state.moneyPromotionAvailable}
+                angebotName={conflictAngebotName}
               />
+
+              {/* Купон активен, но появилась денежная акция — выбор пользователя */}
+              {showSwitchToAngebotBanner && (
+                <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm">
+                  <p className="text-amber-800">{PROMO_CONFLICT_MESSAGE}</p>
+                  <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                    <button
+                      type="button"
+                      onClick={() => removeCoupon()}
+                      className="flex-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                    >
+                      Angebot behalten
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConflictBannerDismissed(true)}
+                      className="flex-1 rounded-md bg-primary-600 px-3 py-2 text-xs font-medium text-white hover:bg-primary-700"
+                    >
+                      Promo-Code anwenden
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {needsBogoSelection && (
                 <button

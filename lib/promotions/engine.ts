@@ -22,6 +22,7 @@ import {
   enrichBogoOptionsWithCartPrices,
 } from './bogo';
 import { normalizeObjectId } from '../normalize-id';
+import { isMoneyDiscountType } from './coupon-conflict';
 import type { BogoSecondOption, BogoSecondOffer, BogoSecondItem } from './types';
 
 type PromoLike = Pick<
@@ -291,6 +292,12 @@ export function calculatePromotions(
     promoCode?: string;
     selectedBogoSecond?: Array<{ promotionId: string; productId: string }>;
     bogoCatalog?: Record<string, BogoSecondOption[]>;
+    /**
+     * Подавить ДЕНЕЖНЫЕ акции (percent/fixed/bogo). Используется, когда активен
+     * купон: денежная скидка не может комбинироваться с купоном, но Gratis-Artikel
+     * остаётся. См. lib/promotions/coupon-conflict.ts.
+     */
+    excludeMoneyDiscounts?: boolean;
   } = {}
 ): PromotionCalculationResult {
   const channel = options.channel || 'web';
@@ -310,7 +317,10 @@ export function calculatePromotions(
 
   const active = codeFiltered.filter(
     (p) =>
-      isPromotionEffectivelyActive(p, now) && promoMatchesFilters(p, channel, customerContext)
+      isPromotionEffectivelyActive(p, now) &&
+      promoMatchesFilters(p, channel, customerContext) &&
+      // Купон активен → денежные акции (percent/fixed/bogo) не применяем, Gratis оставляем.
+      !(options.excludeMoneyDiscounts && isMoneyDiscountType(p.type))
   );
 
   const bogoCatalog = options.bogoCatalog || {};

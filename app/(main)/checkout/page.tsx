@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { ChevronLeft, CreditCard, Truck, Check, Loader2 } from 'lucide-react'
 import { useCart } from '../../../lib/contexts/CartContext'
 import CouponInput from '../../../components/cart/CouponInput'
+import { getConflictingPromotions } from '../../../lib/promotions/coupon-conflict'
 import PromotionCartSummary from '../../../components/promotions/PromotionCartSummary'
 import BogoRewardLines from '../../../components/promotions/BogoRewardLines'
 import { validateCoupon } from '../../../lib/api-client'
@@ -1033,6 +1034,8 @@ export default function CheckoutPage() {
                 onCouponRemoved={() => {
                   removeCoupon();
                 }}
+                angebotConflictActive={state.moneyPromotionAvailable}
+                angebotName={getConflictingPromotions(state.promotionCalculation)[0]?.promotionName || undefined}
               />
             </div>
             

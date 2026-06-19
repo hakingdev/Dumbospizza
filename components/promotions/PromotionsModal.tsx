@@ -120,7 +120,14 @@ export default function PromotionsModal() {
                     {p.description && <p className="text-sm text-gray-600 mt-1">{p.description}</p>}
                     <Link
                       href={`/angebote/${p.slug}`}
-                      onClick={() => trackPromotionEvent(p.id, 'click').catch(() => {})}
+                      prefetch
+                      // Закрываем модалку СРАЗУ по первому клику — мгновенная обратная
+                      // связь, пока грузится динамическая страница акции (есть loading.tsx).
+                      // Иначе модалка «висит» и кажется, что клик не сработал → второй клик.
+                      onClick={() => {
+                        trackPromotionEvent(p.id, 'click').catch(() => {});
+                        close();
+                      }}
                       className="mt-4 inline-block w-full text-center bg-primary-600 text-white py-2 rounded-md hover:bg-primary-700"
                     >
                       Zum Angebot
