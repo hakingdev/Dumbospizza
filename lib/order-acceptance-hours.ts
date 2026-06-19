@@ -1,0 +1,61 @@
+/**
+ * Настройки «приём заказов с / до» в storeSettings:
+ * — число 17 → 17:00 (обратная совместимость)
+ * — строка "21:30" или "21"
+ */
+
+export function normalizeStoredOrdersTime(value: unknown, defaultHour: number): string {
+  const def = `${String(Math.min(23, Math.max(0, defaultHour))).padStart(2, '0')}:00`;
+  if (value == null || value === '') return def;
+
+  if (typeof value === 'number' && !Number.isNaN(value)) {
+    const h = Math.min(23, Math.max(0, Math.floor(value)));
+    return `${String(h).padStart(2, '0')}:00`;
+  }
+
+  const s = String(value).trim();
+  const hm = s.match(/^(\d{1,2}):(\d{2})$/);
+  if (hm) {
+    const h = parseInt(hm[1], 10);
+    const min = parseInt(hm[2], 10);
+    if (h >= 0 && h < 24 && min >= 0 && min < 60) {
+      return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+    }
+  }
+
+  if (/^\d{1,2}$/.test(s)) {
+    const h = parseInt(s, 10);
+    if (h >= 0 && h < 24) return `${String(h).padStart(2, '0')}:00`;
+  }
+
+  const n = Number(s);
+  if (!Number.isNaN(n) && n >= 0 && n < 24) {
+    return `${String(Math.floor(n)).padStart(2, '0')}:00`;
+  }
+
+  return def;
+}
+
+export function parseOrdersTimeToMinutes(value: unknown, defaultHour: number): number {
+  const hhmm = normalizeStoredOrdersTime(value, defaultHour);
+  const [h, m] = hhmm.split(':').map((x) => parseInt(x, 10));
+  return h * 60 + m;
+}
+
+export function formatMinutesAsHHmm(minutes: number): string {
+  const h = Math.floor(minutes / 60) % 24;
+  const m = minutes % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+export function getNowMinutesInTimeZone(timeZone: string, date: Date): number {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZone,
+  }).formatToParts(date);
+  const hour = Number(parts.find((p) => p.type === 'hour')?.value ?? '0');
+  const minute = Number(parts.find((p) => p.type === 'minute')?.value ?? '0');
+  return hour * 60 + minute;
+}

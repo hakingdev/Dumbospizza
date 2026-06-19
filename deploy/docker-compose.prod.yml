@@ -1,0 +1,42 @@
+services:
+  pizza-app:
+    build:
+      context: ..
+      dockerfile: Dockerfile.prod
+    container_name: pizza-delivery-app
+    restart: always
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.production
+    environment:
+      - NODE_ENV=production
+      - SKIP_NATIVE_MODULES=true
+      - TELEGRAM_TOKEN
+      - TELEGRAM_CHAT_ID
+      - STRIPE_WEBHOOK_SECRET
+      - MEWS_POS_API_KEY
+      - MEWS_POS_BASE_URL
+      - MEWS_POS_WEBHOOK_SECRET
+      - MEWS_POS_ENABLED
+    depends_on:
+      - mongodb
+    volumes:
+      - uploads_data:/app/public/uploads
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+
+  mongodb:
+    image: mongo:latest
+    container_name: pizza-mongodb
+    restart: always
+    command: ["mongod", "--auth"]
+    volumes:
+      - mongodb_data:/data/db
+    environment:
+      - MONGO_INITDB_DATABASE=dumbospizza
+
+volumes:
+  mongodb_data:
+  uploads_data:

@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  pizza-app:
+    build:
+      context: .
+    container_name: pizza-delivery-app
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - MONGODB_URI=mongodb://mongodb:27017/dumbospizza
+      - NEXTAUTH_SECRET=your_nextauth_secret_key
+      - NEXTAUTH_URL=http://localhost:3000
+      - NEXT_PUBLIC_URL=http://localhost:3000
+      - TELEGRAM_TOKEN=your_telegram_token
+      - TELEGRAM_CHAT_ID=your_telegram_chat_id
+      - STRIPE_SECRET_KEY=your_stripe_secret_key
+      - STRIPE_PUBLIC_KEY=your_stripe_public_key
+      - STRIPE_WEBHOOK_SECRET=your_stripe_webhook_secret
+      - SEED_SECRET_KEY=development_seed_key
+      - SKIP_NATIVE_MODULES=true
+    volumes:
+      - ./:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - mongodb
+
+  mongodb:
+    image: mongo:latest
+    container_name: pizza-mongodb
+    restart: always
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    environment:
+      - MONGO_INITDB_DATABASE=dumbospizza
+
+  mongo-express:
+    image: mongo-express
+    container_name: pizza-mongo-express
+    restart: always
+    ports:
+      - "8081:8081"
+    environment:
+      - ME_CONFIG_MONGODB_SERVER=mongodb
+      - ME_CONFIG_MONGODB_PORT=27017
+      - ME_CONFIG_BASICAUTH_USERNAME=admin
+      - ME_CONFIG_BASICAUTH_PASSWORD=pass
+    depends_on:
+      - mongodb
+
+volumes:
+  mongodb_data:

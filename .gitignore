@@ -1,0 +1,49 @@
+# dependencies
+node_modules/
+
+# Next.js
+.next/
+out/
+
+# production/build output
+build/
+dist/
+
+# TypeScript
+*.tsbuildinfo
+
+# environment files
+.env
+.env.*
+!.env.example
+!deploy/env.production.example
+deploy/.env.production
+
+# runtime uploads and local backups
+public/uploads/
+migration-backup/
+MIGRATION-BACKUP.md
+settings-backup.json
+*-backup.json
+*.archive.gz
+*.tar.gz
+*.bak
+*.backup
+*~
+
+# logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS/editor/local tool state
+.DS_Store
+.idea/
+.vscode/
+.claude/
+
+# misc
+package-lock.js333on
+Dockerfile.new
