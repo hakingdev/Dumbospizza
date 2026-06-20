@@ -113,6 +113,14 @@ function productMatchesPromoForBadge(
   const pid = String(productId);
   const cid = normalizeObjectId(categoryId);
 
+  // Gratis-Artikel: баннер «… GRATIS» — это РЕКЛАМА бесплатного товара, поэтому
+  // показываем его ТОЛЬКО на подарочных товарах (giftProductIds), а не на
+  // qualifying-товарах. Пустой список подарков → НЕ показываем никому
+  // (пустая конфигурация ≠ «все товары»). Это и есть фикс бага «баннер на всех напитках».
+  if (promo.type === 'gratis_article') {
+    return getGiftProductIds(promo as any).map(String).includes(pid);
+  }
+
   const targetItems = (promo as any).targetItems as
     | Array<{ productId?: unknown }>
     | undefined;
