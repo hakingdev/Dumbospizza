@@ -66,6 +66,10 @@ export function toPromotionAdminView(doc: PromotionDocument) {
         ? [doc.giftProductId]
         : []
     ).map(String),
+    giftItems: ((doc as any).giftItems || []).map((i: any) => ({
+      productId: String(i.productId),
+      sizeName: i.sizeName || '',
+    })),
     audience: doc.audience,
     channel: doc.channel,
     priority: doc.priority,

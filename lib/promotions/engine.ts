@@ -13,7 +13,7 @@ import type {
 import { isPromotionActive, isPromotionEffectivelyActive } from './status';
 import { formatHappyHourLabel } from './schedule';
 import { matchesAudience, type PromotionCustomerContext } from './audience';
-import { getGiftProductIds } from './gifts';
+import { getGiftProductIds, getGiftItems, getGiftProductIdSet, giftOptionId } from './gifts';
 import {
   buildBogoSecondOffer,
   bogoSecondItemFromOption,
@@ -118,7 +118,7 @@ function productMatchesPromoForBadge(
   // qualifying-товарах. Пустой список подарков → НЕ показываем никому
   // (пустая конфигурация ≠ «все товары»). Это и есть фикс бага «баннер на всех напитках».
   if (promo.type === 'gratis_article') {
-    return getGiftProductIds(promo as any).map(String).includes(pid);
+    return getGiftProductIdSet(promo as any).includes(pid);
   }
 
   const targetItems = (promo as any).targetItems as
@@ -487,8 +487,8 @@ export function calculatePromotions(
   for (const promo of active) {
     if (promo.type !== 'gratis_article') continue;
 
-    const giftIds = getGiftProductIds(promo);
-    if (giftIds.length === 0) continue;
+    const giftItems = getGiftItems(promo);
+    if (giftItems.length === 0) continue;
 
     let eligible = false;
     if (promo.gratisTrigger === 'min_order') {
@@ -516,9 +516,11 @@ export function calculatePromotions(
       savedAmount: 0,
     });
 
-    if (giftIds.length === 1) {
+    if (giftItems.length === 1) {
+      const g = giftItems[0];
       freeGifts.push({
-        productId: giftIds[0],
+        productId: g.productId,
+        sizeName: g.sizeName || undefined,
         name: promo.giftProductName || 'Gratis-Artikel',
         quantity: 1,
         promotionId: promoId(promo),
@@ -530,8 +532,10 @@ export function calculatePromotions(
         promotionId: promoId(promo),
         promotionName: promo.name,
         label: 'Gratis-Artikel — wählen Sie 1 aus',
-        options: giftIds.map((productId) => ({
-          productId,
+        options: giftItems.map((g) => ({
+          id: giftOptionId(g.productId, g.sizeName),
+          productId: g.productId,
+          sizeName: g.sizeName || undefined,
           name: promo.giftProductName || 'Gratis-Artikel',
         })),
       });

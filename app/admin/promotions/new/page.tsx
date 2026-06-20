@@ -47,6 +47,7 @@ export default function NewPromotionPage() {
     giftProductId: '',
     giftProductName: '',
     giftProductIds: [] as string[],
+    giftItems: [] as PromoItem[],
     bogoMode: 'free' as 'free' | 'half_price',
     targetProductIds: [] as string[],
     targetCategoryIds: [] as string[],
@@ -111,7 +112,7 @@ export default function NewPromotionPage() {
       setError('Name ist Pflichtfeld');
       return;
     }
-    if (form.type === 'gratis_article' && form.giftProductIds.length === 0) {
+    if (form.type === 'gratis_article' && form.giftItems.length === 0) {
       setError('Mindestens ein Gratis-Produkt auswählen');
       return;
     }
@@ -124,14 +125,18 @@ export default function NewPromotionPage() {
         ? new Date(form.validTo).toISOString()
         : new Date(Date.now() + 3650 * 24 * 60 * 60 * 1000).toISOString();
 
+      const giftProductIds: string[] = Array.from(
+        new Set((form.giftItems || []).map((it) => String(it.productId)))
+      );
       const payload = {
         ...form,
         minOrderAmount: form.minOrderAmount === '' ? undefined : Number(form.minOrderAmount),
-        giftProductIds: form.giftProductIds,
-        giftProductId: form.giftProductIds[0] || undefined,
+        giftItems: form.giftItems,
+        giftProductIds,
+        giftProductId: giftProductIds[0] || undefined,
         giftProductName:
-          form.giftProductIds.length === 1
-            ? products.find((p) => p._id === form.giftProductIds[0])?.name
+          giftProductIds.length === 1
+            ? products.find((p) => p._id === giftProductIds[0])?.name
             : undefined,
         validFrom,
         validTo,
@@ -323,23 +328,17 @@ export default function NewPromotionPage() {
                 Gratis-Produkte (Kunde wählt 1 aus)
               </label>
               <p className="text-xs text-gray-500 mb-2">
-                Mehrere Produkte ankreuzen — z.&nbsp;B. Cola, Sprite, Fanta. Der Kunde wählt eins als Geschenk.
+                Kategorie, einzelne Produkte oder konkrete Größen/Varianten wählen. Der Kunde wählt eins als Geschenk.
               </p>
-              <div className="max-h-48 overflow-y-auto border rounded-md p-2 space-y-1">
-                {products.map((p) => (
-                  <label key={p._id} className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={form.giftProductIds.includes(p._id)}
-                      onChange={() => toggleId('giftProductIds', p._id)}
-                    />
-                    {p.name}
-                  </label>
-                ))}
-              </div>
-              {form.giftProductIds.length > 0 && (
+              <PromoItemSelector
+                products={products}
+                categories={categories}
+                value={form.giftItems}
+                onChange={(v) => setForm({ ...form, giftItems: v })}
+              />
+              {form.giftItems.length > 0 && (
                 <p className="text-xs text-gray-600 mt-1">
-                  {form.giftProductIds.length} Produkt(e) — Kunde wählt genau 1
+                  {form.giftItems.length} Position(en) — Kunde wählt genau 1
                 </p>
               )}
             </div>

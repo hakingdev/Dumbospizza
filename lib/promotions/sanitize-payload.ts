@@ -30,7 +30,7 @@ export function sanitizePromotionPayload(body: Record<string, unknown>): Record<
     data[field] = arr.filter((id) => isValidObjectId(id));
   }
 
-  for (const field of ['targetItems', 'rewardItems'] as const) {
+  for (const field of ['targetItems', 'rewardItems', 'giftItems'] as const) {
     if (!(field in data)) continue;
     const arr = data[field];
     data[field] = Array.isArray(arr)
@@ -47,8 +47,21 @@ export function sanitizePromotionPayload(body: Record<string, unknown>): Record<
     data.promoCode = undefined;
   }
 
-  if (Array.isArray(data.giftProductIds) && data.giftProductIds.length > 0) {
+  // Точный выбор подарка (giftItems) — источник истины. Легаси-поля giftProductIds/
+  // giftProductId выводим из него (уникальные productId), чтобы фолбэки совпадали.
+  if (Array.isArray(data.giftItems) && data.giftItems.length > 0) {
+    const ids = Array.from(
+      new Set((data.giftItems as Array<{ productId: string }>).map((it) => String(it.productId)))
+    );
+    data.giftProductIds = ids;
+    data.giftProductId = ids[0];
+  } else if (Array.isArray(data.giftProductIds) && data.giftProductIds.length > 0) {
     data.giftProductId = data.giftProductIds[0];
+    // нет giftItems, но есть легаси-список → строим giftItems (все размеры)
+    data.giftItems = data.giftProductIds.map((productId: unknown) => ({
+      productId: String(productId),
+      sizeName: '',
+    }));
   } else if (!isValidObjectId(data.giftProductId)) {
     data.giftProductId = null;
   }

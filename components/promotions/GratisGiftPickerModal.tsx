@@ -58,10 +58,10 @@ export default function GratisGiftPickerModal({
               <p className="text-sm text-gray-500 mb-3">{offer.label}</p>
               <div className="space-y-2">
                 {offer.options.map((option) => {
-                  const selected = selections[offer.promotionId] === option.productId;
+                  const selected = selections[offer.promotionId] === option.id;
                   return (
                     <label
-                      key={option.productId}
+                      key={option.id}
                       className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
                         selected
                           ? 'border-emerald-500 bg-emerald-50 ring-1 ring-emerald-500'
@@ -71,9 +71,9 @@ export default function GratisGiftPickerModal({
                       <input
                         type="radio"
                         name={`gratis-${offer.promotionId}`}
-                        value={option.productId}
+                        value={option.id}
                         checked={selected}
-                        onChange={() => onSelect(offer.promotionId, option.productId)}
+                        onChange={() => onSelect(offer.promotionId, option.id)}
                         className="text-emerald-600 focus:ring-emerald-500"
                       />
                       {option.image && (

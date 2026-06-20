@@ -50,6 +50,8 @@ export interface PromotionLineAdjustment {
 
 export interface PromotionFreeGift {
   productId: string;
+  /** '' / undefined = весь товар (размер не задан). */
+  sizeName?: string;
   name: string;
   quantity: number;
   promotionId: string;
@@ -58,7 +60,10 @@ export interface PromotionFreeGift {
 }
 
 export interface PromotionFreeGiftOption {
+  /** Уникальный ключ опции: productId или `productId|sizeName`. */
+  id: string;
   productId: string;
+  sizeName?: string;
   name: string;
   image?: string;
 }

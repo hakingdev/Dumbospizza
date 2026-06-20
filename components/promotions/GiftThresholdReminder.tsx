@@ -18,6 +18,12 @@ export default function GiftThresholdReminder() {
   const [active, setActive] = useState<{ giftName: string; remaining: number } | null>(null);
   const reminded = useRef<Set<string>>(new Set());
 
+  // НЕ показываем напоминание в процессе оформления — там полноэкранная модалка
+  // перекрывала бы хедер и мешала навигации (баг «хедер не кликается на checkout»).
+  const onOrderFlow = Boolean(
+    pathname?.startsWith('/cart') || pathname?.startsWith('/checkout')
+  );
+
   const thresholds = state.promotionCalculation?.giftThresholds || [];
   const bogoOffers = state.promotionCalculation?.bogoSecondOffers || [];
   const giftOffers = state.promotionCalculation?.freeGiftOffers || [];
@@ -38,6 +44,7 @@ export default function GiftThresholdReminder() {
     }
 
     if (open) return;
+    if (onOrderFlow) return; // не мешаем оформлению
     if (state.items.length === 0) return;
     if (hasActiveOffer) return; // не поверх выбора акции
 
@@ -50,7 +57,8 @@ export default function GiftThresholdReminder() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [near.map((n) => `${n.promotionId}:${n.remaining}`).join('|'), hasActiveOffer, state.items.length, open]);
 
-  if (!open || !active) return null;
+  // на cart/checkout не рендерим оверлей вообще (даже если был открыт до перехода)
+  if (onOrderFlow || !open || !active) return null;
 
   return (
     <div

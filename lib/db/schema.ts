@@ -374,6 +374,11 @@ export const promotions = pgTable(
     giftProductId: text('gift_product_id'),
     giftProductName: text('gift_product_name'),
     giftProductIds: jsonb('gift_product_ids').$type<string[]>().notNull().default([]),
+    // Точный выбор подарка (товар+размер), как rewardItems у BOGO. sizeName='' = все размеры.
+    giftItems: jsonb('gift_items')
+      .$type<{ productId: string; sizeName?: string }[]>()
+      .notNull()
+      .default([]),
     bogoMode: text('bogo_mode'),
     targetProductIds: jsonb('target_product_ids').$type<string[]>().notNull().default([]),
     targetCategoryIds: jsonb('target_category_ids').$type<string[]>().notNull().default([]),

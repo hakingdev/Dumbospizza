@@ -6,6 +6,7 @@ import type { PromotionCalculationResult } from '../promotions/types';
 import { calculatePromotions as fetchPromotionCalculation } from '../api-client';
 import { normalizeObjectId } from '../normalize-id';
 import { getAppliedPromotionDiscount, getBogoPickerMerchandise } from '../promotions/discount-total';
+import { giftOptionId } from '../promotions/gifts';
 
 // Types
 export interface CartItem {
@@ -336,16 +337,20 @@ function cartReducer(state: CartState, action: CartAction): CartState {
       let selectedFreeGifts: Record<string, string> = {};
       let selectedBogoSecond: Record<string, string[]> = {};
       if (payload) {
+        // Ключ выбранного подарка — id опции (productId|sizeName), чтобы различать размеры.
         const fromResolvedGifts = Object.fromEntries(
-          (payload.freeGifts || []).map((gift) => [gift.promotionId, gift.productId])
+          (payload.freeGifts || []).map((gift) => [
+            gift.promotionId,
+            giftOptionId(gift.productId, gift.sizeName),
+          ])
         );
         if (payload.freeGiftOffers?.length) {
           const validOffers = new Set(payload.freeGiftOffers.map((o) => o.promotionId));
           const pendingSelections = Object.fromEntries(
-            Object.entries(state.selectedFreeGifts).filter(([promotionId, productId]) => {
+            Object.entries(state.selectedFreeGifts).filter(([promotionId, selectedKey]) => {
               if (!validOffers.has(promotionId)) return false;
               const offer = payload.freeGiftOffers!.find((o) => o.promotionId === promotionId);
-              return offer?.options.some((o) => o.productId === productId) ?? false;
+              return offer?.options.some((o) => o.id === selectedKey) ?? false;
             })
           );
           selectedFreeGifts = { ...fromResolvedGifts, ...pendingSelections };
