@@ -1,3 +1,11 @@
+import type { Metadata } from 'next';
+
+export const metadata: Metadata = {
+  title: 'AGB | Dumbos Pizza Bad Kissingen',
+  description: 'Allgemeine Geschäftsbedingungen von Dumbos Pizza Bad Kissingen.',
+  robots: { index: false, follow: true },
+};
+
 export default function AgbPage() {
   return (
     <div className="container mx-auto px-4 py-8 max-w-5xl">

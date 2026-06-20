@@ -1,3 +1,11 @@
+import type { Metadata } from 'next';
+
+export const metadata: Metadata = {
+  title: 'Widerrufsbelehrung | Dumbos Pizza Bad Kissingen',
+  description: 'Widerrufsbelehrung von Dumbos Pizza Bad Kissingen.',
+  robots: { index: false, follow: true },
+};
+
 export default function WiderrufsbelehrungPage() {
   return (
     <div className="container mx-auto px-4 py-8 max-w-5xl">

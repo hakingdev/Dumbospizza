@@ -1,3 +1,11 @@
+import type { Metadata } from 'next';
+
+export const metadata: Metadata = {
+  title: 'Impressum | Dumbos Pizza Bad Kissingen',
+  description: 'Impressum und Anbieterkennzeichnung von Dumbos Pizza Bad Kissingen.',
+  robots: { index: false, follow: true },
+};
+
 export default function ImpressumPage() {
   return (
     <div className="container mx-auto px-4 py-8 max-w-5xl">
