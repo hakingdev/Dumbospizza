@@ -101,21 +101,28 @@ export function enrichFreeGiftOffers(
 ): PromotionCalculationResult {
   if (!calculation.freeGiftOffers?.length) return calculation;
 
-  const freeGiftOffers: PromotionFreeGiftOffer[] = calculation.freeGiftOffers.map((offer) => ({
-    ...offer,
-    options: offer.options.map((opt) => {
-      const product = productsById.get(opt.productId);
-      const baseName = product?.name || opt.name || 'Gratis-Artikel';
-      return {
-        id: opt.id,
-        productId: opt.productId,
-        sizeName: opt.sizeName,
-        // показываем размер в названии: «Coca Cola 0,33l»
-        name: opt.sizeName ? `${baseName} ${opt.sizeName}` : baseName,
-        image: product?.image || opt.image,
-      };
-    }),
-  }));
+  const freeGiftOffers: PromotionFreeGiftOffer[] = calculation.freeGiftOffers
+    .map((offer) => ({
+      ...offer,
+      options: offer.options
+        // Отбрасываем опции, чей товар не существует (удалён/битый id) —
+        // иначе в списке появлялась фантомная позиция «Gratis-Artikel».
+        .filter((opt) => productsById.has(opt.productId))
+        .map((opt) => {
+          const product = productsById.get(opt.productId)!;
+          const baseName = product.name || 'Gratis-Artikel';
+          return {
+            id: opt.id,
+            productId: opt.productId,
+            sizeName: opt.sizeName,
+            // показываем размер в названии: «Coca Cola 0,33l»
+            name: opt.sizeName ? `${baseName} ${opt.sizeName}` : baseName,
+            image: product.image || opt.image,
+          };
+        }),
+    }))
+    // Если у предложения не осталось валидных опций — не показываем его.
+    .filter((offer) => offer.options.length > 0);
 
   return { ...calculation, freeGiftOffers };
 }

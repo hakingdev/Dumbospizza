@@ -1,10 +1,8 @@
 /** @type {import('next').NextConfig} */
-const { i18n } = require('./next-i18next.config');
-
-// Исправление ошибки "localeDetection"
-if (i18n && i18n.localeDetection === undefined) {
-  i18n.localeDetection = false;
-}
+// ВАЖНО: ключ `i18n` в next.config — это фича Pages Router и ЛОМАЕТ App Router
+// (RSC-навигация отдаёт 404 на `/?_rsc=…`, клики по ссылкам/логотипу не работают).
+// Проект на App Router, переводы — клиентские (react-i18next / LanguageContext),
+// поэтому next.config.i18n НЕ нужен и удалён.
 
 const nextConfig = {
   reactStrictMode: true,
@@ -15,7 +13,6 @@ const nextConfig = {
       { protocol: 'http', hostname: 'localhost' },
     ],
   },
-  i18n,
   // Настройки для Docker
   output: 'standalone',
   experimental: {

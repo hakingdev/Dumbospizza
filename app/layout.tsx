@@ -40,6 +40,9 @@ export const metadata: Metadata = {
   },
   alternates: {
     canonical: 'https://dumbospizza.de'
+  },
+  verification: {
+    google: 'NfjrGA7NalYlQacHjnSWcd8iwPPtKD9jZXkOO81P-hQ'
   }
 }
 
