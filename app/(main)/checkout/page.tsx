@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ChevronLeft, CreditCard, Truck, Check, Loader2 } from 'lucide-react'
+import { ChevronLeft, CreditCard, Truck, Check, Loader2, Wallet } from 'lucide-react'
 import { useCart } from '../../../lib/contexts/CartContext'
 import CouponInput from '../../../components/cart/CouponInput'
 import { getConflictingPromotions } from '../../../lib/promotions/coupon-conflict'
@@ -17,6 +18,12 @@ import {
   getNowMinutesInTimeZone,
   parseOrdersTimeToMinutes,
 } from '../../../lib/order-acceptance-hours'
+
+// SumUp-виджет — только на клиенте (использует window + внешний SDK).
+const SumUpPaymentWidget = dynamic(
+  () => import('../../../components/checkout/SumUpPaymentWidget'),
+  { ssr: false }
+)
 
 type DeliveryZone = {
   _id: string;
@@ -76,6 +83,8 @@ export default function CheckoutPage() {
   const [deliveryZone, setDeliveryZone] = useState(state.deliveryZone || '')
   const [paymentMethod, setPaymentMethod] = useState(state.paymentMethod || 'card')
   const [termsAccepted, setTermsAccepted] = useState(false)
+  // Онлайн-оплата SumUp: данные созданного checkout для монтирования виджета.
+  const [sumup, setSumup] = useState<{ orderId: string; checkoutId: string; amount: number } | null>(null)
   const [contactDetails, setContactDetails] = useState({
     name: '',
     phone: '',
@@ -216,7 +225,7 @@ export default function CheckoutPage() {
 
   useEffect(() => {
     if (state.paymentMethod !== paymentMethod) {
-      setCartPaymentMethod(paymentMethod as 'cash' | 'card')
+      setCartPaymentMethod(paymentMethod as 'cash' | 'card' | 'online')
     }
   }, [paymentMethod, setCartPaymentMethod, state.paymentMethod])
 
@@ -418,11 +427,33 @@ export default function CheckoutPage() {
         throw new Error(t('checkout.errors.server_response', 'Неверный ответ от сервера'))
       }
       
-      // Clear cart
+      sessionStorage.setItem(`order:${data.order.id}:phone`, contactDetails.phone)
+
+      // Онлайн-оплата: заказ создан со статусом 'pending' (на кухню НЕ ушёл).
+      // Создаём SumUp checkout и показываем виджет; корзину чистим и
+      // редиректим только после подтверждения оплаты (handleSumUpPaid).
+      if (paymentMethod === 'online') {
+        const checkoutRes = await fetch('/api/payments/sumup/checkout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ orderId: data.order.id }),
+        })
+        const checkoutData = await checkoutRes.json()
+        if (!checkoutRes.ok || !checkoutData.success) {
+          throw new Error(checkoutData.error || t('checkout.errors.payment_init', 'Online-Zahlung konnte nicht gestartet werden'))
+        }
+        setSumup({
+          orderId: data.order.id,
+          checkoutId: checkoutData.checkoutId,
+          amount: checkoutData.amount,
+        })
+        setIsSubmitting(false)
+        return
+      }
+
+      // Оплата при получении: сразу завершаем оформление.
       clearCart()
 
-      sessionStorage.setItem(`order:${data.order.id}:phone`, contactDetails.phone)
-      
       // Redirect to confirmation page
       console.log('Redirecting to:', `/checkout/confirmation/${data.order.id}`)
       window.location.href = `/checkout/confirmation/${data.order.id}`
@@ -433,6 +464,33 @@ export default function CheckoutPage() {
     }
   }
   
+  // Виджет SumUp сообщил об оплате → подтверждаем на сервере (источник истины),
+  // и только при успехе чистим корзину и уходим на страницу подтверждения.
+  const handleSumUpPaid = useCallback(async () => {
+    if (!sumup) return
+    try {
+      const res = await fetch('/api/payments/sumup/confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId: sumup.orderId, checkoutId: sumup.checkoutId }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || t('checkout.errors.payment_confirm', 'Zahlung konnte nicht bestätigt werden'))
+      }
+      const orderId = sumup.orderId
+      setSumup(null)
+      clearCart()
+      window.location.href = `/checkout/confirmation/${orderId}`
+    } catch (error: any) {
+      setErrors({ submit: error.message || t('checkout.errors.payment_confirm', 'Zahlung konnte nicht bestätigt werden') })
+    }
+  }, [sumup, clearCart, t])
+
+  const handleSumUpError = useCallback((message: string) => {
+    setErrors({ submit: message })
+  }, [])
+
   const selectedZone = deliveryZones.find(zone => zone._id === deliveryZone)
   const totalItems = state.items.reduce((sum, item) => sum + item.quantity, 0)
   
@@ -780,7 +838,7 @@ export default function CheckoutPage() {
                       value="cash"
                       checked={paymentMethod === 'cash'}
                       onChange={(e) => {
-                      setPaymentMethod(e.target.value as 'cash' | 'card')
+                      setPaymentMethod(e.target.value as 'cash' | 'card' | 'online')
                       if (errors.paymentMethod) {
                         setErrors(prev => {
                           const newErrors = { ...prev }
@@ -815,7 +873,7 @@ export default function CheckoutPage() {
                       value="card"
                       checked={paymentMethod === 'card'}
                       onChange={(e) => {
-                      setPaymentMethod(e.target.value as 'cash' | 'card')
+                      setPaymentMethod(e.target.value as 'cash' | 'card' | 'online')
                       if (errors.paymentMethod) {
                         setErrors(prev => {
                           const newErrors = { ...prev }
@@ -831,6 +889,38 @@ export default function CheckoutPage() {
                       <p className="font-medium">{t('checkout.payments.card', 'Картой при получении')}</p>
                     </div>
                     {paymentMethod === 'card' && (
+                      <Check className="h-5 w-5 ml-auto text-primary-600" />
+                    )}
+                  </label>
+
+                  <label className={`flex items-center p-4 border rounded-lg cursor-pointer ${
+                    paymentMethod === 'online'
+                      ? 'border-primary-500 bg-primary-50'
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}>
+                    <input
+                      type="radio"
+                      name="paymentMethod"
+                      value="online"
+                      checked={paymentMethod === 'online'}
+                      onChange={(e) => {
+                      setPaymentMethod(e.target.value as 'cash' | 'card' | 'online')
+                      if (errors.paymentMethod) {
+                        setErrors(prev => {
+                          const newErrors = { ...prev }
+                          delete newErrors.paymentMethod
+                          return newErrors
+                        })
+                      }
+                    }}
+                      className="sr-only"
+                    />
+                    <Wallet className="h-6 w-6 mr-3 text-primary-600" />
+                    <div>
+                      <p className="font-medium">{t('checkout.payments.online', 'Online bezahlen')}</p>
+                      <p className="text-sm text-gray-500">{t('checkout.payments.online_hint', 'Apple Pay, Google Pay oder Karte')}</p>
+                    </div>
+                    {paymentMethod === 'online' && (
                       <Check className="h-5 w-5 ml-auto text-primary-600" />
                     )}
                   </label>
@@ -1072,6 +1162,35 @@ export default function CheckoutPage() {
           </div>
         </div>
       </div>
+
+      {sumup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-lg bg-white p-6 shadow-xl">
+            <h3 className="mb-1 text-lg font-semibold">
+              {t('checkout.payments.online', 'Online bezahlen')}
+            </h3>
+            <p className="mb-4 text-sm text-gray-500">
+              {t('checkout.payments.online_amount', 'Zu zahlen')}: {sumup.amount.toFixed(2)} €
+            </p>
+
+            <SumUpPaymentWidget
+              checkoutId={sumup.checkoutId}
+              amount={sumup.amount}
+              locale={language === 'de' ? 'de-DE' : 'en-GB'}
+              onPaid={handleSumUpPaid}
+              onError={handleSumUpError}
+            />
+
+            <button
+              type="button"
+              className="mt-4 w-full rounded-md border border-gray-300 bg-white py-2 px-4 text-gray-700 transition-colors hover:bg-gray-50"
+              onClick={() => setSumup(null)}
+            >
+              {t('common.cancel', 'Abbrechen')}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

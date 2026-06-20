@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '../../../lib/models';
-import { Order, type IOrder } from '../../../lib/models/order.model';
+import { Order } from '../../../lib/models/order.model';
 import { Product } from '../../../lib/models/product.model';
-import { sendServerPurchaseConversionEvents } from '../../../lib/conversions/server-purchase-events';
 import { Coupon } from '../../../lib/models/coupon.model';
-import { calculateOrderPromotions, recordPromotionOrderAnalytics } from '../../../lib/promotions/order-integration';
+import { calculateOrderPromotions } from '../../../lib/promotions/order-integration';
 import {
   resolveFreeGiftsForOrder,
   enrichFreeGiftOffers,
@@ -12,10 +11,7 @@ import {
 } from '../../../lib/promotions/gifts';
 import { validateBogoSecondSelection } from '../../../lib/promotions/bogo';
 import { getAppliedPromotionDiscount, getVisibleBogoSecondItems } from '../../../lib/promotions/discount-total';
-import { addLoyaltyPoints, redeemLoyaltyPoints } from '../../../lib/loyalty';
-import { sendOrderNotification } from '../../../lib/telegram';
-import { printOrderReceipts } from '../../../lib/printing';
-import { sendOrderPlacedNotification } from '../../../lib/whatsapp';
+import { finalizeOrderPlacement } from '../../../lib/orders/finalize';
 import { getSetting } from '../../../lib/settings';
 import {
   formatMinutesAsHHmm,
@@ -350,138 +346,25 @@ export async function POST(request: NextRequest) {
     const order = new Order(orderPayload);
     await order.save();
 
-    // Process coupon if applicable
-    if (validatedCoupon) {
-      try {
-        await validatedCoupon.use(); // Increment usage count
-      } catch (error) {
-        console.error('Error processing coupon:', error);
-        // Don't fail the order if coupon processing fails
-      }
-    }
-
-    // Record promotion analytics (don't fail the order)
-    if (promotionCalc.appliedPromotions.length > 0) {
-      try {
-        await recordPromotionOrderAnalytics(promotionCalc.appliedPromotions, order.total);
-      } catch (error) {
-        console.error('Error recording promotion analytics:', error);
-      }
-    }
-
-    // Process loyalty points if applicable
-    if (orderData.phoneNumber) {
-      // If loyalty points are being redeemed
-      if (orderData.loyaltyPointsToRedeem && orderData.loyaltyPointsToRedeem > 0) {
-        await redeemLoyaltyPoints(
-          orderData.phoneNumber,
-          orderData.loyaltyPointsToRedeem,
-          order._id.toString()
-        );
-      }
-
-      // Add loyalty points for this purchase
-      if (order.total > 0) {
-        const pointsAdded = await addLoyaltyPoints(
-          orderData.phoneNumber,
-          order.total,
-          order._id.toString()
-        );
-        
-        if (pointsAdded) {
-          order.loyaltyPointsEarned = pointsAdded.transactions.slice(-1)[0]?.amount || 0;
-          await order.save();
-        }
-      }
-    }
-
-    // Send notification to Telegram (async, don't block)
-    const fullAddress = order.deliveryType === 'delivery' && order.deliveryAddress
-      ? `${order.deliveryAddress.street} ${order.deliveryAddress.houseNumber}, ${order.deliveryAddress.postalCode} ${order.deliveryAddress.city}`.trim()
-      : undefined;
-    const notification = {
-      orderId: order.orderNumber,
-      customerName: order.customerName,
-      phoneNumber: order.phoneNumber,
-      address: fullAddress,
-      items: order.items.map(item => ({
-        name: item.name,
-        quantity: item.quantity,
-        customizations: [
-          ...(item.size ? [`Size: ${item.size.name}`] : []),
-          ...(item.extras?.toppings?.map(t => `Topping: ${t.name}`) || []),
-          ...(item.extras?.sauces?.map(s => `Sauce: ${s.name}`) || []),
-          ...(item.extras?.sides?.map(s => `Side: ${s.name}`) || [])
-        ]
-      })),
-      totalAmount: order.total,
-      subtotal: order.subtotal,
-      deliveryFee: order.deliveryFee,
-      discount: order.discount,
-      paymentMethod: order.paymentMethod,
-      deliveryType: order.deliveryType,
-      desiredDeliveryTime: order.desiredDeliveryTime
-    };
-
-    // ВАЖНО (Vercel serverless): уведомления нужно ДОЖДАТЬСЯ до ответа,
-    // иначе функция замораживается и Telegram/WhatsApp/конверсии не отправляются.
-    await Promise.all([
-      sendServerPurchaseConversionEvents(order.toObject() as IOrder, request).catch((err) => {
-        console.error('Server conversion events (Meta / TikTok):', err);
-      }),
-      sendOrderPlacedNotification({ phoneNumber: order.phoneNumber, orderNumber: order.orderNumber }).catch(err => {
-        console.error('Error sending WhatsApp order-placed notification:', err);
-      }),
-      sendOrderNotification(notification).then(messageId => {
-        if (messageId) {
-          order.telegramMessageId = messageId;
-          return order.save();
-        }
-      }).catch(err => {
-        console.error('Error sending Telegram notification:', err);
-      }),
-    ]).catch(err => {
-      console.error('Error in async notifications:', err);
-    });
-
-    // Печать: прямая термопечать только на локальном сервере (где задан интерфейс
-    // принтера и он в той же сети). На Vercel принтер недоступен → оставляем статус
-    // 'pending', и заказ печатает принт-агент, опрашивающий /api/orders.
-    const hasLocalPrinter = Boolean(
-      process.env.KITCHEN_PRINTER_INTERFACE ||
-      process.env.PRINTER_INTERFACE ||
-      process.env.CUSTOMER_PRINTER_INTERFACE
-    );
-    if (hasLocalPrinter) {
-      await printOrderReceipts({
-        ...notification,
-        notes: order.notes,
-        deliveryFee: order.deliveryFee,
-      })
-        .then((printResult) => {
-          order.kitchenPrintStatus = printResult.kitchen ? 'completed' : 'pending';
-          order.customerPrintStatus = printResult.customer ? 'completed' : 'pending';
-          return order.save();
-        })
-        .catch((err) => {
-          console.error('Error printing receipts:', err);
-          order.kitchenPrintStatus = 'pending';
-          order.customerPrintStatus = 'pending';
-          return order.save();
-        });
-    } else {
-      // Vercel: помечаем как ожидающие печати — подхватит принт-агент
-      order.kitchenPrintStatus = 'pending';
-      order.customerPrintStatus = 'pending';
-      await order.save();
+    // Побочные эффекты заказа: списание купона, баллы лояльности, аналитика
+    // акций, уведомления (Telegram/WhatsApp/конверсии) и печать чеков.
+    // Для онлайн-оплаты (SumUp) откладываем до подтверждения оплаты —
+    // см. /api/payments/sumup/confirm. Иначе кухня/Telegram/печать сработали бы
+    // по неоплаченному заказу. Принт-агент тоже не видит неоплаченные онлайн-заказы
+    // (см. GET-гейт по paymentStatus ниже).
+    if (order.paymentMethod !== 'online') {
+      await finalizeOrderPlacement(order, request);
     }
 
     return NextResponse.json({
-      success: true, 
+      success: true,
       order: {
         id: order._id.toString(),
         orderNumber: order.orderNumber,
         status: order.status,
+        paymentMethod: order.paymentMethod,
+        paymentStatus: order.paymentStatus,
+        total: order.total,
         loyaltyPointsEarned: order.loyaltyPointsEarned || 0
       }
     }, { status: 201 });
@@ -537,7 +420,16 @@ export async function GET(request: NextRequest) {
     if (phoneNumber) query.phoneNumber = phoneNumber;
     if (orderNumber) query.orderNumber = orderNumber;
     if (status) query.status = status;
-    if (kitchenPrintStatus) query.kitchenPrintStatus = kitchenPrintStatus;
+    if (kitchenPrintStatus) {
+      query.kitchenPrintStatus = kitchenPrintStatus;
+      // Принт-агент не должен видеть неоплаченные онлайн-заказы: SumUp-оплата
+      // ещё не подтверждена (paymentStatus !== 'completed'). Оплата при получении
+      // (cash/card) проходит гейт всегда.
+      query.$or = [
+        { paymentMethod: { $ne: 'online' } },
+        { paymentStatus: 'completed' },
+      ];
+    }
 
     // Get orders with pagination
     const orders = await Order.find(query)
