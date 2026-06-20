@@ -11,8 +11,12 @@
  *
  * Запуск (DATABASE_URL должен быть в .env или в окружении):
  *   node scripts/telegram-webhook.mjs info
- *   node scripts/telegram-webhook.mjs set https://dumbospizza.de/api/telegram/webhook
+ *   node scripts/telegram-webhook.mjs set https://www.dumbospizza.de/api/telegram/webhook
  *   node scripts/telegram-webhook.mjs delete
+ *
+ * ВАЖНО: URL должен быть КАНОНИЧЕСКИМ (www), который отдаёт 200. Apex
+ * (dumbospizza.de) делает 308-редирект на www, а Telegram за редиректами НЕ ходит
+ * → вебхук падает с «Wrong response from the webhook: 308 Permanent Redirect».
  */
 import { readFileSync } from 'fs';
 import { resolve } from 'path';

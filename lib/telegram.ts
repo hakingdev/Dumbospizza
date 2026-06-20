@@ -263,64 +263,174 @@ function orderToNotification(order: IOrder): OrderNotification {
  * Process webhook data from Telegram
  * This should be called by your API route that handles Telegram webhooks
  */
-export async function processTelegramUpdate(update: any): Promise<void> {
-  const { bot } = await getTelegramConfig();
-  // Handle callback queries (button clicks)
-  if (update.callback_query) {
-    const callbackData = update.callback_query.data;
-    
-    // Parse status change commands
-    if (callbackData.startsWith('status_')) {
-      const [, statusKey, orderId] = callbackData.split('_');
-      const statusMap: Record<string, OrderStatus> = {
-        preparing: 'preparing',
-        ready: 'ready_for_delivery',
-        delivering: 'delivering',
-        completed: 'completed',
-        cancelled: 'cancelled'
-      };
-      const newStatus = statusMap[statusKey];
-      if (!newStatus) {
-        await bot.answerCallbackQuery(update.callback_query.id, {
-          text: `Неизвестный статус: ${statusKey}`
-        });
-        return;
-      }
+/** Маппинг ключа из callback_data → внутренний статус заказа. */
+export const TELEGRAM_STATUS_MAP: Record<string, OrderStatus> = {
+  preparing: 'preparing',
+  ready: 'ready_for_delivery',
+  delivering: 'delivering',
+  completed: 'completed',
+  cancelled: 'cancelled',
+};
 
-      await connectToDatabase();
-      const order = await Order.findOne({ orderNumber: orderId });
-      if (!order) {
-        await bot.answerCallbackQuery(update.callback_query.id, {
-          text: `Заказ #${orderId} не найден`
-        });
-        return;
-      }
+/**
+ * Разбор callback_data вида `status_<statusKey>_<orderId>`.
+ * statusKey не содержит '_', поэтому делим по ПЕРВОМУ '_' после префикса —
+ * orderId может содержать что угодно. Возвращает null, если это не наша кнопка.
+ */
+export function parseStatusCallback(
+  data: unknown
+): { statusKey: string; orderId: string } | null {
+  if (typeof data !== 'string' || !data.startsWith('status_')) return null;
+  const rest = data.slice('status_'.length);
+  const i = rest.indexOf('_');
+  if (i <= 0) return null;
+  const statusKey = rest.slice(0, i);
+  const orderId = rest.slice(i + 1);
+  if (!statusKey || !orderId) return null;
+  return { statusKey, orderId };
+}
 
-      order.status = newStatus;
-      order.statusUpdates = order.statusUpdates || [];
-      order.statusUpdates.push({
-        status: newStatus,
-        timestamp: new Date()
-      });
-      await order.save();
-      
-      const messageId = update.callback_query.message?.message_id;
-      if (messageId) {
-        const orderNotification = orderToNotification(order);
-        await updateOrderStatus(messageId, newStatus, orderId, undefined, orderNotification);
-      }
+/** Ключ статуса → внутренний статус, либо null если неизвестен. */
+export function resolveTelegramStatus(statusKey: string): OrderStatus | null {
+  return TELEGRAM_STATUS_MAP[statusKey] ?? null;
+}
 
-      sendOrderStatusNotification(
-        { phoneNumber: order.phoneNumber, orderNumber: order.orderNumber },
-        newStatus
-      ).catch((e) => console.error('WhatsApp status notification:', e));
+export interface StatusCallbackDeps {
+  answerCallbackQuery: (id: string, opts?: { text?: string; show_alert?: boolean }) => PromiseLike<unknown>;
+  findOrder: (orderNumber: string) => PromiseLike<any | null>;
+  editMessage?: (messageId: number, status: OrderStatus, orderId: string, order: any) => Promise<void>;
+  onStatusChanged?: (order: any, status: OrderStatus) => void;
+  log?: (...args: any[]) => void;
+}
 
-      // Acknowledge the callback query
-      await bot.answerCallbackQuery(update.callback_query.id, {
-        text: `Статус заказа #${orderId} изменён`
-      });
+export type StatusCallbackResult = {
+  handled: boolean;
+  status?: OrderStatus;
+  reason?:
+    | 'not_status_callback'
+    | 'invalid_status'
+    | 'order_not_found'
+    | 'lookup_error'
+    | 'save_error'
+    | 'unchanged'
+    | 'updated';
+};
+
+/**
+ * Ядро обработки клика по кнопке статуса. Изолировано от Telegram/БД через deps —
+ * тестируется моками. ГАРАНТИЯ: answerCallbackQuery вызывается всегда (нет вечного
+ * loading), а лишние side-effects (editMessage/WhatsApp) — best-effort.
+ */
+export async function handleStatusCallbackQuery(
+  cbq: any,
+  deps: StatusCallbackDeps
+): Promise<StatusCallbackResult> {
+  const log = deps.log || ((...a: any[]) => console.log('[telegram]', ...a));
+  const id: string = cbq?.id;
+  // answerCallbackQuery никогда не должен ронять обработку.
+  const ack = async (opts?: { text?: string; show_alert?: boolean }) => {
+    if (!id) return;
+    try {
+      await deps.answerCallbackQuery(id, opts);
+    } catch (e) {
+      log('answerCallbackQuery failed', (e as Error)?.message);
+    }
+  };
+
+  log('received callback_query', { id, data: cbq?.data });
+
+  const parsed = parseStatusCallback(cbq?.data);
+  if (!parsed) {
+    await ack();
+    return { handled: false, reason: 'not_status_callback' };
+  }
+
+  const status = resolveTelegramStatus(parsed.statusKey);
+  if (!status) {
+    log('invalid status', parsed.statusKey);
+    await ack({ text: `Неизвестный статус: ${parsed.statusKey}`, show_alert: true });
+    return { handled: false, reason: 'invalid_status' };
+  }
+
+  log('parsed', { orderId: parsed.orderId, status });
+
+  let order: any;
+  try {
+    order = await deps.findOrder(parsed.orderId);
+  } catch (e) {
+    log('order lookup failed', (e as Error)?.message);
+    await ack({ text: 'Fehler beim Laden der Bestellung', show_alert: true });
+    return { handled: false, reason: 'lookup_error' };
+  }
+
+  if (!order) {
+    log('order not found', parsed.orderId);
+    await ack({ text: `Заказ #${parsed.orderId} не найден`, show_alert: true });
+    return { handled: false, reason: 'order_not_found' };
+  }
+
+  // Идемпотентность: статус уже такой — спокойно подтверждаем, без записи.
+  if (order.status === status) {
+    log('status unchanged (idempotent)', { orderId: parsed.orderId, status });
+    await ack({ text: `Статус уже: ${status}` });
+    return { handled: true, status, reason: 'unchanged' };
+  }
+
+  try {
+    order.status = status;
+    order.statusUpdates = order.statusUpdates || [];
+    order.statusUpdates.push({ status, timestamp: new Date() });
+    await order.save();
+    log('status updated', { orderId: parsed.orderId, status });
+  } catch (e) {
+    log('order save failed', (e as Error)?.message);
+    await ack({ text: 'Status konnte nicht gespeichert werden', show_alert: true });
+    return { handled: false, reason: 'save_error' };
+  }
+
+  // Сначала подтверждаем клик (снимаем loading), потом — best-effort side-effects.
+  await ack({ text: `Статус заказа #${parsed.orderId} → ${status}` });
+
+  try {
+    deps.onStatusChanged?.(order, status);
+  } catch (e) {
+    log('onStatusChanged failed', (e as Error)?.message);
+  }
+
+  const messageId = cbq?.message?.message_id;
+  if (messageId && deps.editMessage) {
+    try {
+      await deps.editMessage(messageId, status, parsed.orderId, order);
+    } catch (e) {
+      log('editMessage failed', (e as Error)?.message);
     }
   }
+
+  return { handled: true, status, reason: 'updated' };
+}
+
+/**
+ * Обработка webhook-обновления от Telegram. Вызывается из API-роута.
+ */
+export async function processTelegramUpdate(update: any): Promise<void> {
+  if (!update?.callback_query) return;
+
+  const { bot } = await getTelegramConfig();
+  await connectToDatabase();
+
+  await handleStatusCallbackQuery(update.callback_query, {
+    answerCallbackQuery: (cbId, opts) => bot.answerCallbackQuery(cbId, opts),
+    findOrder: (orderNumber) => Order.findOne({ orderNumber }),
+    editMessage: async (messageId, status, orderId, order) => {
+      await updateOrderStatus(messageId, status, orderId, undefined, orderToNotification(order));
+    },
+    onStatusChanged: (order, status) => {
+      sendOrderStatusNotification(
+        { phoneNumber: order.phoneNumber, orderNumber: order.orderNumber },
+        status
+      ).catch((e) => console.error('WhatsApp status notification:', e));
+    },
+  });
 }
 
 function buildStatusKeyboard(orderId: string) {
