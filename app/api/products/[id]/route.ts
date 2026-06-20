@@ -9,6 +9,7 @@ import { getMewsPosEnabled } from '../../../../lib/settings';
 import { fetchMewsPosProductById } from '../../../../lib/mews-pos/sync';
 import { getServerSession } from 'next-auth';
 import { authOptions, isStaff } from '../../../../lib/auth';
+import { toRefId } from '../../../../lib/normalize-id';
 
 async function isAuthorized() {
   const session = await getServerSession(authOptions);
@@ -59,19 +60,26 @@ export async function PUT(
     await connectToDatabase();
     const data = await request.json();
 
-    if (data?.category) {
-      const isObjectId = typeof data.category === 'string' && /^[a-f\d]{24}$/i.test(data.category);
-      if (!isObjectId) {
-        const categoryDoc = await Category.findOne({
-          $or: [{ slug: data.category }, { name: data.category }]
-        });
-        if (categoryDoc) {
-          data.category = categoryDoc._id;
-        }
+    // GET отдаёт category/optionGroupIds через .populate() ОБЪЕКТАМИ, форма шлёт их
+    // обратно как есть. Без нормализации объект попадает в SQL/колонку → 500.
+    if (data?.category != null) {
+      const cat = toRefId(data.category);
+      if (!cat) {
+        delete data.category;
+      } else if (/^[a-f\d]{24}$/i.test(cat)) {
+        data.category = cat;
+      } else {
+        // строка-слаг/имя → ищем категорию
+        const categoryDoc = await Category.findOne({ $or: [{ slug: cat }, { name: cat }] });
+        data.category = categoryDoc ? String(categoryDoc._id) : cat;
       }
     }
 
-    
+    if (Array.isArray(data?.optionGroupIds)) {
+      data.optionGroupIds = data.optionGroupIds.map(toRefId).filter(Boolean);
+    }
+
+
     const product = await Product.findByIdAndUpdate(
       params.id,
       data,

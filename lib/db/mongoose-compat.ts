@@ -237,10 +237,24 @@ async function applyPopulate(containerTable: AnyTable, docs: AnyRecord[], specs:
 // ---------------------------------------------------------------------------
 // Документ
 // ---------------------------------------------------------------------------
-function toColumnValues(model: ModelRef, src: AnyRecord): AnyRecord {
+/**
+ * Маппинг входных данных в значения колонок: берём только реальные колонки и
+ * приводим строки/числа к Date для timestamp-колонок. Экспортируется для тестов.
+ */
+export function toColumnValues(model: ModelRef, src: AnyRecord): AnyRecord {
   const values: AnyRecord = {};
   for (const key of model.colKeys) {
-    if (key in src && src[key] !== undefined) values[key] = src[key];
+    if (!(key in src) || src[key] === undefined) continue;
+    let v = src[key];
+    // Drizzle timestamp(mode:'date') ждёт объект Date, но из JSON (форма/API)
+    // даты часто приходят ISO-строкой/числом → .toISOString() падает (500).
+    // Приводим к Date; невалидные значения пропускаем.
+    if (v !== null && (model.columns[key] as any)?.dataType === 'date' && !(v instanceof Date)) {
+      const d = new Date(v as string | number);
+      if (!Number.isNaN(d.getTime())) v = d;
+      else continue;
+    }
+    values[key] = v;
   }
   return values;
 }
