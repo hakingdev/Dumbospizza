@@ -94,7 +94,7 @@ export function ProductCardPrice({
 
   if (!loaded) {
     return (
-      <span className="text-xl font-bold text-primary-600">
+      <span className="shrink-0 whitespace-nowrap text-right text-xl font-bold leading-tight text-primary-600">
         {fromLabel} {basePrice.toFixed(2)} €
       </span>
     );
@@ -102,9 +102,9 @@ export function ProductCardPrice({
 
   if (promoPrice != null && promoPrice < basePrice) {
     return (
-      <div className="text-right">
+      <div className="shrink-0 text-right leading-tight">
         <span className="text-sm text-gray-400 line-through block">{basePrice.toFixed(2)} €</span>
-        <span className="text-xl font-bold text-primary-600">
+        <span className="whitespace-nowrap text-xl font-bold text-primary-600">
           {fromLabel} {promoPrice.toFixed(2)} €
         </span>
         {bestPercent != null && (
@@ -116,8 +116,8 @@ export function ProductCardPrice({
 
   if (bogoHint) {
     return (
-      <div className="text-right">
-        <span className="text-xl font-bold text-primary-600">
+      <div className="shrink-0 text-right leading-tight">
+        <span className="whitespace-nowrap text-xl font-bold text-primary-600">
           {fromLabel} {basePrice.toFixed(2)} €
         </span>
         <span className="text-xs text-green-700 block">{bogoHint}</span>
@@ -126,7 +126,7 @@ export function ProductCardPrice({
   }
 
   return (
-    <span className="text-xl font-bold text-primary-600">
+    <span className="shrink-0 whitespace-nowrap text-right text-xl font-bold leading-tight text-primary-600">
       {fromLabel} {basePrice.toFixed(2)} €
     </span>
   );

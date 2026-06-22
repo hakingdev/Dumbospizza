@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   collectParticipatingProductIds,
+  getOfferParticipationFallback,
   loadParticipatingProducts,
 } from '../angebote-page-data';
 
@@ -76,5 +77,32 @@ describe('loadParticipatingProducts — число запросов', () => {
     );
     expect(find).not.toHaveBeenCalled();
     expect(out).toHaveLength(0);
+  });
+});
+
+describe('getOfferParticipationFallback', () => {
+  it('показывает понятный текст для Gratis ab Mindestbestellwert без продуктового таргета', () => {
+    const fallback = getOfferParticipationFallback(
+      makePromo({
+        type: 'gratis_article',
+        gratisTrigger: 'min_order',
+        minOrderAmount: 30,
+        targetItems: [],
+        rewardItems: [],
+      })
+    );
+
+    expect(fallback).toEqual({
+      title: 'Gratis-Angebot',
+      description:
+        'Dieses Angebot gilt ab 30,00 € Mindestbestellwert. Es ist nicht an einzelne Produkte gebunden.',
+    });
+  });
+
+  it('не подменяет продуктовые/BOGO акции фолбэком', () => {
+    expect(getOfferParticipationFallback(makePromo({ type: 'bogo' }))).toBeNull();
+    expect(
+      getOfferParticipationFallback(makePromo({ type: 'gratis_article', gratisTrigger: 'buy_product' }))
+    ).toBeNull();
   });
 });

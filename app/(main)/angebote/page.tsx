@@ -70,7 +70,7 @@ export default async function AngebotePage() {
                 </p>
                 <Link
                   href={`/angebote/${p.slug}`}
-                  className="inline-block bg-primary-600 text-white px-6 py-2 rounded-md hover:bg-primary-700"
+                  className="inline-flex min-h-[40px] items-center justify-center rounded-md bg-primary-600 px-6 py-2 text-center leading-tight text-white hover:bg-primary-700"
                 >
                   Zum Angebot
                 </Link>

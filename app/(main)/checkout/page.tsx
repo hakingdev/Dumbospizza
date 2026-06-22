@@ -830,9 +830,9 @@ export default function CheckoutPage() {
                       type="button"
                       onClick={handleCheckZone}
                       disabled={checkingZone}
-                      className="inline-flex items-center px-4 py-2 border border-primary-600 text-primary-600 rounded-md hover:bg-primary-50 disabled:opacity-50"
+                      className="inline-flex min-h-[40px] items-center justify-center rounded-md border border-primary-600 px-4 py-2 text-center leading-tight text-primary-600 hover:bg-primary-50 disabled:opacity-50"
                     >
-                      {checkingZone ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                      {checkingZone ? <Loader2 className="mr-2 h-4 w-4 shrink-0 animate-spin" /> : null}
                       {t('checkout.check_zone', 'Liefergebiet prüfen')}
                     </button>
 
@@ -1054,10 +1054,10 @@ export default function CheckoutPage() {
                 </div>
               )}
               
-              <div className="flex justify-between">
+              <div className="flex flex-col justify-between gap-3 sm:flex-row">
                 <button 
                   type="button" 
-                  className="border border-gray-300 bg-white text-gray-700 py-2 px-4 rounded-md hover:bg-gray-50 transition-colors disabled:opacity-50"
+                  className="inline-flex min-h-[44px] items-center justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-center leading-tight text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50"
                   onClick={handlePreviousStep}
                   disabled={isSubmitting}
                 >
@@ -1066,7 +1066,7 @@ export default function CheckoutPage() {
                 
                 <button 
                   type="button" 
-                  className="btn-primary flex items-center gap-2 disabled:opacity-50"
+                  className="btn-primary disabled:opacity-50"
                   onClick={handleSubmitOrder}
                   disabled={isSubmitting || orderBlocked}
                 >

@@ -56,42 +56,41 @@ export function Hero() {
                 : t('hero.subtitle_valentine', 'Свежеприготовленная из лучших ингредиентов. Идеально для вашего особенного вечера!')}
             </p>
 
-            <div className="flex flex-col sm:flex-row gap-3 mb-6">
+            <div className="mb-6 flex flex-col gap-3 sm:flex-row">
               <Link
                 href="#menu"
-                className="inline-flex items-center justify-center bg-white hover:bg-gray-100 text-gray-800 py-3.5 px-6 rounded-xl font-bold text-base shadow-md border border-gray-300 transition-all"
+                className="inline-flex min-h-[56px] items-center justify-center whitespace-nowrap rounded-xl border border-gray-300 bg-white px-6 py-3.5 text-center text-base font-bold leading-tight text-gray-800 shadow-md transition-all hover:bg-gray-100"
               >
                 {isDe ? 'Jetzt bestellen' : t('hero.cta_order', 'Заказать сейчас')}
-                <ArrowRight className="ml-2 h-5 w-5" />
+                <ArrowRight className="ml-2 h-5 w-5 shrink-0" />
               </Link>
               <Link
                 href="/menu"
-                className="inline-flex items-center justify-center border-2 border-white text-white bg-white/10 py-3.5 px-6 rounded-xl font-bold text-base hover:bg-white/20 transition-all"
+                className="inline-flex min-h-[56px] items-center justify-center whitespace-nowrap rounded-xl border-2 border-white bg-white/10 px-6 py-3.5 text-center text-base font-bold leading-tight text-white transition-all hover:bg-white/20"
               >
                 {isDe ? 'Speisekarte ansehen' : t('hero.cta_menu', 'Посмотреть меню')}
               </Link>
             </div>
 
             <div className="grid grid-cols-2 gap-3 max-w-md">
-              <div className="flex items-center gap-2 bg-white/15 rounded-xl px-4 py-3 border border-white/25 backdrop-blur-sm">
-                <Clock className="h-5 w-5 text-white" />
+              <div className="flex min-h-[54px] min-w-0 items-center gap-2 rounded-xl border border-white/25 bg-white/15 px-3 py-3 backdrop-blur-sm sm:px-4">
+                <Clock className="h-5 w-5 shrink-0 text-white" />
                 <span className="font-bold text-white">30-60</span>
-                {/* <Heart className="h-4 w-4 text-white fill-white" /> */}
-                <span className="text-sm text-white">{isDe ? 'Minuten' : t('hero.minutes', 'минут')}</span>
+                <span className="min-w-0 truncate text-sm text-white">{isDe ? 'Minuten' : t('hero.minutes', 'минут')}</span>
               </div>
-              <div className="flex items-center gap-2 bg-white/15 rounded-xl px-4 py-3 border border-white/25 backdrop-blur-sm">
-                <Package className="h-5 w-5 text-white" />
+              <div className="flex min-h-[54px] min-w-0 items-center gap-2 rounded-xl border border-white/25 bg-white/15 px-3 py-3 backdrop-blur-sm sm:px-4">
+                <Package className="h-5 w-5 shrink-0 text-white" />
                 <span className="font-bold text-white">ab 20€</span>
-                <span className="text-sm text-white">{isDe ? '' : t('hero.free_from', 'от 20€')}</span>
+                <span className="min-w-0 truncate text-sm text-white">{isDe ? '' : t('hero.free_from', 'от 20€')}</span>
               </div>
-              <div className="flex items-center gap-2 bg-white/15 rounded-xl px-4 py-3 border border-white/25 backdrop-blur-sm">
+              <div className="flex min-h-[54px] min-w-0 items-center gap-2 rounded-xl border border-white/25 bg-white/15 px-3 py-3 backdrop-blur-sm sm:px-4">
                 {/* <Heart className="h-5 w-5 text-white fill-white" /> */}
                 <span className="font-bold text-white">4.8</span>
-                <span className="text-sm text-white">{isDe ? 'Bewertung' : t('hero.rating', 'рейтинг')}</span>
+                <span className="min-w-0 truncate text-sm text-white">{isDe ? 'Bewertung' : t('hero.rating', 'рейтинг')}</span>
               </div>
-              <div className="flex items-center gap-2 bg-white/15 rounded-xl px-4 py-3 border border-white/25 backdrop-blur-sm">
+              <div className="flex min-h-[54px] min-w-0 items-center gap-2 rounded-xl border border-white/25 bg-white/15 px-3 py-3 backdrop-blur-sm sm:px-4">
                 <span className="font-bold text-white">17-21:30</span>
-                <span className="text-sm text-white">{isDe ? 'Lieferung' : t('hero.badge_delivery', 'доставка')}</span>
+                <span className="min-w-0 truncate text-sm text-white">{isDe ? 'Lieferung' : t('hero.badge_delivery', 'доставка')}</span>
               </div>
             </div>
           </motion.div>

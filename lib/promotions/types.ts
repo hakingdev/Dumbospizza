@@ -146,6 +146,7 @@ export interface PromotionPublicView {
   name: string;
   description?: string;
   type: PromotionType;
+  gratisTrigger?: GratisTrigger;
   lifecycle: PromotionLifecycle;
   validFrom: string;
   validTo: string;

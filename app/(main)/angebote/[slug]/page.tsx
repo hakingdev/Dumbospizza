@@ -7,7 +7,10 @@ import { connectToDatabase } from '../../../../lib/models';
 import { Promotion } from '../../../../lib/models/promotion.model';
 import { Product } from '../../../../lib/models/product.model';
 import { toPromotionPublicView } from '../../../../lib/promotions/serialize';
-import { loadParticipatingProducts } from '../../../../lib/promotions/angebote-page-data';
+import {
+  getOfferParticipationFallback,
+  loadParticipatingProducts,
+} from '../../../../lib/promotions/angebote-page-data';
 
 // ISR: страница акции кэшируется и ревалидируется (товары/акция меняются редко).
 // Раньше был force-dynamic → каждый заход = 3 запроса к удалённой БД, отсюда долгая загрузка.
@@ -44,6 +47,7 @@ export default async function AngebotDetailPage({ params }: Props) {
   const participatingProducts = await loadParticipatingProducts(p, (query) =>
     Product.find(query).select('name image basePrice').lean() as any
   );
+  const participationFallback = getOfferParticipationFallback(p);
 
   return (
     <div className="container mx-auto px-4 py-10 max-w-4xl">
@@ -101,9 +105,19 @@ export default async function AngebotDetailPage({ params }: Props) {
         </section>
       )}
 
+      {participatingProducts.length === 0 && participationFallback && (
+        <section className="mb-10">
+          <h2 className="text-xl font-bold mb-4">Bedingung</h2>
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-emerald-900">
+            <div className="font-semibold">{participationFallback.title}</div>
+            <p className="mt-1 text-sm leading-6">{participationFallback.description}</p>
+          </div>
+        </section>
+      )}
+
       <Link
         href="/menu"
-        className="inline-block bg-primary-600 text-white px-8 py-3 rounded-md hover:bg-primary-700 font-medium"
+        className="inline-flex min-h-[48px] items-center justify-center rounded-md bg-primary-600 px-8 py-3 text-center font-medium leading-tight text-white hover:bg-primary-700"
       >
         Jetzt bestellen
       </Link>

@@ -73,12 +73,12 @@ export default function CategoryPage() {
 
   return (
     <div className="container mx-auto px-4 py-12">
-      <Link href="/" className="inline-flex items-center text-primary-600 hover:text-primary-700 mb-6">
-        <ChevronLeft className="w-5 h-5 mr-1" />
+      <Link href="/" className="mb-6 inline-flex max-w-full items-center gap-1 leading-tight text-primary-600 hover:text-primary-700">
+        <ChevronLeft className="h-5 w-5 shrink-0" />
         {t('common.back', 'Назад')}
       </Link>
       
-      <h1 className="text-4xl font-bold mb-8">{categoryTitle}</h1>
+      <h1 className="mb-8 break-words text-4xl font-bold leading-tight">{categoryTitle}</h1>
       
       {products.length === 0 ? (
         <div className="text-center py-20">

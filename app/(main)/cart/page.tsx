@@ -112,8 +112,8 @@ export default function CartPage() {
   
   return (
     <div className="container mx-auto px-4 py-8">
-      <Link href="/menu" className="flex items-center text-primary-600 mb-6">
-        <ChevronLeft className="w-5 h-5 mr-1" />
+      <Link href="/menu" className="mb-6 inline-flex max-w-full items-center gap-1 leading-tight text-primary-600">
+        <ChevronLeft className="h-5 w-5 shrink-0" />
         {t('cart.back_to_menu', 'Вернуться к меню')}
       </Link>
       
@@ -144,11 +144,12 @@ export default function CartPage() {
                       </div>
                       
                       <div className="flex-1">
-                        <div className="flex justify-between">
-                          <h3 className="text-lg font-semibold">{item.name}</h3>
+                        <div className="flex items-start justify-between gap-3">
+                          <h3 className="min-w-0 break-words text-lg font-semibold leading-tight">{item.name}</h3>
                           <button 
-                            className="text-gray-400 hover:text-red-500 transition-colors"
+                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-gray-400 transition-colors hover:bg-red-50 hover:text-red-500"
                             onClick={() => removeItem(item.id)}
+                            aria-label={t('cart.remove_item', 'Удалить')}
                           >
                             <Trash2 className="w-5 h-5" />
                           </button>
@@ -255,14 +256,14 @@ export default function CartPage() {
                     <button
                       type="button"
                       onClick={() => removeCoupon()}
-                      className="flex-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                      className="inline-flex min-h-[40px] flex-1 items-center justify-center rounded-md border border-gray-300 bg-white px-3 py-2 text-center text-xs font-medium leading-tight text-gray-700 hover:bg-gray-50"
                     >
                       Angebot behalten
                     </button>
                     <button
                       type="button"
                       onClick={() => setConflictBannerDismissed(true)}
-                      className="flex-1 rounded-md bg-primary-600 px-3 py-2 text-xs font-medium text-white hover:bg-primary-700"
+                      className="inline-flex min-h-[40px] flex-1 items-center justify-center rounded-md bg-primary-600 px-3 py-2 text-center text-xs font-medium leading-tight text-white hover:bg-primary-700"
                     >
                       Promo-Code anwenden
                     </button>
@@ -274,7 +275,7 @@ export default function CartPage() {
                 <button
                   type="button"
                   onClick={() => setShowBogoModal(true)}
-                  className="w-full mb-4 flex items-center gap-3 p-3 rounded-lg border-2 border-orange-400 bg-orange-50 text-orange-800 hover:bg-orange-100 transition-colors text-left"
+                  className="mb-4 flex min-h-[56px] w-full items-center gap-3 rounded-lg border-2 border-orange-400 bg-orange-50 p-3 text-left leading-tight text-orange-800 transition-colors hover:bg-orange-100"
                 >
                   <Percent className="h-5 w-5 shrink-0" />
                   <span className="text-sm font-medium">
@@ -287,7 +288,7 @@ export default function CartPage() {
                 <button
                   type="button"
                   onClick={() => setShowGiftModal(true)}
-                  className="w-full mb-4 flex items-center gap-3 p-3 rounded-lg border-2 border-emerald-400 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 transition-colors text-left"
+                  className="mb-4 flex min-h-[56px] w-full items-center gap-3 rounded-lg border-2 border-emerald-400 bg-emerald-50 p-3 text-left leading-tight text-emerald-800 transition-colors hover:bg-emerald-100"
                 >
                   <Gift className="h-5 w-5 shrink-0" />
                   <span className="text-sm font-medium">

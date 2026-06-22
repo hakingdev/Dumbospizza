@@ -2,48 +2,23 @@
 
 import Link from 'next/link'
 import { useState, useEffect } from 'react'
-import { ShoppingCart, Menu, X, User, Phone, MapPin, ChevronDown } from 'lucide-react'
+import { ShoppingCart, Menu, X, User, Phone } from 'lucide-react'
 import { useLanguage } from '../lib/contexts/LanguageContext'
 import { loadTranslation } from '../lib/i18n'
 import { useCart } from '../lib/contexts/CartContext'
 import { CartModal } from './cart/CartModal'
+import { DEFAULT_STORE_PHONE, phoneToTelHref } from '../lib/store-phone'
 
 export function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [isCityModalOpen, setIsCityModalOpen] = useState(false);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isCartModalOpen, setIsCartModalOpen] = useState(false);
-  const [selectedCity, setSelectedCity] = useState('Bad Kissingen');
-  const [cities, setCities] = useState<string[]>([]);
   const [storeInfo, setStoreInfo] = useState({
-    phone: '022 210-210',
+    phone: DEFAULT_STORE_PHONE,
   });
   const { language } = useLanguage();
   const [t, setT] = useState<any>(() => (k: string) => k);
   const { cartItemsCount } = useCart();
-  
-  useEffect(() => {
-    const loadCities = async () => {
-      try {
-        const response = await fetch('/api/delivery-zones');
-        const data = await response.json();
-        if (data.success) {
-          const zoneNames = (data.zones || []).map((zone: any) => zone.name);
-          setCities(zoneNames);
-          const saved = localStorage.getItem('selectedCity');
-          if (saved && zoneNames.includes(saved)) {
-            setSelectedCity(saved);
-          } else if (zoneNames.length > 0) {
-            setSelectedCity(zoneNames[0]);
-          }
-        }
-      } catch (error) {
-        console.error('Error loading delivery zones:', error);
-      }
-    };
-
-    loadCities();
-  }, []);
   
   useEffect(() => {
     // Инициализация перевода
@@ -61,7 +36,7 @@ export function Header() {
         const response = await fetch('/api/settings/store', { cache: 'no-store' });
         const data = await response.json();
         if (data.success && data.settings) {
-          const phone = data.settings.phone || data.settings.supportPhone || '022 210-210';
+          const phone = data.settings.phone || data.settings.supportPhone || DEFAULT_STORE_PHONE;
           setStoreInfo({ phone });
         }
       } catch (error) {
@@ -71,36 +46,20 @@ export function Header() {
 
     loadStoreSettings();
   }, []);
-  
-  const handleCitySelect = (city: string) => {
-    setSelectedCity(city);
-    setIsCityModalOpen(false);
-    localStorage.setItem('selectedCity', city);
-  };
-  
+
   return (
     <>
       <header className="bg-white shadow-md sticky top-0 z-50">
         {/* Top bar */}
         <div className="bg-primary-600 text-white py-2">
           <div className="container mx-auto px-4">
-            <div className="flex justify-between items-center text-sm">
-              <div className="flex items-center space-x-4">
-                <button 
-                  onClick={() => setIsCityModalOpen(true)}
-                  className="flex items-center hover:text-primary-100 transition-colors"
-                >
-                  <MapPin className="h-4 w-4 mr-1" />
-                  <span className="font-medium">{selectedCity}</span>
-                  <ChevronDown className="h-4 w-4 ml-1" />
-                </button>
-              </div>
-              <div className="hidden md:flex items-center space-x-4">
-                <a href={`tel:${storeInfo.phone}`} className="flex items-center hover:text-primary-100 transition-colors">
-                  <Phone className="h-4 w-4 mr-1" />
+            <div className="flex items-center justify-center text-center text-sm sm:justify-end sm:text-left">
+              <div className="flex min-w-0 items-center justify-center gap-4 sm:justify-end">
+                <a href={phoneToTelHref(storeInfo.phone)} className="hidden items-center whitespace-nowrap transition-colors hover:text-primary-100 sm:flex">
+                  <Phone className="mr-1 h-4 w-4 shrink-0" />
                   <span className="font-medium">{storeInfo.phone}</span>
                 </a>
-                <span>{t('header.hours', 'с 17:00 до 21:30 каждый день')}</span>
+                <span className="min-w-0 leading-tight">{t('header.hours', 'с 17:00 до 21:30 каждый день')}</span>
               </div>
             </div>
           </div>
@@ -108,10 +67,10 @@ export function Header() {
         
         {/* Main header */}
         <div className="container mx-auto px-4">
-          <div className="flex items-center justify-between h-16">
+          <div className="flex h-16 items-center justify-between gap-3">
             {/* Logo */}
-            <Link href="/" className="flex items-center">
-              <div className="font-bold text-2xl text-primary-600">
+            <Link href="/" className="flex min-w-0 items-center">
+              <div className="truncate text-xl font-bold text-primary-600 sm:text-2xl">
                 🍕 <span className="text-gray-900">Dumbos</span>
                 <span className="text-primary-600">Pizza</span>
               </div>
@@ -134,10 +93,10 @@ export function Header() {
             </nav>
             
             {/* Action Buttons */}
-            <div className="flex items-center space-x-4">
+            <div className="flex shrink-0 items-center gap-2 sm:gap-3">
               <button 
                 onClick={() => setIsLoginModalOpen(true)}
-                className="hidden md:flex items-center text-gray-700 hover:text-primary-600 transition-colors"
+                className="hidden h-12 w-12 items-center justify-center rounded-full text-gray-700 transition-colors hover:bg-primary-50 hover:text-primary-600 md:flex"
                 title={t('nav.login', 'Войти')}
               >
                 <User className="h-6 w-6" />
@@ -157,9 +116,10 @@ export function Header() {
               </button>
               
               {/* Mobile menu button */}
-              <button 
-                className="lg:hidden text-gray-700 hover:text-primary-600 p-2"
+              <button
+                className="flex h-12 w-12 items-center justify-center rounded-full text-gray-700 transition-colors hover:bg-primary-50 hover:text-primary-600 lg:hidden"
                 onClick={() => setIsMenuOpen(!isMenuOpen)}
+                aria-label={t('nav.menu_toggle', 'Menü')}
               >
                 {isMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
               </button>
@@ -193,70 +153,14 @@ export function Header() {
                 <User className="h-5 w-5 mr-2" />
                 {t('nav.login', 'Войти')}
               </button>
-              <a href="tel:+4997199999" className="flex items-center text-primary-600 hover:text-primary-700 py-2 font-medium">
+              <a href={phoneToTelHref(storeInfo.phone)} className="flex items-center text-primary-600 hover:text-primary-700 py-2 font-medium">
                 <Phone className="h-5 w-5 mr-2" />
-                <span>022 210-210</span>
+                <span>{storeInfo.phone}</span>
               </a>
             </nav>
           </div>
         )}
       </header>
-      
-      {/* City Selection Modal */}
-      {isCityModalOpen && (
-        <>
-          <div 
-            className="modal-backdrop"
-            onClick={() => setIsCityModalOpen(false)}
-          />
-          <div className="modal-content">
-            <div className="p-6">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-2xl font-bold text-gray-900">
-                  {t('city_modal.title', 'Где вы находитесь?')}
-                </h2>
-                <button 
-                  onClick={() => setIsCityModalOpen(false)}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <X className="h-6 w-6" />
-                </button>
-              </div>
-              <p className="text-gray-600 mb-6">
-                {t('city_modal.subtitle', 'Выберите город для правильного расчета доставки')}
-              </p>
-              <div className="space-y-2">
-                {cities.length === 0 ? (
-                  <div className="text-sm text-gray-500">
-                    {t('city_modal.empty', 'Список районов пока пуст')}
-                  </div>
-                ) : (
-                  cities.map((city) => (
-                    <button
-                      key={city}
-                      onClick={() => handleCitySelect(city)}
-                      className={`w-full text-left px-4 py-3 rounded-lg border-2 transition-all ${
-                        selectedCity === city
-                          ? 'border-primary-600 bg-primary-50 text-primary-700 font-medium'
-                          : 'border-gray-200 hover:border-primary-300 hover:bg-gray-50'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-medium">{city}</span>
-                        {selectedCity === city && (
-                          <svg className="h-5 w-5 text-primary-600" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                          </svg>
-                        )}
-                      </div>
-                    </button>
-                  ))
-                )}
-              </div>
-            </div>
-          </div>
-        </>
-      )}
       
       {/* Login Modal */}
       {isLoginModalOpen && (

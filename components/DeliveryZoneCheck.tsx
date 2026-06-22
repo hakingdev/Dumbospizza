@@ -147,7 +147,7 @@ export default function DeliveryZoneCheck() {
                       <button
                         onClick={checkDeliveryZone}
                         disabled={checking}
-                        className="w-full bg-primary-600 text-white py-3 rounded-lg hover:bg-primary-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed font-medium"
+                        className="inline-flex min-h-[48px] w-full items-center justify-center rounded-lg bg-primary-600 px-4 py-3 text-center font-medium leading-tight text-white transition-colors hover:bg-primary-700 disabled:cursor-not-allowed disabled:bg-gray-300"
                       >
                         {checking ? t('delivery_check.checking', 'Проверка...') : t('delivery_check.check', 'Проверить адрес')}
                       </button>
@@ -237,5 +237,4 @@ export default function DeliveryZoneCheck() {
     </Transition>
   );
 }
-
 

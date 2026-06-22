@@ -7,10 +7,11 @@ import { useLanguage } from '../lib/contexts/LanguageContext'
 import { loadTranslation } from '../lib/i18n'
 import { getCookie } from 'cookies-next'
 import { cookieName } from '../lib/i18n-config'
+import { DEFAULT_STORE_PHONE, phoneToTelHref } from '../lib/store-phone'
 
 const DEFAULT_STORE_INFO = {
   address: 'Kurhausstraße 11A, 97688 Bad Kissingen',
-  phone: '+49 971 99999',
+  phone: DEFAULT_STORE_PHONE,
   email: 'info@dumbospizza.de',
   facebook: '',
   instagram: ''
@@ -76,9 +77,9 @@ export function Footer() {
       <div className="container mx-auto px-4 py-12">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
           {/* Company Info */}
-          <div>
+          <div className="min-w-0">
             <h3 className="text-white text-lg font-semibold mb-4">Dumbos Pizza</h3>
-            <p className="mb-4">
+            <p className="mb-4 break-words">
               {t('footer.description', fallback('Лучшая пицца в Bad Kissingen с доставкой на дом или в офис.', 'Die beste Pizza in Bad Kissingen mit Lieferung nach Hause oder ins Büro.'))}
             </p>
             <div className="flex space-x-4">
@@ -112,7 +113,7 @@ export function Footer() {
           </div>
           
           {/* Navigation */}
-          <div>
+          <div className="min-w-0">
             <h3 className="text-white text-lg font-semibold mb-4">{t('footer.menu_title', fallback('Меню', 'Speisekarte'))}</h3>
             <ul className="space-y-2">
               <li>
@@ -122,7 +123,7 @@ export function Footer() {
               </li>
               {categories.map((category) => (
                 <li key={category._id || category.slug}>
-                  <Link href={`/category/${category.slug}`} className="hover:text-white">
+                  <Link href={`/category/${category.slug}`} className="break-words hover:text-white">
                     {category.name}
                   </Link>
                 </li>
@@ -131,7 +132,7 @@ export function Footer() {
           </div>
           
           {/* Information */}
-          <div>
+          <div className="min-w-0">
             <h3 className="text-white text-lg font-semibold mb-4">{t('footer.info_title', fallback('Информация', 'Information'))}</h3>
             <ul className="space-y-2">
               <li>
@@ -168,24 +169,24 @@ export function Footer() {
           </div>
           
           {/* Contact */}
-          <div>
+          <div className="min-w-0">
             <h3 className="text-white text-lg font-semibold mb-4">{t('footer.contacts_title', fallback('Контакты', 'Kontakt'))}</h3>
             <ul className="space-y-3">
-              <li className="flex items-start">
+              <li className="flex min-w-0 items-start">
                 <MapPin className="h-5 w-5 mr-2 mt-0.5 flex-shrink-0" />
-                <span>{storeInfo.address}</span>
+                <span className="min-w-0 break-words">{storeInfo.address}</span>
               </li>
-              <li className="flex items-center">
+              <li className="flex min-w-0 items-center">
                 <Phone className="h-5 w-5 mr-2 flex-shrink-0" />
-                <a href={`tel:${storeInfo.phone}`} className="hover:text-white">{storeInfo.phone}</a>
+                <a href={phoneToTelHref(storeInfo.phone)} className="min-w-0 break-words hover:text-white">{storeInfo.phone}</a>
               </li>
-              <li className="flex items-center">
+              <li className="flex min-w-0 items-center">
                 <Mail className="h-5 w-5 mr-2 flex-shrink-0" />
-                <a href={`mailto:${storeInfo.email}`} className="hover:text-white">{storeInfo.email}</a>
+                <a href={`mailto:${storeInfo.email}`} className="min-w-0 break-all hover:text-white">{storeInfo.email}</a>
               </li>
-              <li className="flex items-center">
+              <li className="flex min-w-0 items-center">
                 <Clock className="h-5 w-5 mr-2 flex-shrink-0" />
-                <span>{t('header.hours', fallback('с 17:00 до 21:30 каждый день', 'Täglich 17:00 - 21:30'))}</span>
+                <span className="min-w-0 break-words">{t('header.hours', fallback('с 17:00 до 21:30 каждый день', 'Täglich 17:00 - 21:30'))}</span>
               </li>
             </ul>
           </div>

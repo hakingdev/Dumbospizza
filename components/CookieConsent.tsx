@@ -30,8 +30,8 @@ export default function CookieConsent() {
 
   return (
     <div className="fixed inset-x-0 bottom-0 z-50 bg-white border-t border-gray-200 shadow-lg">
-      <div className="max-w-6xl mx-auto px-4 py-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div className="text-sm text-gray-700">
+      <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-4 md:flex-row md:items-center md:justify-between">
+        <div className="min-w-0 text-sm leading-relaxed text-gray-700">
           Wir verwenden Cookies, um unsere Website bereitzustellen und Ihr Nutzererlebnis zu verbessern.
           Mehr Informationen finden Sie in unserer{' '}
           <Link href="/datenschutz" className="text-primary-600 underline">
@@ -39,18 +39,18 @@ export default function CookieConsent() {
           </Link>
           .
         </div>
-        <div className="flex items-center gap-2">
+        <div className="grid w-full grid-cols-2 items-center gap-2 sm:flex sm:w-auto">
           <button
             type="button"
             onClick={handleDecline}
-            className="px-4 py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 text-sm"
+            className="inline-flex min-h-[42px] items-center justify-center whitespace-nowrap rounded-md border border-gray-300 px-4 py-2 text-center text-sm font-medium leading-tight text-gray-700 hover:bg-gray-50 sm:min-w-[112px]"
           >
             Ablehnen
           </button>
           <button
             type="button"
             onClick={handleAccept}
-            className="px-4 py-2 rounded-md bg-primary-600 text-white hover:bg-primary-700 text-sm"
+            className="inline-flex min-h-[42px] items-center justify-center whitespace-nowrap rounded-md bg-primary-600 px-4 py-2 text-center text-sm font-medium leading-tight text-white hover:bg-primary-700 sm:min-w-[142px]"
           >
             Alle akzeptieren
           </button>
@@ -59,4 +59,3 @@ export default function CookieConsent() {
     </div>
   );
 }
-

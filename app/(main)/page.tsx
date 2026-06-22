@@ -50,11 +50,11 @@ function CategorySectionWrapper({
   return (
     <section className={`py-12 bg-white`}>
       <div className="container mx-auto px-4">
-        <div className="flex justify-between items-center mb-8">
-          <h2 className="text-3xl md:text-4xl font-bold text-gray-900">{title}</h2>
-          <Link href={category.href} className="text-primary-600 hover:text-primary-700 font-medium flex items-center">
-            {t('home.view_all', 'Все')} {title.toLowerCase()}
-            <svg className="w-5 h-5 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <h2 className="min-w-0 text-3xl font-bold text-gray-900 md:text-4xl">{title}</h2>
+          <Link href={category.href} className="inline-flex max-w-full shrink-0 items-center gap-1 self-start text-sm font-medium leading-tight text-primary-600 hover:text-primary-700 sm:text-base">
+            <span className="truncate">{t('home.view_all', 'Все')} {title.toLowerCase()}</span>
+            <svg className="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
             </svg>
           </Link>
@@ -150,15 +150,15 @@ export default function Home() {
       {/* Categories Section — как на скрине: слева Kategorien, справа Valentinstag Specials */}
       <section id="menu" className="py-12 bg-white">
         <div className="container mx-auto px-4">
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-2xl md:text-3xl font-bold text-black">{t('home.categories', 'Kategorien')}</h2>
+          <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <h2 className="min-w-0 text-2xl font-bold text-black md:text-3xl">{t('home.categories', 'Kategorien')}</h2>
             {!valentineLoading && valentineProducts.length > 0 && (
               <Link
                 href="/menu"
-                className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-rose-500 text-white font-bold shadow-md hover:bg-rose-600 transition-all"
+                className="inline-flex min-h-[48px] max-w-full items-center justify-center gap-2 self-start rounded-xl bg-rose-500 px-5 py-3 text-center font-bold leading-tight text-white shadow-md transition-all hover:bg-rose-600"
               >
-                <Heart className="h-5 w-5 fill-current" />
-                {t('home.valentinstag_specials', 'Valentinstag Specials')}
+                <Heart className="h-5 w-5 shrink-0 fill-current" />
+                <span className="truncate">{t('home.valentinstag_specials', 'Valentinstag Specials')}</span>
               </Link>
             )}
           </div>
@@ -181,7 +181,7 @@ export default function Home() {
                       ) : (
                         <div className="text-4xl mb-2">{icon}</div>
                       )}
-                      <span className="text-sm font-bold text-gray-900">{title}</span>
+                      <span className="max-w-full px-2 text-center text-sm font-bold leading-tight text-gray-900 line-clamp-2">{title}</span>
                     </div>
                   </div>
                 </Link>
@@ -195,16 +195,16 @@ export default function Home() {
       {!valentineLoading && valentineProducts.length > 0 && (
         <section className="py-12 bg-rose-50/50">
           <div className="container mx-auto px-4">
-            <div className="flex justify-between items-center mb-8">
-              <h2 className="text-3xl md:text-4xl font-bold text-gray-900 flex items-center gap-2">
-                <span className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-rose-500 text-white">
-                  <Heart className="h-6 w-6 fill-current" />
-                  {t('home.valentinstag_specials', 'Valentinstag Specials')}
+            <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <h2 className="min-w-0 text-2xl font-bold text-gray-900 md:text-4xl">
+                <span className="inline-flex max-w-full items-center gap-2 rounded-xl bg-rose-500 px-4 py-2 text-white">
+                  <Heart className="h-6 w-6 shrink-0 fill-current" />
+                  <span className="truncate">{t('home.valentinstag_specials', 'Valentinstag Specials')}</span>
                 </span>
               </h2>
-              <Link href="/menu" className="text-rose-600 hover:text-rose-700 font-medium flex items-center">
-                {t('home.all_menu', 'Все меню')}
-                <svg className="w-5 h-5 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <Link href="/menu" className="inline-flex shrink-0 items-center gap-1 self-start text-sm font-medium leading-tight text-rose-600 hover:text-rose-700 sm:text-base">
+                <span>{t('home.all_menu', 'Все меню')}</span>
+                <svg className="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                 </svg>
               </Link>
@@ -229,11 +229,11 @@ export default function Home() {
       {/* Featured Products */}
       <section className="py-12">
         <div className="container mx-auto px-4">
-          <div className="flex justify-between items-center mb-8">
-            <h2 className="text-3xl md:text-4xl font-bold text-gray-900">{t('home.popular', 'Популярные блюда')}</h2>
-            <Link href="/menu" className="text-primary-600 hover:text-primary-700 font-medium flex items-center">
-              {t('home.all_menu', 'Все меню')}
-              <svg className="w-5 h-5 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <h2 className="min-w-0 text-3xl font-bold text-gray-900 md:text-4xl">{t('home.popular', 'Популярные блюда')}</h2>
+            <Link href="/menu" className="inline-flex shrink-0 items-center gap-1 self-start text-sm font-medium leading-tight text-primary-600 hover:text-primary-700 sm:text-base">
+              <span>{t('home.all_menu', 'Все меню')}</span>
+              <svg className="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
               </svg>
             </Link>
@@ -304,9 +304,9 @@ export default function Home() {
             <p className="text-lg md:text-xl mb-8 text-white/90">
               {t('home.loyalty.text', 'Накапливайте баллы за каждый заказ и получайте скидки на будущие покупки! Просто укажите свой номер телефона при оформлении заказа.')}
             </p>
-            <Link href="/profile" className="inline-flex items-center bg-white text-primary-700 py-4 px-8 rounded-xl font-bold text-lg hover:bg-gray-100 transition-all shadow-xl hover:shadow-2xl">
-              {t('home.loyalty.cta', 'Узнать больше')}
-              <svg className="w-5 h-5 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <Link href="/profile" className="inline-flex min-h-[56px] items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-white px-8 py-4 text-center text-lg font-bold leading-tight text-primary-700 shadow-xl transition-all hover:bg-gray-100 hover:shadow-2xl">
+              <span>{t('home.loyalty.cta', 'Узнать больше')}</span>
+              <svg className="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
               </svg>
             </Link>
@@ -324,9 +324,9 @@ export default function Home() {
               <p className="text-gray-600 mb-6">
                 {t('home.info.delivery_text', 'Доставляем пиццу в любой район города. Минимальная сумма заказа зависит от района. Бесплатная доставка от 30€.')}
               </p>
-              <Link href="/delivery" className="inline-flex items-center text-primary-600 hover:text-primary-700 font-bold">
-                {t('home.info.delivery_cta', 'Посмотреть зоны')}
-                <svg className="w-5 h-5 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <Link href="/delivery" className="inline-flex max-w-full items-center gap-1 font-bold leading-tight text-primary-600 hover:text-primary-700">
+                <span className="truncate">{t('home.info.delivery_cta', 'Посмотреть зоны')}</span>
+                <svg className="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                 </svg>
               </Link>
@@ -338,9 +338,9 @@ export default function Home() {
               <p className="text-white/90 mb-6">
                 {t('home.info.track_text', 'Следите за статусом вашего заказа в реальном времени. Получайте уведомления о каждом этапе приготовления и доставки.')}
               </p>
-              <Link href="/track" className="inline-flex items-center bg-white text-primary-700 py-3 px-6 rounded-lg font-bold hover:bg-gray-100 transition-all">
-                {t('home.info.track_cta', 'Отследить')}
-                <svg className="w-5 h-5 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <Link href="/track" className="inline-flex min-h-[48px] items-center justify-center gap-1 whitespace-nowrap rounded-lg bg-white px-6 py-3 text-center font-bold leading-tight text-primary-700 transition-all hover:bg-gray-100">
+                <span>{t('home.info.track_cta', 'Отследить')}</span>
+                <svg className="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                 </svg>
               </Link>

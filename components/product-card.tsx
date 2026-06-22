@@ -47,7 +47,7 @@ export function ProductCard({ product }: ProductCardProps) {
   
   return (
     <div 
-      className={`group card relative overflow-hidden rounded-2xl ${product.valentinePromo ? 'bg-rose-100 border-2 border-rose-200 shadow-md' : ''}`}
+      className={`group card relative flex h-full flex-col overflow-hidden rounded-2xl ${product.valentinePromo ? 'bg-rose-100 border-2 border-rose-200 shadow-md' : ''}`}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
@@ -82,12 +82,12 @@ export function ProductCard({ product }: ProductCardProps) {
         </button>
       </div>
       
-      <div className={`px-2 ${product.valentinePromo ? 'pb-2' : ''}`}>
-        <div className="flex items-start justify-between mb-2">
-          <h3 className="text-lg font-bold text-gray-900 flex items-center gap-1">
-            {product.name}
+      <div className={`flex flex-1 flex-col px-2 ${product.valentinePromo ? 'pb-2' : ''}`}>
+        <div className="mb-2 flex min-h-[3.25rem] items-start justify-between gap-3">
+          <h3 className="flex min-w-0 items-start gap-1 text-lg font-bold leading-tight text-gray-900">
+            <span className="min-w-0 break-words">{product.name}</span>
             {product.valentinePromo && (
-              <span className="text-rose-500" title="Valentinstag Special">❤️</span>
+              <span className="shrink-0 text-rose-500" title="Valentinstag Special">❤️</span>
             )}
           </h3>
           <ProductCardPrice
@@ -98,14 +98,14 @@ export function ProductCard({ product }: ProductCardProps) {
           />
         </div>
         
-        <p className="text-gray-600 text-sm mb-4 line-clamp-2">{product.description}</p>
+        <p className="mb-4 min-h-[2.5rem] text-sm leading-5 text-gray-600 line-clamp-2">{product.description}</p>
         
         <button 
           onClick={handleOpenModal}
-          className="w-full bg-primary-600 text-white py-3 px-4 rounded-lg hover:bg-primary-700 transition-all font-medium shadow-md hover:shadow-lg flex items-center justify-center space-x-2"
+          className="mt-auto flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg bg-primary-600 px-4 py-3 text-center font-medium leading-tight text-white shadow-md transition-all hover:bg-primary-700 hover:shadow-lg"
         >
-          <ShoppingCart className="h-5 w-5" />
-          <span>{t('product_card.choose_options', 'Выбрать опции')}</span>
+          <ShoppingCart className="h-5 w-5 shrink-0" />
+          <span className="min-w-0">{t('product_card.choose_options', 'Выбрать опции')}</span>
         </button>
       </div>
       

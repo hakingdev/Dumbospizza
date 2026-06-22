@@ -444,7 +444,7 @@ export default function ProfilePage() {
                   <p className="text-gray-500">
                     {t('profile.all_orders_here')}
                   </p>
-                  <Link href="/" className="mt-4 inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700">
+                  <Link href="/" className="mt-4 inline-flex min-h-[40px] items-center justify-center rounded-md border border-transparent bg-primary-600 px-4 py-2 text-center text-sm font-medium leading-tight text-white shadow-sm hover:bg-primary-700">
                     {t('profile.go_to_menu')}
                   </Link>
                 </div>

@@ -91,13 +91,13 @@ export default function GiftThresholdReminder() {
           <Link
             href="/menu"
             onClick={() => setOpen(false)}
-            className="w-full bg-primary-600 text-white py-2.5 rounded-lg hover:bg-primary-700 font-semibold"
+            className="inline-flex min-h-[44px] w-full items-center justify-center rounded-lg bg-primary-600 px-4 py-2.5 text-center font-semibold leading-tight text-white hover:bg-primary-700"
           >
             Weiter bestellen
           </Link>
           <button
             onClick={() => setOpen(false)}
-            className="w-full border border-gray-300 text-gray-600 py-2.5 rounded-lg hover:bg-gray-50"
+            className="inline-flex min-h-[44px] w-full items-center justify-center rounded-lg border border-gray-300 px-4 py-2.5 text-center leading-tight text-gray-600 hover:bg-gray-50"
           >
             Nein, danke
           </button>

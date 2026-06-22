@@ -9,9 +9,35 @@ export interface ParticipatingProduct {
   basePrice: number;
 }
 
+export interface OfferParticipationFallback {
+  title: string;
+  description: string;
+}
+
 type ProductRow = { _id: unknown; name: string; image?: string; basePrice: number };
 /** Запрос товаров (инъекция для тестируемости; в проде — Product.find). */
 export type FindProducts = (query: Record<string, unknown>) => Promise<ProductRow[]>;
+
+function formatEuro(amount: number): string {
+  return `${amount.toLocaleString('de-DE', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })} €`;
+}
+
+export function getOfferParticipationFallback(p: PublicPromo): OfferParticipationFallback | null {
+  if (p.type !== 'gratis_article' || p.gratisTrigger !== 'min_order') return null;
+
+  const threshold =
+    typeof p.minOrderAmount === 'number' && Number.isFinite(p.minOrderAmount) && p.minOrderAmount > 0
+      ? ` ab ${formatEuro(p.minOrderAmount)} Mindestbestellwert`
+      : ' ab Mindestbestellwert';
+
+  return {
+    title: 'Gratis-Angebot',
+    description: `Dieses Angebot gilt${threshold}. Es ist nicht an einzelne Produkte gebunden.`,
+  };
+}
 
 /**
  * Собрать УНИКАЛЬНЫЕ id товаров акции из всех источников таргетинга:

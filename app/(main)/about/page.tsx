@@ -3,10 +3,11 @@
 import { useEffect, useState } from 'react';
 import { useLanguage } from '../../../lib/contexts/LanguageContext';
 import { loadTranslation } from '../../../lib/i18n';
+import { DEFAULT_STORE_PHONE } from '../../../lib/store-phone';
 
 const DEFAULT_STORE_INFO = {
   address: 'Kurhausstraße 11A, 97688 Bad Kissingen',
-  phone: '022 210-210'
+  phone: DEFAULT_STORE_PHONE
 };
 
 export default function AboutPage() {
@@ -46,8 +47,8 @@ export default function AboutPage() {
       <h1 className="text-4xl font-bold mb-8">{t('about.title', 'О нас')}</h1>
       
       <div className="max-w-4xl mx-auto">
-        <div className="bg-white rounded-2xl p-8 shadow-sm mb-8">
-          <h2 className="text-2xl font-bold mb-4">{t('about.company', '🍕 Dumbo Slice Pizza (Dumbos Pizza) — Bad Kissingen')}</h2>
+        <div className="mb-8 rounded-2xl bg-white p-6 shadow-sm sm:p-8">
+          <h2 className="mb-4 break-words text-2xl font-bold leading-tight">{t('about.company', '🍕 Dumbo Slice Pizza (Dumbos Pizza) — Bad Kissingen')}</h2>
           <p className="text-lg text-gray-700 mb-4">
             {t('about.intro', 'Мы — команда профессионалов, которые по-настоящему любят пиццу и хотят делиться этой любовью с вами!')}
           </p>
@@ -79,10 +80,10 @@ export default function AboutPage() {
           </div>
         </div>
 
-        <div className="bg-primary-600 text-white rounded-2xl p-8 text-center">
-          <h2 className="text-3xl font-bold mb-4">{t('about.contact_title', 'Свяжитесь с нами')}</h2>
-          <p className="text-xl mb-2">📞 {storeInfo.phone}</p>
-          <p className="text-lg">📍 {storeInfo.address}</p>
+        <div className="rounded-2xl bg-primary-600 p-6 text-center text-white sm:p-8">
+          <h2 className="mb-4 break-words text-3xl font-bold leading-tight">{t('about.contact_title', 'Свяжитесь с нами')}</h2>
+          <p className="mb-2 break-words text-xl leading-tight">📞 {storeInfo.phone}</p>
+          <p className="break-words text-lg leading-tight">📍 {storeInfo.address}</p>
         </div>
       </div>
     </div>

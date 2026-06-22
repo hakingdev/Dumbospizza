@@ -289,8 +289,8 @@ export default function ProductPage() {
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="container mx-auto px-4">
         {/* Back button */}
-        <Link href="/" className="inline-flex items-center text-primary-600 hover:text-primary-700 mb-6">
-          <ChevronLeft className="h-5 w-5 mr-1" />
+        <Link href="/" className="mb-6 inline-flex max-w-full items-center gap-1 leading-tight text-primary-600 hover:text-primary-700">
+          <ChevronLeft className="h-5 w-5 shrink-0" />
           {t('menu.back_to_menu', 'Назад к меню')}
         </Link>
         
@@ -316,8 +316,8 @@ export default function ProductPage() {
           {/* Product Configuration */}
           <div className="space-y-6">
             <div className="bg-white rounded-2xl p-6 shadow-sm">
-              <h1 className="text-3xl font-bold mb-2">{product.name}</h1>
-              <p className="text-gray-600 mb-4">{product.description}</p>
+              <h1 className="mb-2 break-words text-3xl font-bold leading-tight">{product.name}</h1>
+              <p className="mb-4 break-words text-gray-600">{product.description}</p>
 
               <ProductPromotionsBanner productId={product._id} categoryId={product.category} />
 
@@ -439,9 +439,9 @@ export default function ProductPage() {
                               : 'border-gray-200 hover:border-primary-300'
                           }`}
                         >
-                          <span className="font-medium">{topping.name}</span>
-                          <div className="flex items-center gap-2">
-                            <span className="text-primary-600">+{topping.price.toFixed(2)}€</span>
+                            <span className="min-w-0 break-words text-left font-medium">{topping.name}</span>
+                          <div className="flex shrink-0 items-center gap-2">
+                            <span className="whitespace-nowrap text-primary-600">+{topping.price.toFixed(2)}€</span>
                             {isSelected && <Check className="h-5 w-5 text-primary-600" />}
                           </div>
                         </button>
@@ -469,10 +469,10 @@ export default function ProductPage() {
                               : 'border-gray-200 hover:border-primary-300'
                           }`}
                         >
-                          <span className="font-medium">{sauce.name}</span>
-                          <div className="flex items-center gap-2">
+                          <span className="min-w-0 break-words text-left font-medium">{sauce.name}</span>
+                          <div className="flex shrink-0 items-center gap-2">
                             {sauce.price > 0 && (
-                              <span className="text-primary-600">+{sauce.price.toFixed(2)}€</span>
+                              <span className="whitespace-nowrap text-primary-600">+{sauce.price.toFixed(2)}€</span>
                             )}
                             {isSelected && <Check className="h-5 w-5 text-primary-600" />}
                           </div>
@@ -501,9 +501,9 @@ export default function ProductPage() {
                               : 'border-gray-200 hover:border-primary-300'
                           }`}
                         >
-                          <span className="font-medium">{side.name}</span>
-                          <div className="flex items-center gap-2">
-                            <span className="text-primary-600">+{side.price.toFixed(2)}€</span>
+                          <span className="min-w-0 break-words text-left font-medium">{side.name}</span>
+                          <div className="flex shrink-0 items-center gap-2">
+                            <span className="whitespace-nowrap text-primary-600">+{side.price.toFixed(2)}€</span>
                             {isSelected && <Check className="h-5 w-5 text-primary-600" />}
                           </div>
                         </button>
@@ -554,7 +554,7 @@ export default function ProductPage() {
               <button
                 onClick={handleAddToCart}
                 disabled={isAdding}
-                className="btn-primary w-full flex items-center justify-center gap-2 text-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                className="btn-primary w-full text-lg disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isAdding ? (
                   <>

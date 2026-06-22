@@ -45,6 +45,15 @@ describe('toPromotionPublicView — поля для первого клика', 
     expect(typeof view.validTo).toBe('string'); // сериализовано
   });
 
+  it('передаёт gratisTrigger, чтобы публичная страница могла показать условие min_order', () => {
+    const view = toPromotionPublicView(
+      makeDoc({ type: 'gratis_article', gratisTrigger: 'min_order', minOrderAmount: 30 })
+    );
+
+    expect(view.gratisTrigger).toBe('min_order');
+    expect(view.minOrderAmount).toBe(30);
+  });
+
   it('badgeText подставляется из типа, если не задан', () => {
     const view = toPromotionPublicView(makeDoc({ badgeText: undefined }));
     expect(view.badgeText).toBe('2. 50 %'); // defaultBadgeForType(bogo, half_price)

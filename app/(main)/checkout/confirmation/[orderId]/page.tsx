@@ -92,7 +92,7 @@ export default function OrderConfirmationPage({ params }: OrderConfirmationProps
           </div>
           <h2 className="text-2xl font-semibold mb-4">{t('confirmation.error_title', 'Fehler')}</h2>
           <p className="mb-6">{error}</p>
-          <Link href="/" className="bg-primary-600 text-white px-6 py-3 rounded-lg inline-block hover:bg-primary-700">
+          <Link href="/" className="inline-flex min-h-[48px] items-center justify-center rounded-lg bg-primary-600 px-6 py-3 text-center leading-tight text-white hover:bg-primary-700">
             {t('common.back_home', 'Zur Startseite')}
           </Link>
         </div>
@@ -126,16 +126,16 @@ export default function OrderConfirmationPage({ params }: OrderConfirmationProps
             <p className="font-semibold text-lg">{order.phoneNumber}</p>
           </div>
           
-          <div className="mt-6 flex justify-center space-x-4">
+          <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
             <Link href={`/track?phoneNumber=${encodeURIComponent(order.phoneNumber)}`} 
-                className="flex items-center px-6 py-3 bg-primary-600 hover:bg-primary-700 text-white rounded-lg">
-              <Clock className="w-5 h-5 mr-2" />
-              {t('confirmation.track_order', 'Bestellung verfolgen')}
+                className="inline-flex min-h-[48px] items-center justify-center rounded-lg bg-primary-600 px-6 py-3 text-center leading-tight text-white hover:bg-primary-700">
+              <Clock className="mr-2 h-5 w-5 shrink-0" />
+              <span>{t('confirmation.track_order', 'Bestellung verfolgen')}</span>
             </Link>
             
-            <Link href="/" className="flex items-center px-6 py-3 border border-gray-300 hover:bg-gray-50 rounded-lg">
-              <ArrowRight className="w-5 h-5 mr-2" />
-              {t('confirmation.continue_shopping', 'Weiter einkaufen')}
+            <Link href="/" className="inline-flex min-h-[48px] items-center justify-center rounded-lg border border-gray-300 px-6 py-3 text-center leading-tight hover:bg-gray-50">
+              <ArrowRight className="mr-2 h-5 w-5 shrink-0" />
+              <span>{t('confirmation.continue_shopping', 'Weiter einkaufen')}</span>
             </Link>
           </div>
         </div>

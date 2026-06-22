@@ -10,6 +10,7 @@ export function toPromotionPublicView(doc: PromotionDocument): PromotionPublicVi
     name: doc.name,
     description: doc.description,
     type: doc.type,
+    gratisTrigger: doc.gratisTrigger,
     lifecycle: getPromotionLifecycle(doc),
     validFrom: doc.validFrom.toISOString(),
     validTo: doc.validTo.toISOString(),

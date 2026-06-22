@@ -106,8 +106,8 @@ export default function TrackOrderPage() {
       <div className="bg-white rounded-lg shadow-lg p-6 mb-8">
         <form onSubmit={handleSearch} className="space-y-4">
           <div className="flex flex-col space-y-2">
-            <div className="flex space-x-4">
-              <label className="flex items-center">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+              <label className="flex min-w-0 items-center">
                 <input
                   type="radio"
                   name="searchType"
@@ -116,10 +116,10 @@ export default function TrackOrderPage() {
                   onChange={() => setSearchType('phone')}
                   className="mr-2"
                 />
-                <span>{t('track.search_by_phone', 'Номер телефона')}</span>
+                <span className="min-w-0 leading-tight">{t('track.search_by_phone', 'Номер телефона')}</span>
               </label>
               
-              <label className="flex items-center">
+              <label className="flex min-w-0 items-center">
                 <input
                   type="radio"
                   name="searchType"
@@ -128,7 +128,7 @@ export default function TrackOrderPage() {
                   onChange={() => setSearchType('orderNumber')}
                   className="mr-2"
                 />
-                <span>{t('track.search_by_order', 'Номер заказа')}</span>
+                <span className="min-w-0 leading-tight">{t('track.search_by_order', 'Номер заказа')}</span>
               </label>
             </div>
             
@@ -150,7 +150,7 @@ export default function TrackOrderPage() {
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full bg-primary-600 hover:bg-primary-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors disabled:bg-gray-400"
+            className="inline-flex min-h-[48px] w-full items-center justify-center rounded-lg bg-primary-600 px-6 py-3 text-center font-semibold leading-tight text-white transition-colors hover:bg-primary-700 disabled:bg-gray-400"
           >
             {isLoading ? t('track.searching', 'Поиск...') : t('track.find_order', 'Найти заказ')}
           </button>
@@ -170,8 +170,8 @@ export default function TrackOrderPage() {
           {orders.map(order => (
             <div key={order._id} className="bg-white rounded-lg shadow-lg overflow-hidden">
               <div className="p-6 border-b">
-                <div className="flex justify-between items-start">
-                  <div>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
                     <h3 className="font-semibold text-xl mb-1">
                       {t('order', 'Заказ')} #{order.orderNumber}
                     </h3>
@@ -185,7 +185,7 @@ export default function TrackOrderPage() {
                       })}
                     </p>
                   </div>
-                  <div className="text-right">
+                  <div className="shrink-0 text-left sm:text-right">
                     <span className="inline-block rounded-full px-3 py-1 text-sm font-semibold bg-blue-100 text-blue-800">
                       {t(`track.order_status.${order.status}`, 'Статус')}
                     </span>

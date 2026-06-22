@@ -23,15 +23,15 @@ body {
 
 @layer components {
   .btn-primary {
-    @apply bg-primary-600 text-white py-3 px-6 rounded-lg hover:bg-primary-700 transition-all font-medium shadow-md hover:shadow-lg;
+    @apply inline-flex min-h-[44px] items-center justify-center gap-2 rounded-lg bg-primary-600 px-6 py-3 text-center font-medium leading-tight text-white shadow-md transition-all hover:bg-primary-700 hover:shadow-lg;
   }
   
   .btn-secondary {
-    @apply bg-secondary-600 text-white py-3 px-6 rounded-lg hover:bg-secondary-700 transition-all font-medium shadow-md hover:shadow-lg;
+    @apply inline-flex min-h-[44px] items-center justify-center gap-2 rounded-lg bg-secondary-600 px-6 py-3 text-center font-medium leading-tight text-white shadow-md transition-all hover:bg-secondary-700 hover:shadow-lg;
   }
   
   .btn-outline {
-    @apply border-2 border-primary-600 text-primary-600 py-3 px-6 rounded-lg hover:bg-primary-50 transition-all font-medium;
+    @apply inline-flex min-h-[44px] items-center justify-center gap-2 rounded-lg border-2 border-primary-600 px-6 py-3 text-center font-medium leading-tight text-primary-600 transition-all hover:bg-primary-50;
   }
   
   .card {

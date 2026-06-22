@@ -55,12 +55,13 @@ export default function DeliveryPage() {
 
   const sortedZones = sortZonesForList(zones as any[]);
 
-  // По умолчанию выбираем ближайшую (наименьшую) зону.
+  // По умолчанию выбираем ближайшую (наименьшую) зону. Функциональный апдейт,
+  // чтобы не перезаписать уже сделанный пользователем выбор (гонка с кликом).
   useEffect(() => {
-    if (!selectedZoneId && sortedZones.length > 0) {
-      setSelectedZoneId(sortedZones[0]._id);
+    if (sortedZones.length > 0) {
+      setSelectedZoneId((prev) => prev ?? sortedZones[0]._id);
     }
-  }, [sortedZones, selectedZoneId]);
+  }, [sortedZones]);
 
   const selectedZone = sortedZones.find((z: any) => z._id === selectedZoneId) || null;
   // На карте подсвечиваем наведённую (desktop) или выбранную зону.
@@ -125,14 +126,14 @@ export default function DeliveryPage() {
               <div
                 data-testid="delivery-zone-tabs"
                 aria-label="Liefergebiete"
-                className="flex gap-2 overflow-x-auto overscroll-x-contain scroll-smooth px-4 -mx-4 pb-2 [-webkit-overflow-scrolling:touch]"
+                className="flex gap-2 overflow-x-auto overscroll-x-contain scroll-smooth pb-2 [-webkit-overflow-scrolling:touch] scrollbar-hide"
               >
                 {sortedZones.map((zone: any) => (
                   <button
                     key={zone._id}
                     type="button"
                     onClick={() => setSelectedZoneId(zone._id)}
-                    className={`shrink-0 whitespace-nowrap px-4 py-2 rounded-full text-sm font-medium border transition-colors ${
+                    className={`inline-flex min-h-[40px] shrink-0 items-center justify-center whitespace-nowrap rounded-full border px-4 py-2 text-center text-sm font-medium leading-tight transition-colors ${
                       selectedZoneId === zone._id
                         ? 'bg-primary-600 text-white border-primary-600'
                         : 'bg-white text-gray-700 border-gray-200'
@@ -149,9 +150,9 @@ export default function DeliveryPage() {
                 data-testid="delivery-zone-card"
                 className="mt-3 bg-white rounded-xl p-4 shadow-sm border border-gray-100"
               >
-                <div className="flex items-center justify-between mb-2">
-                  <h2 className="text-lg font-bold">{selectedZone.name}</h2>
-                  <span className="text-sm text-gray-500">
+                <div className="mb-2 flex items-start justify-between gap-3">
+                  <h2 className="min-w-0 truncate text-lg font-bold leading-tight">{selectedZone.name}</h2>
+                  <span className="shrink-0 whitespace-nowrap text-sm text-gray-500">
                     {t('delivery_page.up_to', 'bis')} {selectedZone.maxDistance} {t('delivery_check.km', 'km')}
                   </span>
                 </div>
@@ -175,9 +176,9 @@ export default function DeliveryPage() {
                 activeZoneId === zone._id ? 'border-primary-500 ring-1 ring-primary-500' : 'border-gray-100'
               }`}
             >
-              <div className="flex items-center justify-between mb-2">
-                <h2 className="text-lg font-bold">{zone.name}</h2>
-                <span className="text-sm text-gray-500">
+              <div className="mb-2 flex items-start justify-between gap-3">
+                <h2 className="min-w-0 truncate text-lg font-bold leading-tight">{zone.name}</h2>
+                <span className="shrink-0 whitespace-nowrap text-sm text-gray-500">
                   {t('delivery_page.up_to', 'bis')} {zone.maxDistance} {t('delivery_check.km', 'km')}
                 </span>
               </div>

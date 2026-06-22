@@ -532,7 +532,7 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
                       {/* Quantity */}
                       <div className="mb-6">
                         <h3 className="text-xl font-bold mb-3">{t('product_modal.quantity', 'Количество:')}</h3>
-                        <div className="flex items-center space-x-4">
+                        <div className="flex items-center gap-4">
                           <button
                             onClick={() => setQuantity(Math.max(1, quantity - 1))}
                             className="w-12 h-12 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary-600 hover:bg-primary-50 transition-all"
@@ -560,10 +560,10 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
                       )}
                       <button
                         onClick={handleAddToCart}
-                        className="w-full bg-primary-600 text-white py-4 px-6 rounded-xl hover:bg-primary-700 transition-all font-bold text-lg shadow-lg hover:shadow-xl flex items-center justify-center space-x-3"
+                        className="flex min-h-[56px] w-full items-center justify-center gap-3 rounded-xl bg-primary-600 px-6 py-4 text-center text-lg font-bold leading-tight text-white shadow-lg transition-all hover:bg-primary-700 hover:shadow-xl"
                       >
-                        <ShoppingCart className="h-6 w-6" />
-                        <span>{t('product.add_to_cart', 'Добавить в корзину')} — {calculateTotal().toFixed(2)}€</span>
+                        <ShoppingCart className="h-6 w-6 shrink-0" />
+                        <span className="min-w-0">{t('product.add_to_cart', 'Добавить в корзину')} — {calculateTotal().toFixed(2)}€</span>
                       </button>
                     </div>
                   </>

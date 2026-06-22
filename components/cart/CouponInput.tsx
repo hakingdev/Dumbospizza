@@ -170,8 +170,8 @@ export default function CouponInput({
       <p className="text-sm font-medium text-gray-700 mb-2">{t('checkout.promo_code')}</p>
 
       {!showApplied ? (
-        <form onSubmit={handleSubmit} className="flex space-x-2">
-          <div className="flex-1">
+        <form onSubmit={handleSubmit} className="flex gap-2">
+          <div className="min-w-0 flex-1">
             <input
               type="text"
               value={couponCode}
@@ -184,7 +184,7 @@ export default function CouponInput({
           <button
             type="submit"
             disabled={!couponCode || isSubmitting}
-            className="bg-primary-600 text-white px-4 py-2 rounded-md hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 transition-colors text-sm"
+            className="inline-flex min-h-[40px] shrink-0 items-center justify-center whitespace-nowrap rounded-md bg-primary-600 px-4 py-2 text-center text-sm font-medium leading-tight text-white transition-colors hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:opacity-50"
           >
             {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : t('checkout.apply_promo')}
           </button>
