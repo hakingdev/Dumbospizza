@@ -15,6 +15,12 @@ interface CouponInputProps {
   angebotConflictActive?: boolean;
   /** Название конфликтующей акции (для диалога). */
   angebotName?: string;
+  /** Controlled: применённый код из источника истины (CartContext, после hydration). */
+  appliedCode?: string;
+  /** Controlled: сумма скидки купона (€) из CartContext. */
+  appliedDiscount?: number;
+  /** Controlled: тип скидки, если известен. */
+  appliedDiscountType?: 'fixed' | 'percentage';
 }
 
 export default function CouponInput({
@@ -25,6 +31,9 @@ export default function CouponInput({
   onPromotionCodeRemoved,
   angebotConflictActive = false,
   angebotName,
+  appliedCode,
+  appliedDiscount = 0,
+  appliedDiscountType,
 }: CouponInputProps) {
   const { language } = useLanguage();
   const [t, setT] = useState<any>(() => (k: string) => k);
@@ -139,13 +148,28 @@ export default function CouponInput({
     setCouponCode('');
   };
 
-  const hasApplied = appliedCoupon || appliedPromotionCode;
+  // Controlled + local: applied-card показываем, если код есть в источнике истины
+  // (appliedCode после hydration из localStorage) ИЛИ применён локально.
+  const showApplied = !!(appliedCoupon || appliedPromotionCode || appliedCode);
+  const displayCode = appliedCoupon?.code || appliedPromotionCode || appliedCode || '';
+  const isPromoCodeOnly = !!appliedPromotionCode && !appliedCoupon;
+  const subtitle = isPromoCodeOnly
+    ? t('cart.promo_code_active', 'Aktionscode — Rabatt wird automatisch berechnet')
+    : appliedCoupon
+      ? appliedCoupon.discountType === 'fixed'
+        ? `${appliedCoupon.discountValue.toFixed(2)} € ${t('cart.discount', 'Rabatt')}`
+        : `${appliedCoupon.discountValue}% ${t('cart.discount', 'Rabatt')}`
+      : appliedDiscountType === 'percentage'
+        ? `${appliedDiscount}% ${t('cart.discount', 'Rabatt')}`
+        : appliedDiscount > 0
+          ? `${appliedDiscount.toFixed(2)} € ${t('cart.discount', 'Rabatt')}`
+          : '';
 
   return (
     <div className="mt-4">
       <p className="text-sm font-medium text-gray-700 mb-2">{t('checkout.promo_code')}</p>
 
-      {!hasApplied ? (
+      {!showApplied ? (
         <form onSubmit={handleSubmit} className="flex space-x-2">
           <div className="flex-1">
             <input
@@ -170,16 +194,8 @@ export default function CouponInput({
           <div className="flex items-start min-w-0">
             <CheckCircle className="w-5 h-5 text-green-600 mr-2 shrink-0" />
             <div className="min-w-0">
-              <p className="font-medium text-sm break-words">
-                {appliedCoupon?.code || appliedPromotionCode}
-              </p>
-              <p className="text-xs text-gray-600">
-                {appliedPromotionCode
-                  ? t('cart.promo_code_active', 'Aktionscode — Rabatt wird automatisch berechnet')
-                  : appliedCoupon.discountType === 'fixed'
-                    ? `${appliedCoupon.discountValue.toFixed(2)} € ${t('cart.discount')}`
-                    : `${appliedCoupon.discountValue}% ${t('cart.discount')}`}
-              </p>
+              <p className="font-medium text-sm break-words">{displayCode}</p>
+              {subtitle && <p className="text-xs text-gray-600">{subtitle}</p>}
             </div>
           </div>
           <button

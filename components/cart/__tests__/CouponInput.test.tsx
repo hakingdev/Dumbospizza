@@ -138,4 +138,41 @@ describe('CouponInput — стабильная валидация по reason', 
       expect(screen.getByPlaceholderText('checkout.promo_placeholder')).toBeTruthy()
     );
   });
+
+  it('controlled: appliedCode (из localStorage) → applied-card; undefined → форма, без stale', async () => {
+    const onRemoved = vi.fn();
+    const onPromoRemoved = vi.fn();
+    const { rerender } = render(
+      <CouponInput
+        orderAmount={20}
+        appliedCode="TEAM"
+        appliedDiscount={9.84}
+        onCouponApplied={vi.fn()}
+        onCouponRemoved={onRemoved}
+        onPromotionCodeRemoved={onPromoRemoved}
+      />
+    );
+
+    // после hydration сразу видна applied-card, а не пустой input
+    expect(await screen.findByLabelText('Gutscheincode entfernen')).toBeTruthy();
+    expect(screen.getByText('TEAM')).toBeTruthy();
+    expect(screen.queryByPlaceholderText('checkout.promo_placeholder')).toBeNull();
+
+    fireEvent.click(screen.getByLabelText('Gutscheincode entfernen'));
+    expect(onRemoved).toHaveBeenCalled();
+    expect(onPromoRemoved).toHaveBeenCalled();
+
+    // родитель очистил state → appliedCode undefined → снова форма (без залипшего applied)
+    rerender(
+      <CouponInput
+        orderAmount={20}
+        appliedCode={undefined}
+        appliedDiscount={0}
+        onCouponApplied={vi.fn()}
+        onCouponRemoved={onRemoved}
+        onPromotionCodeRemoved={onPromoRemoved}
+      />
+    );
+    expect(screen.getByPlaceholderText('checkout.promo_placeholder')).toBeTruthy();
+  });
 });

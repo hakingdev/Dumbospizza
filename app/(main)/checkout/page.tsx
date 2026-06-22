@@ -1199,6 +1199,8 @@ export default function CheckoutPage() {
             <div className="border-b pb-4 mb-4">
               <CouponInput
                 orderAmount={state.subtotal}
+                appliedCode={state.couponCode}
+                appliedDiscount={state.couponDiscount}
                 onCouponApplied={(coupon) => {
                   applyCoupon(coupon.code, coupon.discount || 0);
                 }}

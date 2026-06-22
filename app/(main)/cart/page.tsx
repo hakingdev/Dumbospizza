@@ -237,6 +237,8 @@ export default function CartPage() {
               {/* Coupon input */}
               <CouponInput
                 orderAmount={subtotal}
+                appliedCode={state.couponCode}
+                appliedDiscount={state.couponDiscount}
                 onCouponApplied={(coupon) => applyCoupon(coupon.code, coupon.discount || 0)}
                 onCouponRemoved={() => removeCoupon()}
                 onPromotionCodeApplied={(code) => setPromotionPromoCode(code)}
