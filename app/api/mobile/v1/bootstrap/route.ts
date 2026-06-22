@@ -3,6 +3,7 @@ import { connectToDatabase } from '../../../../../lib/models';
 import { Promotion } from '../../../../../lib/models/promotion.model';
 import { getSetting } from '../../../../../lib/settings';
 import { toPromotionPublicView } from '../../../../../lib/promotions/serialize';
+import { isPromotionEffectivelyActive } from '../../../../../lib/promotions/status';
 import {
   formatMinutesAsHHmm,
   getNowMinutesInTimeZone,
@@ -77,7 +78,9 @@ export async function GET() {
       /** Текст для пользователя, если acceptingOrders === false */
       ordersClosedMessage,
       /** Активные акции для модального окна и бейджей в приложении */
-      activePromotions: modalPromos.map((p) => toPromotionPublicView(p as any)),
+      activePromotions: modalPromos
+        .filter((p) => isPromotionEffectivelyActive(p as any, now))
+        .map((p) => toPromotionPublicView(p as any)),
       promoModalDismissHours:
         typeof s.promoModalDismissHours === 'number' ? s.promoModalDismissHours : 24,
     };

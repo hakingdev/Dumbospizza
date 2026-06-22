@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { connectToDatabase } from '../../../lib/models';
 import { Promotion } from '../../../lib/models/promotion.model';
 import { toPromotionPublicView } from '../../../lib/promotions/serialize';
+import { isPromotionEffectivelyActive } from '../../../lib/promotions/status';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,7 +32,11 @@ export default async function AngebotePage() {
     .sort({ priority: -1 })
     .lean();
 
-  const promotions = docs.map((p) => toPromotionPublicView(p as any));
+  // Дополнительно фильтруем по недельному расписанию + Happy Hour (в timezone акции),
+  // т.к. Mongo-запрос проверяет только enabled/validFrom/validTo/channel.
+  const promotions = docs
+    .filter((p) => isPromotionEffectivelyActive(p as any, now))
+    .map((p) => toPromotionPublicView(p as any));
 
   return (
     <div className="container mx-auto px-4 py-10 max-w-4xl">
