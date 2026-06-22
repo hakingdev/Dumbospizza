@@ -265,7 +265,7 @@ export default function Home() {
                 <Truck className="h-8 w-8 text-primary-600" />
               </div>
               <h3 className="text-lg font-bold mb-2">{t('home.benefits.fast_title', 'Быстрая доставка')}</h3>
-              <p className="text-gray-600 text-sm">{t('home.benefits.fast_text', '30-45 минут в любую точку города')}</p>
+              <p className="text-gray-600 text-sm">{t('home.benefits.fast_text', '30-60 минут, в пиковое время до 90 минут')}</p>
             </div>
             
             <div className="text-center p-6 rounded-2xl bg-gradient-to-br from-secondary-50 to-white border border-secondary-100">
@@ -281,7 +281,7 @@ export default function Home() {
                 <Clock className="h-8 w-8 text-orange-600" />
               </div>
               <h3 className="text-lg font-bold mb-2">{t('home.benefits.hours_title', 'с 16 до 22 каждый день')}</h3>
-              <p className="text-gray-600 text-sm">{t('home.benefits.hours_text', 'Ежедневно с 16:00 до 22:00')}</p>
+              <p className="text-gray-600 text-sm">{t('home.benefits.hours_text', 'Ежедневно с 17:00 до 21:30')}</p>
             </div>
             
             <div className="text-center p-6 rounded-2xl bg-gradient-to-br from-blue-50 to-white border border-blue-100">

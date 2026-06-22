@@ -10,7 +10,6 @@ import CouponInput from '../../../components/cart/CouponInput'
 import { getConflictingPromotions } from '../../../lib/promotions/coupon-conflict'
 import PromotionCartSummary from '../../../components/promotions/PromotionCartSummary'
 import BogoRewardLines from '../../../components/promotions/BogoRewardLines'
-import { validateCoupon } from '../../../lib/api-client'
 import { useLanguage } from '../../../lib/contexts/LanguageContext'
 import { loadTranslation } from '../../../lib/i18n'
 import {
@@ -18,6 +17,7 @@ import {
   getNowMinutesInTimeZone,
   parseOrdersTimeToMinutes,
 } from '../../../lib/order-acceptance-hours'
+import { evaluateDeliveryGate } from '../../../lib/delivery/checkout-gate'
 
 // SumUp-виджет — только на клиенте (использует window + внешний SDK).
 const SumUpPaymentWidget = dynamic(
@@ -74,7 +74,7 @@ function filterSlotsByCurrentTime(slots: string[], timeZone: string): string[] {
 
 export default function CheckoutPage() {
   const router = useRouter()
-  const { state, setDeliveryType: setCartDeliveryType, setDeliveryZone: setCartDeliveryZone, setDeliveryFee, setContactInfo, setDeliveryAddress, setPaymentMethod: setCartPaymentMethod, clearCart, applyCoupon, removeCoupon } = useCart()
+  const { state, setDeliveryType: setCartDeliveryType, setDeliveryZone: setCartDeliveryZone, setDeliveryFee, setContactInfo, setDeliveryAddress, setPaymentMethod: setCartPaymentMethod, clearCart, applyCoupon, removeCoupon, setPromotionPromoCode } = useCart()
   const { language } = useLanguage()
   const [t, setT] = useState<any>(() => (k: string) => k)
   const [step, setStep] = useState(1)
@@ -103,7 +103,16 @@ export default function CheckoutPage() {
   const [orderBlocked, setOrderBlocked] = useState(false)
   const [orderBlockMessage, setOrderBlockMessage] = useState('')
   const [desiredDeliveryTime, setDesiredDeliveryTime] = useState<string>('')
-  
+  // Проверка адреса доставки (зона определяется по адресу, не выбором из списка).
+  const [zoneCheck, setZoneCheck] = useState<null | {
+    canDeliver: boolean
+    zone?: { id: string; name: string; minOrderAmount: number; deliveryFee: number; maxDistance: number }
+    distance?: number
+    message?: string
+    reason?: string
+  }>(null)
+  const [checkingZone, setCheckingZone] = useState(false)
+
   useEffect(() => {
     const loadTranslations = async () => {
       const { t: translation } = await loadTranslation(language)
@@ -137,9 +146,7 @@ export default function CheckoutPage() {
         if (data.success) {
           const zones = data.zones || []
           setDeliveryZones(zones)
-          if (!deliveryZone && zones.length > 0) {
-            setDeliveryZone(zones[0]._id)
-          }
+          // Зону не выбираем автоматически — она определяется проверкой адреса.
         }
       } catch (error) {
         console.error('Error loading delivery zones:', error)
@@ -255,6 +262,12 @@ export default function CheckoutPage() {
     if (deliveryType === 'delivery' && (name === 'street' || name === 'houseNumber' || name === 'postalCode' || name === 'city' || name === 'floor' || name === 'notes')) {
       setDeliveryAddress({ [name]: value })
     }
+
+    // Изменение адреса сбрасывает предыдущую проверку зоны → Weiter снова блокируется.
+    if (name === 'street' || name === 'houseNumber' || name === 'postalCode' || name === 'city') {
+      if (zoneCheck) setZoneCheck(null)
+      if (deliveryZone) setDeliveryZone('')
+    }
   }
   
   const validateStep1 = (): boolean => {
@@ -308,9 +321,63 @@ export default function CheckoutPage() {
     return Object.keys(newErrors).length === 0
   }
   
+  // Проверка адреса доставки через /api/delivery/check-zone.
+  const handleCheckZone = async () => {
+    const { street, houseNumber, postalCode, city } = contactDetails
+    if (!street.trim() || !houseNumber.trim() || !postalCode.trim() || !city.trim()) {
+      setErrors(prev => ({ ...prev, zone: t('checkout.errors.address_for_check', 'Bitte zuerst die Lieferadresse ausfüllen.') }))
+      return
+    }
+    setErrors(prev => { const n = { ...prev }; delete n.zone; return n })
+    setCheckingZone(true)
+    setZoneCheck(null)
+    try {
+      const address = `${street} ${houseNumber}, ${postalCode} ${city}`
+      const res = await fetch('/api/delivery/check-zone', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address }),
+      })
+      const data = await res.json()
+      if (data.success && data.canDeliver && data.zone) {
+        setZoneCheck({ canDeliver: true, zone: data.zone, distance: data.distance, message: data.message })
+        setDeliveryZone(String(data.zone.id)) // существующий effect запишет зону/fee в корзину
+      } else {
+        setZoneCheck({ canDeliver: false, message: data.message, reason: data.reason })
+        setDeliveryZone('')
+      }
+    } catch (_err) {
+      setZoneCheck({ canDeliver: false, message: t('checkout.zone_check_error', 'Fehler bei der Adressprüfung.') })
+    } finally {
+      setCheckingZone(false)
+    }
+  }
+
+  // Правило перехода на шаге доставки (pickup — без проверки зоны).
+  const deliveryGate = evaluateDeliveryGate({
+    deliveryType: deliveryType as 'delivery' | 'pickup',
+    addressChecked: !!zoneCheck,
+    canDeliver: zoneCheck?.canDeliver ?? false,
+    subtotal: state.subtotal,
+    zoneMinOrderAmount: zoneCheck?.canDeliver ? (zoneCheck.zone?.minOrderAmount ?? null) : null,
+  })
+
   const handleNextStep = () => {
     if (step === 1) {
       if (!validateStep1()) {
+        return
+      }
+      // Доставка: не пускаем дальше без валидной зоны / при сумме ниже min-order.
+      if (deliveryType === 'delivery' && !deliveryGate.allowed) {
+        setErrors(prev => ({
+          ...prev,
+          zone:
+            deliveryGate.reason === 'below_min_order'
+              ? `Mindestbestellwert für diese Zone: ${(zoneCheck?.zone?.minOrderAmount ?? 0).toFixed(2)} €. Es fehlen noch ${(deliveryGate.shortfall ?? 0).toFixed(2)} €.`
+              : deliveryGate.reason === 'outside_zone'
+                ? t('checkout.zone_outside', 'Ihre Adresse liegt außerhalb des Liefergebiets.')
+                : t('checkout.zone_check_required', 'Bitte prüfen Sie zuerst Ihre Lieferadresse.'),
+        }))
         return
       }
       // Save contact info to cart context
@@ -491,7 +558,6 @@ export default function CheckoutPage() {
     setErrors({ submit: message })
   }, [])
 
-  const selectedZone = deliveryZones.find(zone => zone._id === deliveryZone)
   const totalItems = state.items.reduce((sum, item) => sum + item.quantity, 0)
   
   return (
@@ -568,7 +634,7 @@ export default function CheckoutPage() {
                     <Truck className="h-6 w-6 mr-3 text-primary-600" />
                     <div>
                       <p className="font-medium">{t('checkout.delivery', 'Доставка')}</p>
-                      <p className="text-sm text-gray-500">{t('checkout.delivery_time', '30-45 минут')}</p>
+                      <p className="text-sm text-gray-500">{t('checkout.delivery_time', '30-60 минут, в пиковое время до 90 минут')}</p>
                     </div>
                     {deliveryType === 'delivery' && (
                       <Check className="h-5 w-5 ml-auto text-primary-600" />
@@ -606,29 +672,13 @@ export default function CheckoutPage() {
               
               {deliveryType === 'delivery' && (
                 <div className="mb-6">
-                  <label className="block text-gray-700 font-medium mb-2">{t('checkout.zone_label', 'Выберите район доставки:')}</label>
-                  <select
-                    className="input"
-                    value={deliveryZone}
-                    onChange={(e) => setDeliveryZone(e.target.value)}
-                  >
-                    {deliveryZones.map(zone => (
-                      <option key={zone._id} value={zone._id}>
-                        {zone.name} ({t('checkout.min_order_short', 'мин. заказ')} {zone.minOrderAmount} €)
-                      </option>
-                    ))}
-                  </select>
-                  
-                  {selectedZone && state.subtotal < selectedZone.minOrderAmount && (
-                    <p className="mt-2 text-red-500 text-sm">
-                      {t('checkout.min_order_zone', 'Минимальная сумма заказа для этой зоны')} {selectedZone.minOrderAmount} €. 
-                      {t('checkout.min_order_missing', 'Вам не хватает')} {(selectedZone.minOrderAmount - state.subtotal).toFixed(2)} €.
-                    </p>
-                  )}
+                  <p className="text-sm text-gray-600">
+                    {t('checkout.zone_auto_hint', 'Ihr Liefergebiet wird anhand Ihrer Adresse unten geprüft.')}
+                  </p>
 
                   {(() => {
-                    const start = orderSettings?.deliverySlotStart ?? '16:00'
-                    const end = orderSettings?.deliverySlotEnd ?? '22:00'
+                    const start = orderSettings?.deliverySlotStart ?? '17:00'
+                    const end = orderSettings?.deliverySlotEnd ?? '21:30'
                     const step = Number(orderSettings?.deliverySlotStepMinutes) || 5
                     const timeZone = orderSettings?.ordersTimeZone || 'Europe/Berlin'
                     const slots = getDeliveryTimeSlots(start, end, step)
@@ -773,6 +823,36 @@ export default function CheckoutPage() {
                       onChange={handleContactDetailChange}
                     />
                   </div>
+
+                  {/* Проверка зоны доставки по адресу */}
+                  <div className="mb-6">
+                    <button
+                      type="button"
+                      onClick={handleCheckZone}
+                      disabled={checkingZone}
+                      className="inline-flex items-center px-4 py-2 border border-primary-600 text-primary-600 rounded-md hover:bg-primary-50 disabled:opacity-50"
+                    >
+                      {checkingZone ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                      {t('checkout.check_zone', 'Liefergebiet prüfen')}
+                    </button>
+
+                    {errors.zone && <p className="mt-2 text-sm text-red-600">{errors.zone}</p>}
+
+                    {zoneCheck?.canDeliver && zoneCheck.message && (
+                      <p className="mt-2 text-sm text-green-700">{zoneCheck.message}</p>
+                    )}
+                    {zoneCheck && !zoneCheck.canDeliver && zoneCheck.message && (
+                      <p className="mt-2 text-sm text-red-600">{zoneCheck.message}</p>
+                    )}
+
+                    {deliveryGate.reason === 'below_min_order' && (
+                      <p className="mt-2 text-sm text-red-600">
+                        Mindestbestellwert für diese Zone: {(zoneCheck?.zone?.minOrderAmount ?? 0).toFixed(2)} €.
+                        <br />
+                        Es fehlen noch {(deliveryGate.shortfall ?? 0).toFixed(2)} €.
+                      </p>
+                    )}
+                  </div>
                 </>
               )}
               
@@ -803,10 +883,11 @@ export default function CheckoutPage() {
               </div>
               
               <div className="flex justify-end">
-                <button 
-                  type="button" 
-                  className="btn-primary"
+                <button
+                  type="button"
+                  className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
                   onClick={handleNextStep}
+                  disabled={deliveryType === 'delivery' && !deliveryGate.allowed}
                 >
                   {t('common.next', 'Далее')}
                 </button>
@@ -1124,6 +1205,8 @@ export default function CheckoutPage() {
                 onCouponRemoved={() => {
                   removeCoupon();
                 }}
+                onPromotionCodeApplied={(code) => setPromotionPromoCode(code)}
+                onPromotionCodeRemoved={() => setPromotionPromoCode(undefined)}
                 angebotConflictActive={state.moneyPromotionAvailable}
                 angebotName={getConflictingPromotions(state.promotionCalculation)[0]?.promotionName || undefined}
               />

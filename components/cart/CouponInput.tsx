@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useLanguage } from '../../lib/contexts/LanguageContext';
 import { loadTranslation } from '../../lib/i18n';
 import { validateCoupon, validatePromotionCode } from '../../lib/api-client';
@@ -35,6 +35,8 @@ export default function CouponInput({
   const [appliedPromotionCode, setAppliedPromotionCode] = useState<string | null>(null);
   // Купон, прошедший валидацию, но ожидающий решения по конфликту с акцией.
   const [pendingCoupon, setPendingCoupon] = useState<any>(null);
+  // Счётчик запросов: ответ от устаревшего submit не должен перезаписывать новый state.
+  const reqSeq = useRef(0);
 
   useEffect(() => {
     const loadTranslations = async () => {
@@ -44,60 +46,75 @@ export default function CouponInput({
     loadTranslations();
   }, [language]);
 
+  // Текст ошибки выбираем по machine-readable reason, а не парсингом строки.
+  const couponErrorText = (reason?: string): string => {
+    switch (reason) {
+      case 'expired':
+        return t('errors.promo_expired');
+      case 'usage_limit':
+        return t('errors.promo_used');
+      case 'min_order':
+        return t('errors.min_order_not_met');
+      default:
+        return t('errors.invalid_promo');
+    }
+  };
+
+  // Купон найден, но точно невалиден → показываем конкретную ошибку и НЕ пробуем промокод.
+  const STOP_REASONS = ['expired', 'inactive', 'usage_limit', 'min_order', 'not_started'];
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!couponCode) return;
+    const code = couponCode.trim().toUpperCase();
+    if (!code) return;
 
+    const seq = ++reqSeq.current;
+    setError(null);
+    setIsSubmitting(true);
     try {
-      setError(null);
-      setIsSubmitting(true);
+      const couponRes = await validateCoupon(code, orderAmount);
+      if (seq !== reqSeq.current) return; // устаревший ответ — игнорируем
 
-      try {
-        const result = await validateCoupon(couponCode, orderAmount);
-        if (result.success) {
-          // Конфликт: активна денежная акция — не применяем купон автоматически,
-          // показываем пользователю выбор (оставить акцию / применить промокод).
-          if (angebotConflictActive) {
-            setPendingCoupon(result.coupon);
-            return;
-          }
-          setAppliedCoupon(result.coupon);
-          setAppliedPromotionCode(null);
-          onCouponApplied(result.coupon);
+      if (couponRes.success) {
+        // Валидный купон: при конфликте с денежной акцией — диалог выбора,
+        // иначе применяем. Никогда не показываем здесь «expired».
+        if (angebotConflictActive) {
+          setPendingCoupon(couponRes.coupon);
           return;
         }
-      } catch (_) {
-        // try promotion code
+        setAppliedCoupon(couponRes.coupon);
+        setAppliedPromotionCode(null);
+        onCouponApplied(couponRes.coupon);
+        return;
       }
 
-      const promoResult = await validatePromotionCode(couponCode);
-      if (promoResult.success) {
+      if (couponRes.reason && STOP_REASONS.includes(couponRes.reason)) {
+        setError(couponErrorText(couponRes.reason));
+        return;
+      }
+
+      // Купон не найден (not_found / сеть) → пробуем промо-код акции.
+      const promoRes = await validatePromotionCode(code);
+      if (seq !== reqSeq.current) return; // устаревший ответ
+
+      if (promoRes?.success) {
         setAppliedCoupon(null);
-        setAppliedPromotionCode(promoResult.promotionCode.code);
-        onPromotionCodeApplied?.(promoResult.promotionCode.code);
+        setAppliedPromotionCode(promoRes.promotionCode.code);
+        onPromotionCodeApplied?.(promoRes.promotionCode.code);
         return;
       }
 
       setError(t('errors.invalid_promo'));
-    } catch (err: any) {
-      let errorMessage = t('errors.invalid_promo');
-      if (err.response) {
-        const responseError = err.response.data?.error || '';
-        if (responseError.includes('Minimum order amount')) {
-          errorMessage = t('errors.min_order_not_met');
-        } else if (responseError.includes('usage limit')) {
-          errorMessage = t('errors.promo_used');
-        } else if (responseError.includes('expired')) {
-          errorMessage = t('errors.promo_expired');
-        }
-      }
-      setError(errorMessage);
+    } catch (_err) {
+      if (seq !== reqSeq.current) return;
+      setError(t('errors.invalid_promo'));
     } finally {
-      setIsSubmitting(false);
+      if (seq === reqSeq.current) setIsSubmitting(false);
     }
   };
 
   const handleRemove = () => {
+    reqSeq.current++; // инвалидируем любые незавершённые проверки
     setCouponCode('');
     setAppliedCoupon(null);
     setAppliedPromotionCode(null);
@@ -163,7 +180,13 @@ export default function CouponInput({
               </p>
             </div>
           </div>
-          <button onClick={handleRemove} className="text-gray-500 hover:text-gray-700" title={t('cart.remove')}>
+          <button
+            type="button"
+            onClick={handleRemove}
+            aria-label={t('cart.remove_promo', 'Promo-Code entfernen')}
+            title={t('cart.remove_promo', 'Promo-Code entfernen')}
+            className="flex items-center justify-center min-w-[40px] min-h-[40px] -mr-1 rounded-md text-gray-500 hover:text-gray-700 hover:bg-green-100 focus:outline-none focus:ring-2 focus:ring-primary-500 transition-colors"
+          >
             <XCircle className="w-5 h-5" />
           </button>
         </div>

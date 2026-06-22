@@ -1,7 +1,18 @@
 "use client";
 
 import { useEffect, useState } from 'react';
-import { Save, Plus, MapPin, Trash2, Edit, Loader2 } from 'lucide-react';
+import dynamic from 'next/dynamic';
+import { Save, Plus, MapPin, Trash2, Edit, Loader2, Search } from 'lucide-react';
+
+// Карта — только на клиенте (Leaflet использует window).
+const DeliveryZoneMap = dynamic(() => import('../../../components/delivery/DeliveryZoneMap'), {
+  ssr: false,
+  loading: () => (
+    <div className="h-[420px] w-full rounded-lg bg-gray-100 flex items-center justify-center text-gray-400">
+      <Loader2 className="h-5 w-5 animate-spin" />
+    </div>
+  ),
+});
 
 type DeliveryZone = {
   _id: string;
@@ -11,6 +22,13 @@ type DeliveryZone = {
   maxDistance: number;
   active: boolean;
   sortOrder: number;
+};
+
+type AddressCheck = {
+  status: 'success' | 'error';
+  message: string;
+  zoneId?: string;
+  coordinates?: { lat: number; lng: number };
 };
 
 export default function DeliveryZonesPage() {
@@ -27,6 +45,69 @@ export default function DeliveryZonesPage() {
     active: boolean;
     sortOrder: number;
   }>(null);
+
+  // Проверка адреса на карте.
+  const [addressQuery, setAddressQuery] = useState('');
+  const [checking, setChecking] = useState(false);
+  const [addressCheck, setAddressCheck] = useState<AddressCheck | null>(null);
+  const [restaurantCoords, setRestaurantCoords] = useState<{ lat: number; lng: number }>({
+    lat: 50.2006,
+    lng: 10.0767,
+  });
+
+  const highlightedZoneId = addressCheck?.status === 'success' ? addressCheck.zoneId ?? null : null;
+  const addressMarker = addressCheck?.status === 'success' ? addressCheck.coordinates ?? null : null;
+
+  useEffect(() => {
+    // Координаты ресторана для центрирования карты.
+    fetch('/api/delivery/check-zone')
+      .then((r) => r.json())
+      .then((data) => {
+        const loc = data?.restaurantLocation;
+        if (loc && typeof loc.lat === 'number' && typeof loc.lng === 'number') {
+          setRestaurantCoords({ lat: loc.lat, lng: loc.lng });
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleCheckAddress = async () => {
+    const address = addressQuery.trim();
+    if (!address || checking) return;
+    setChecking(true);
+    setAddressCheck(null);
+    try {
+      const res = await fetch('/api/delivery/check-zone', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address }),
+      });
+      const data = await res.json();
+      if (data.success && data.canDeliver && data.zone) {
+        setAddressCheck({
+          status: 'success',
+          zoneId: data.zone.id,
+          coordinates: data.coordinates,
+          message: `Adresse liegt in Zone: ${data.distance} km. Mindestbestellwert: ${Number(
+            data.zone.minOrderAmount
+          ).toFixed(2)} €, Lieferkosten: ${Number(data.zone.deliveryFee).toFixed(2)} €`,
+        });
+      } else {
+        setAddressCheck({
+          status: 'error',
+          message:
+            data.message ||
+            (data.reason === 'address_not_found'
+              ? 'Adresse konnte nicht gefunden werden.'
+              : 'Adresse liegt außerhalb des Liefergebiets.'),
+        });
+      }
+    } catch (_err) {
+      setAddressCheck({ status: 'error', message: 'Fehler bei der Adressprüfung.' });
+    } finally {
+      setChecking(false);
+    }
+  };
 
   useEffect(() => {
     const loadZones = async () => {
@@ -160,6 +241,56 @@ export default function DeliveryZonesPage() {
         </div>
       )}
 
+      {/* Проверка адреса + карта */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4 mb-6">
+        <div className="flex gap-2 mb-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <input
+              type="text"
+              value={addressQuery}
+              onChange={(e) => {
+                setAddressQuery(e.target.value);
+                if (addressCheck) setAddressCheck(null); // изменение адреса сбрасывает проверку
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleCheckAddress();
+              }}
+              placeholder="Adresse prüfen..."
+              className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={handleCheckAddress}
+            disabled={!addressQuery.trim() || checking}
+            className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 flex items-center"
+          >
+            {checking ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Prüfen'}
+          </button>
+        </div>
+
+        {addressCheck && (
+          <div
+            data-testid="address-check-result"
+            className={`mb-3 p-3 rounded-md text-sm ${
+              addressCheck.status === 'success'
+                ? 'bg-green-50 border border-green-200 text-green-800'
+                : 'bg-red-50 border border-red-200 text-red-700'
+            }`}
+          >
+            {addressCheck.message}
+          </div>
+        )}
+
+        <DeliveryZoneMap
+          restaurantCoords={restaurantCoords}
+          zones={zones.map((z) => ({ id: z._id, name: z.name, maxDistance: z.maxDistance }))}
+          addressMarker={addressMarker}
+          highlightedZoneId={highlightedZoneId}
+        />
+      </div>
+
       <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
         <div className="p-4 bg-gray-50 border-b border-gray-100">
           <div className="grid grid-cols-12 font-medium text-gray-500">
@@ -184,7 +315,14 @@ export default function DeliveryZonesPage() {
         ) : (
           <div>
             {zones.map(zone => (
-              <div key={zone._id} className="p-4 border-b border-gray-100 hover:bg-gray-50">
+              <div
+                key={zone._id}
+                data-zone-id={zone._id}
+                data-highlighted={highlightedZoneId === zone._id ? 'true' : 'false'}
+                className={`p-4 border-b border-gray-100 hover:bg-gray-50 ${
+                  highlightedZoneId === zone._id ? 'bg-primary-50 ring-2 ring-inset ring-primary-500' : ''
+                }`}
+              >
                 <div className="grid grid-cols-12 items-center">
                   <div className="col-span-3 flex items-center">
                     <MapPin className="h-5 w-5 mr-2 text-gray-400" />
@@ -244,7 +382,7 @@ export default function DeliveryZonesPage() {
       </div>
 
       {editingZone && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[1100]">
           <div className="bg-white rounded-lg p-6 w-full max-w-md">
             <h2 className="text-xl font-bold mb-4">
               {!editingZone._id ? 'Add New Zone' : 'Edit Zone'}

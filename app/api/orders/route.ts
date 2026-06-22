@@ -3,6 +3,7 @@ import { connectToDatabase } from '../../../lib/models';
 import { Order } from '../../../lib/models/order.model';
 import { Product } from '../../../lib/models/product.model';
 import { Coupon } from '../../../lib/models/coupon.model';
+import { isCouponCurrentlyValid, normalizeCouponCode } from '../../../lib/promotions/coupon-validity';
 import { calculateOrderPromotions } from '../../../lib/promotions/order-integration';
 import {
   resolveFreeGiftsForOrder,
@@ -144,32 +145,16 @@ export async function POST(request: NextRequest) {
     const loyaltyPointsDiscount = (orderData.loyaltyPointsToRedeem || 0) / 100;
     let couponDiscount = 0;
     let validatedCoupon: any = null;
-    const couponCode = typeof orderData.couponCode === 'string' ? orderData.couponCode.trim().toUpperCase() : '';
+    const couponCode = normalizeCouponCode(orderData.couponCode);
     if (couponCode) {
-      validatedCoupon = await Coupon.findOne({
-        code: couponCode,
-        active: true,
-        validFrom: { $lte: new Date() },
-        validTo: { $gte: new Date() }
-      });
+      // Тот же helper, что и в /api/coupons — checkout не может отклонить купон,
+      // который UI принял (единая семантика дат/лимитов/min-order).
+      validatedCoupon = await Coupon.findOne({ code: couponCode });
 
-      if (!validatedCoupon) {
+      const validity = isCouponCurrentlyValid(validatedCoupon as any, new Date(), calculatedSubtotal);
+      if (!validity.valid) {
         return NextResponse.json(
-          { success: false, error: 'Invalid or expired coupon' },
-          { status: 400 }
-        );
-      }
-
-      if (validatedCoupon.usageLimit && validatedCoupon.usageCount >= validatedCoupon.usageLimit) {
-        return NextResponse.json(
-          { success: false, error: 'Coupon usage limit reached' },
-          { status: 400 }
-        );
-      }
-
-      if (validatedCoupon.minOrderAmount && calculatedSubtotal < validatedCoupon.minOrderAmount) {
-        return NextResponse.json(
-          { success: false, error: `Minimum order amount not met. Required: ${validatedCoupon.minOrderAmount}€` },
+          { success: false, error: 'Invalid or expired coupon', reason: validity.reason },
           { status: 400 }
         );
       }

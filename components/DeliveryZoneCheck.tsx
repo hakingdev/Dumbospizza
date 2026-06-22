@@ -186,10 +186,10 @@ export default function DeliveryZoneCheck() {
                                       <strong>{t('delivery_check.distance', 'Расстояние')}:</strong> {result.distance?.toFixed(1)} {t('delivery_check.km', 'км')}
                                     </p>
                                     <p className="mb-2">
-                                      <strong>{t('delivery_check.fee', 'Стоимость доставки')}:</strong> {result.deliveryFee?.toFixed(2)} €
+                                      <strong>{t('delivery_check.fee', 'Стоимость доставки')}:</strong> {result.zone?.deliveryFee?.toFixed(2)} €
                                     </p>
                                     <p>
-                                      <strong>{t('delivery_check.min_order', 'Минимальный заказ')}:</strong> {result.minOrderAmount?.toFixed(2)} €
+                                      <strong>{t('delivery_check.min_order', 'Минимальный заказ')}:</strong> {result.zone?.minOrderAmount?.toFixed(2)} €
                                     </p>
                                   </>
                                 ) : (

@@ -75,7 +75,7 @@ export function Hero() {
             <div className="grid grid-cols-2 gap-3 max-w-md">
               <div className="flex items-center gap-2 bg-white/15 rounded-xl px-4 py-3 border border-white/25 backdrop-blur-sm">
                 <Clock className="h-5 w-5 text-white" />
-                <span className="font-bold text-white">30-45</span>
+                <span className="font-bold text-white">30-60</span>
                 {/* <Heart className="h-4 w-4 text-white fill-white" /> */}
                 <span className="text-sm text-white">{isDe ? 'Minuten' : t('hero.minutes', 'минут')}</span>
               </div>
@@ -90,7 +90,7 @@ export function Hero() {
                 <span className="text-sm text-white">{isDe ? 'Bewertung' : t('hero.rating', 'рейтинг')}</span>
               </div>
               <div className="flex items-center gap-2 bg-white/15 rounded-xl px-4 py-3 border border-white/25 backdrop-blur-sm">
-                <span className="font-bold text-white">16-22</span>
+                <span className="font-bold text-white">17-21:30</span>
                 <span className="text-sm text-white">{isDe ? 'Lieferung' : t('hero.badge_delivery', 'доставка')}</span>
               </div>
             </div>
@@ -112,9 +112,9 @@ export function Hero() {
                 unoptimized
                 sizes="(max-width: 768px) 100vw, 55vw"
               />
-              {/* Светло-серый бейдж 16-22 слева внизу */}
+              {/* Светло-серый бейдж времени доставки слева внизу */}
               <div className="absolute bottom-4 left-4 bg-gray-300 text-gray-800 rounded-xl px-4 py-2.5 shadow-lg border border-gray-400/50">
-                <div className="font-bold text-lg">16-22</div>
+                <div className="font-bold text-lg">17-21:30</div>
                 <div className="text-xs text-gray-700">{isDe ? 'Lieferung' : t('hero.badge_delivery', 'доставка')}</div>
               </div>
             </div>

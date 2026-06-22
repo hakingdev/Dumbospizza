@@ -133,8 +133,16 @@ export const calculatePromotions = async (
 };
 
 export const validatePromotionCode = async (code: string) => {
-  const response = await apiClient.get('/api/promotions/validate-code', { params: { code } });
-  return response.data;
+  // Не бросаем исключение на 404 — возвращаем стабильный объект, чтобы вызывающий
+  // код не парсил строки ошибок и не ловил «ложный expired» из текста сообщения.
+  try {
+    const response = await apiClient.get('/api/promotions/validate-code', {
+      params: { code: (code || '').trim().toUpperCase() },
+    });
+    return response.data;
+  } catch (error: any) {
+    return error?.response?.data ?? { success: false, reason: 'not_found' };
+  }
 };
 
 export const getPromotionAdminById = async (id: string) => {
@@ -174,25 +182,28 @@ export const sendPromotionCampaign = async (
 
 // Купоны и промокоды
 export const validateCoupon = async (code: string, orderAmount?: number) => {
+  // Всегда возвращаем стабильный объект { success, reason?, error?, coupon? } и НЕ бросаем
+  // исключение на 4xx — вызывающий код ветвится по machine-readable `reason`, а не парсит
+  // строку ошибки (иначе «Invalid or expired …» давало ложный expired).
   try {
-    const params = new URLSearchParams({ code });
+    const params = new URLSearchParams({ code: (code || '').trim().toUpperCase() });
     if (orderAmount !== undefined) {
       params.append('orderAmount', orderAmount.toString());
     }
-    
+
     const response = await fetch(`/api/coupons?${params.toString()}`);
-    const data = await response.json();
-    
+    const data = await response.json().catch(() => ({}));
+
     if (!response.ok) {
-      throw { response: { data: { error: data.error || 'Invalid coupon' } } };
+      return {
+        success: false,
+        reason: data?.reason ?? 'not_found',
+        error: data?.error ?? 'Invalid coupon',
+      };
     }
-    
     return data;
-  } catch (error: any) {
-    if (error.response) {
-      throw error;
-    }
-    throw { response: { data: { error: 'Network error' } } };
+  } catch (_error) {
+    return { success: false, reason: 'network', error: 'Network error' };
   }
 };
 

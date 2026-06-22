@@ -4,6 +4,31 @@ import { Coupon } from '../../../lib/models/coupon.model';
 import { isAdmin, isStaff } from '../../../lib/auth';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '../../../lib/auth';
+import {
+  isCouponCurrentlyValid,
+  normalizeCouponCode,
+  type CouponInvalidReason,
+} from '../../../lib/promotions/coupon-validity';
+
+/** HTTP-статус по причине невалидности (единый для всех точек). */
+const STATUS_BY_REASON: Record<CouponInvalidReason, number> = {
+  not_found: 404,
+  inactive: 404,
+  not_started: 400,
+  expired: 400,
+  usage_limit: 400,
+  min_order: 400,
+};
+
+/** Стабильный человекочитаемый текст (UI выбирает текст по reason, не по строке). */
+const MESSAGE_BY_REASON: Record<CouponInvalidReason, string> = {
+  not_found: 'Coupon not found',
+  inactive: 'Coupon inactive',
+  not_started: 'Coupon not yet active',
+  expired: 'Coupon expired',
+  usage_limit: 'Coupon usage limit reached',
+  min_order: 'Minimum order amount not met',
+};
 
 // GET /api/coupons - Get all coupons (admin) or validate a coupon (customer)
 export async function GET(request: NextRequest) {
@@ -18,36 +43,19 @@ export async function GET(request: NextRequest) {
     
     // Запрос на проверку конкретного купона
     if (code) {
-      const coupon = await Coupon.findOne({ 
-        code: code.toUpperCase(), 
-        active: true,
-        validFrom: { $lte: new Date() },
-        validTo: { $gte: new Date() }
-      });
-      
-      if (!coupon) {
-        return NextResponse.json({ 
-          success: false, 
-          error: 'Invalid or expired coupon' 
-        }, { status: 404 });
+      // Ищем строго по коду (без date-фильтра в запросе!): валидность — через единый
+      // helper, иначе date-only validTo «истекает» в начале дня (полночь UTC).
+      const coupon = await Coupon.findOne({ code: normalizeCouponCode(code) });
+
+      const validity = isCouponCurrentlyValid(coupon as any, new Date(), orderAmount);
+      if (!validity.valid) {
+        const reason = validity.reason!;
+        return NextResponse.json(
+          { success: false, error: MESSAGE_BY_REASON[reason], reason },
+          { status: STATUS_BY_REASON[reason] }
+        );
       }
-      
-      // Проверяем лимит использования
-      if (coupon.usageLimit && coupon.usageCount >= coupon.usageLimit) {
-        return NextResponse.json({ 
-          success: false, 
-          error: 'Coupon usage limit reached' 
-        }, { status: 400 });
-      }
-      
-      // Проверяем минимальную сумму заказа, если она указана в купоне
-      if (orderAmount !== undefined && coupon.minOrderAmount && orderAmount < coupon.minOrderAmount) {
-        return NextResponse.json({ 
-          success: false, 
-          error: `Minimum order amount not met. Required: ${coupon.minOrderAmount}€` 
-        }, { status: 400 });
-      }
-      
+
       // Вычисляем скидку, если указана сумма заказа
       let discount = undefined;
       if (orderAmount !== undefined) {

@@ -68,7 +68,7 @@ export default function AboutPage() {
 
           <div className="bg-white rounded-2xl p-6 shadow-sm text-center">
             <div className="text-4xl mb-3">⏱️</div>
-            <h3 className="font-bold text-xl mb-2">{t('about.stats.time_title', '30-45 минут')}</h3>
+            <h3 className="font-bold text-xl mb-2">{t('about.stats.time_title', '30-60 минут')}</h3>
             <p className="text-gray-600">{t('about.stats.time_text', 'Быстрая доставка')}</p>
           </div>
 

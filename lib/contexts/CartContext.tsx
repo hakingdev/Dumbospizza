@@ -173,7 +173,7 @@ const calculateTotals = (state: CartState): Partial<CartState> => {
 };
 
 // Cart reducer
-function cartReducer(state: CartState, action: CartAction): CartState {
+export function cartReducer(state: CartState, action: CartAction): CartState {
   switch (action.type) {
     case 'ADD_ITEM': {
       // Check if item already exists with the same customizations
@@ -321,10 +321,16 @@ function cartReducer(state: CartState, action: CartAction): CartState {
     }
     
     case 'REMOVE_COUPON': {
+      // Удаление промокода/купона: чистим И coupon, И promotion-code, чтобы
+      // recalculatePromotions ушёл с couponActive:false и promoCode:undefined,
+      // и автоматические Angebote вернулись (источник истины — новый расчёт).
+      // selectedFreeGifts / selectedBogoSecond НЕ трогаем — выбор пользователя
+      // восстановится, если он ещё валиден в новой калькуляции.
       const newState = {
         ...state,
         couponCode: undefined,
         couponDiscount: 0,
+        promotionPromoCode: undefined,
       };
       return {
         ...newState,
@@ -358,14 +364,20 @@ function cartReducer(state: CartState, action: CartAction): CartState {
           selectedFreeGifts = fromResolvedGifts;
         }
 
-        // Несколько наград на акцию: группируем выбранные позиции по promotionId.
-        // Движок — источник истины (резолвит выбор в bogoSecondItems с учётом лимита пар).
-        const grouped: Record<string, string[]> = {};
-        for (const item of payload.bogoSecondItems || []) {
-          const key = item.id || item.productId;
-          (grouped[item.promotionId] = grouped[item.promotionId] || []).push(key);
+        if (state.couponCode) {
+          // Купон подавляет денежные акции (BOGO) → bogoSecondItems приходит пустым.
+          // НЕ затираем выбор второго товара, чтобы он вернулся после удаления купона.
+          selectedBogoSecond = state.selectedBogoSecond;
+        } else {
+          // Несколько наград на акцию: группируем выбранные позиции по promotionId.
+          // Движок — источник истины (резолвит выбор в bogoSecondItems с учётом лимита пар).
+          const grouped: Record<string, string[]> = {};
+          for (const item of payload.bogoSecondItems || []) {
+            const key = item.id || item.productId;
+            (grouped[item.promotionId] = grouped[item.promotionId] || []).push(key);
+          }
+          selectedBogoSecond = grouped;
         }
-        selectedBogoSecond = grouped;
       }
       const newState = {
         ...state,

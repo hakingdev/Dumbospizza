@@ -171,8 +171,8 @@ export default function RootLayout({
                     'Saturday',
                     'Sunday'
                   ],
-                  opens: '11:00',
-                  closes: '22:00'
+                  opens: '17:00',
+                  closes: '21:30'
                 }
               ],
               servesCuisine: ['Pizza', 'Italienisch'],

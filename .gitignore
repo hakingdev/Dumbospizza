@@ -76,6 +76,15 @@ _*.ts
 _*.mjs
 *.output
 
+# editor local history / process / e2e artefacts (защитные правила)
+.history/
+*.pid
+*.seed
+*.pid.lock
+playwright-report/
+test-results/
+.playwright/
+
 # misc
 # ВНИМАНИЕ: package-lock.json НЕ игнорируем — он нужен для воспроизводимых
 # установок (npm ci) и сборки на Vercel. Раньше тут была опечатка, удалена.
