@@ -70,16 +70,21 @@ export default function DeliveryPage() {
   const eur = (v: number) =>
     `${Number(v || 0).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
 
-  // Метрики зоны: 1 колонка на mobile, 2 на desktop. Сумма — whitespace-nowrap,
-  // чтобы «€» не отрывался на отдельную строку.
+  // Метрики зоны: каждая в своей строке (label слева, сумма справа). Сумма —
+  // whitespace-nowrap, чтобы «€» не отрывался; label — min-w-0 truncate, чтобы
+  // в узкой панели ничего не наезжало.
   const renderMetrics = (zone: any) => (
-    <div data-testid="delivery-zone-metrics" className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
-      <div className="flex items-center justify-between gap-3 sm:block">
-        <span className="text-gray-600">{t('delivery_page.min_order', 'Mindestbestellwert')}</span>
+    <div data-testid="delivery-zone-metrics" className="grid grid-cols-1 gap-1.5 text-sm">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-gray-600 min-w-0 truncate">
+          {t('delivery_page.min_order', 'Mindestbestellwert')}
+        </span>
         <span className="font-semibold whitespace-nowrap">{eur(zone.minOrderAmount)}</span>
       </div>
-      <div className="flex items-center justify-between gap-3 sm:block">
-        <span className="text-gray-600">{t('delivery_page.fee', 'Lieferkosten')}</span>
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-gray-600 min-w-0 truncate">
+          {t('delivery_page.fee', 'Lieferkosten')}
+        </span>
         {zone.deliveryFee > 0 ? (
           <span className="font-semibold whitespace-nowrap">{eur(zone.deliveryFee)}</span>
         ) : (
