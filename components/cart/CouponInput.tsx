@@ -166,11 +166,13 @@ export default function CouponInput({
           </button>
         </form>
       ) : (
-        <div className="flex items-center justify-between p-3 bg-green-50 border border-green-100 rounded-md">
-          <div className="flex items-center">
-            <CheckCircle className="w-5 h-5 text-green-600 mr-2" />
-            <div>
-              <p className="font-medium text-sm">{appliedCoupon?.code || appliedPromotionCode}</p>
+        <div className="flex flex-col gap-3 p-3 bg-green-50 border border-green-100 rounded-md sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start min-w-0">
+            <CheckCircle className="w-5 h-5 text-green-600 mr-2 shrink-0" />
+            <div className="min-w-0">
+              <p className="font-medium text-sm break-words">
+                {appliedCoupon?.code || appliedPromotionCode}
+              </p>
               <p className="text-xs text-gray-600">
                 {appliedPromotionCode
                   ? t('cart.promo_code_active', 'Aktionscode — Rabatt wird automatisch berechnet')
@@ -183,11 +185,12 @@ export default function CouponInput({
           <button
             type="button"
             onClick={handleRemove}
-            aria-label={t('cart.remove_promo', 'Promo-Code entfernen')}
-            title={t('cart.remove_promo', 'Promo-Code entfernen')}
-            className="flex items-center justify-center min-w-[40px] min-h-[40px] -mr-1 rounded-md text-gray-500 hover:text-gray-700 hover:bg-green-100 focus:outline-none focus:ring-2 focus:ring-primary-500 transition-colors"
+            aria-label={t('cart.remove_promo', 'Gutscheincode entfernen')}
+            title={t('cart.remove_promo', 'Gutscheincode entfernen')}
+            className="inline-flex items-center justify-center gap-1.5 min-h-[40px] px-4 rounded-md border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500 transition-colors shrink-0 w-full sm:w-auto"
           >
-            <XCircle className="w-5 h-5" />
+            <XCircle className="w-4 h-4" />
+            {t('cart.remove_promo_short', 'Entfernen')}
           </button>
         </div>
       )}

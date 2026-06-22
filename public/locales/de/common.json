@@ -115,6 +115,11 @@
     "sauce_label": "Sauce",
     "extras_label": "Extras",
     "discount": "Rabatt",
+    "coupon_discount_with_code": "Rabatt mit Gutscheincode",
+    "remove_promo": "Gutscheincode entfernen",
+    "remove_promo_short": "Entfernen",
+    "loyalty_discount": "Treuepunkte",
+    "promo_total": "Rabatt Aktionen",
     "no_registration_required": "Keine Registrierung erforderlich",
     "terms_agreement": "Mit der Bestellung stimmen Sie zu"
   },

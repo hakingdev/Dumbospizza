@@ -130,7 +130,7 @@ describe('CouponInput — стабильная валидация по reason', 
     renderInput({ onCouponRemoved: onRemoved, onPromotionCodeRemoved: onPromoRemoved });
     typeAndSubmit('TEAM10');
 
-    const removeBtn = await screen.findByLabelText('Promo-Code entfernen');
+    const removeBtn = await screen.findByLabelText('Gutscheincode entfernen');
     fireEvent.click(removeBtn);
     expect(onRemoved).toHaveBeenCalled();
     expect(onPromoRemoved).toHaveBeenCalled();

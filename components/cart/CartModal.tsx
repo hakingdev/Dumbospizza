@@ -6,7 +6,7 @@ import { X, ShoppingCart, Minus, Plus, Trash2 } from 'lucide-react';
 import { useCart } from '../../lib/contexts/CartContext';
 import { useLanguage } from '../../lib/contexts/LanguageContext';
 import { loadTranslation } from '../../lib/i18n';
-import PromotionCartSummary from '../promotions/PromotionCartSummary';
+import OrderSummaryBreakdown from './OrderSummaryBreakdown';
 import BogoRewardLines from '../promotions/BogoRewardLines';
 
 interface CartModalProps {
@@ -16,7 +16,17 @@ interface CartModalProps {
 
 export function CartModal({ isOpen, onClose }: CartModalProps) {
   const { state, updateItem, removeItem } = useCart();
-  const { items, subtotal, deliveryFee, total, promotionCalculation, selectedFreeGifts } = state;
+  const {
+    items,
+    subtotal,
+    deliveryFee,
+    total,
+    promotionCalculation,
+    selectedFreeGifts,
+    couponCode,
+    couponDiscount,
+    loyaltyPointsDiscount,
+  } = state;
   const { language } = useLanguage();
   const [t, setT] = useState<any>(() => (k: string) => k);
 
@@ -157,28 +167,18 @@ export function CartModal({ isOpen, onClose }: CartModalProps) {
         {/* Footer */}
         {items.length > 0 && (
           <div className="border-t bg-white p-6 space-y-4">
-            {/* Акционные позиции (BOGO 2-й товар, подарки, скидки) */}
-            <PromotionCartSummary
-              calculation={promotionCalculation}
+            {/* Единый разбор суммы: subtotal → скидки (купон/Treuepunkte/акции) → Gesamtsumme */}
+            <OrderSummaryBreakdown
+              subtotal={subtotal}
+              deliveryFee={deliveryFee}
+              total={total}
+              couponCode={couponCode}
+              couponDiscount={couponDiscount}
+              loyaltyPointsDiscount={loyaltyPointsDiscount}
+              promotionCalculation={promotionCalculation}
               selectedFreeGifts={selectedFreeGifts}
               t={t}
             />
-
-            {/* Summary */}
-            <div className="space-y-2">
-              <div className="flex justify-between text-gray-600">
-                <span>{t('cart.subtotal', 'Промежуточный итог')}</span>
-                <span>{subtotal.toFixed(2)} €</span>
-              </div>
-              <div className="flex justify-between text-gray-600">
-                <span>{t('cart.delivery_fee', 'Доставка')}</span>
-                <span>{deliveryFee === 0 ? t('cart.free_delivery', 'Бесплатно') : `${deliveryFee.toFixed(2)} €`}</span>
-              </div>
-              <div className="border-t pt-2 flex justify-between font-bold text-lg">
-                <span>{t('cart.total', 'Итого')}</span>
-                <span className="text-primary-600">{total.toFixed(2)} €</span>
-              </div>
-            </div>
             
             {/* Actions */}
             <Link 

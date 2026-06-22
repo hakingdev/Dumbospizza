@@ -59,11 +59,11 @@ describe('DeliveryPage — мобильные зоны (pills) + подсвет�
 
     fireEvent.click(within(tabs).getByText('4-6 km'));
 
-    await waitFor(() =>
-      expect(screen.getByTestId('zone-map-stub').getAttribute('data-highlighted')).toBe('3')
-    );
-    // карточка выбранной зоны под pills показывает Mindestbestellwert этой зоны
-    expect(screen.getAllByText(/24,00\s*€/).length).toBeGreaterThan(0);
+    await waitFor(() => {
+      expect(screen.getByTestId('zone-map-stub').getAttribute('data-highlighted')).toBe('3');
+      // карточка выбранной зоны под pills показывает Mindestbestellwert этой зоны
+      expect(screen.getAllByText(/24,00\s*€/).length).toBeGreaterThan(0);
+    });
   });
 
   it('метрики: сумма с whitespace-nowrap (€ не отрывается), блок метрик присутствует', async () => {

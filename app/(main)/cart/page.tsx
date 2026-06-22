@@ -7,7 +7,7 @@ import { ChevronLeft, Trash2, Plus, Minus, ShieldCheck, Gift, Percent } from 'lu
 import { useLanguage } from '../../../lib/contexts/LanguageContext'
 import { loadTranslation } from '../../../lib/i18n'
 import CouponInput from '../../../components/cart/CouponInput'
-import PromotionCartSummary from '../../../components/promotions/PromotionCartSummary'
+import OrderSummaryBreakdown from '../../../components/cart/OrderSummaryBreakdown'
 import BogoRewardLines from '../../../components/promotions/BogoRewardLines'
 import GratisGiftPickerModal from '../../../components/promotions/GratisGiftPickerModal'
 import BogoHalfPricePickerModal from '../../../components/promotions/BogoHalfPricePickerModal'
@@ -220,41 +220,18 @@ export default function CartPage() {
             <div className="bg-white rounded-lg shadow-md p-6 sticky top-24">
               <h2 className="text-xl font-bold mb-4">{t('cart.summary_title', 'Сводка заказа')}</h2>
               
-              <div className="space-y-3 mb-6">
-                <div className="flex justify-between">
-                  <span>{t('cart.subtotal')}</span>
-                  <span>{subtotal.toFixed(2)} €</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>{t('cart.delivery_fee')}</span>
-                  <span>{deliveryFee === 0 ? t('cart.free_delivery', 'Бесплатно') : `${deliveryFee.toFixed(2)} €`}</span>
-                </div>
-                
-                {/* Coupon discount */}
-                {state.couponDiscount > 0 && (
-                  <div className="flex justify-between text-green-600">
-                    <span>{t('cart.discount')} ({t('checkout.promo_code', 'Gutschein')})</span>
-                    <span>-{state.couponDiscount.toFixed(2)} €</span>
-                  </div>
-                )}
-
-                {state.loyaltyPointsDiscount > 0 && (
-                  <div className="flex justify-between text-green-600">
-                    <span>{t('cart.loyalty_discount', 'Бонусы')}</span>
-                    <span>-{state.loyaltyPointsDiscount.toFixed(2)} €</span>
-                  </div>
-                )}
-
-                <PromotionCartSummary
-                  calculation={state.promotionCalculation}
+              <div className="mb-6">
+                <OrderSummaryBreakdown
+                  subtotal={subtotal}
+                  deliveryFee={deliveryFee}
+                  total={grandTotal}
+                  couponCode={state.couponCode}
+                  couponDiscount={state.couponDiscount}
+                  loyaltyPointsDiscount={state.loyaltyPointsDiscount}
+                  promotionCalculation={state.promotionCalculation}
                   selectedFreeGifts={state.selectedFreeGifts}
                   t={t}
                 />
-                
-                <div className="border-t pt-3 mt-3 flex justify-between font-bold">
-                  <span>{t('cart.total')}</span>
-                  <span>{grandTotal.toFixed(2)} €</span>
-                </div>
               </div>
               
               {/* Coupon input */}
