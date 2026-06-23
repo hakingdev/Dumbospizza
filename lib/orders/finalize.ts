@@ -1,6 +1,7 @@
 import type { NextRequest } from 'next/server';
 import { Coupon } from '../models/coupon.model';
 import { redeemPointsForOrder } from '../loyalty/service';
+import { getLoyaltyRules } from '../loyalty/config';
 import { recordPromotionOrderAnalytics } from '../promotions/order-integration';
 import { sendServerPurchaseConversionEvents } from '../conversions/server-purchase-events';
 import { sendOrderNotification } from '../telegram';
@@ -75,9 +76,41 @@ export async function finalizeOrderPlacement(order: any, request: NextRequest): 
   // Баллы лояльности: СПИСАНИЕ фиксируется при размещении заказа (атомарно).
   // НАЧИСЛЕНИЕ перенесено на статус completed (см. lib/loyalty/service.ts
   // earnForCompletedOrder, вызывается из PUT /api/orders/[id]).
+  //
+  // ВАЖНО (баг «Punkte не уменьшаются»): сумма заказа и order.loyaltyPointsUsed
+  // фиксируются ещё при СОЗДАНИИ заказа (POST /api/orders), а фактическое списание
+  // баллов идёт здесь. Раньше результат redeem полностью проглатывался: если
+  // списание не проходило (недостаточно баллов / over-cap / нет программы / сбой),
+  // заказ всё равно оставался со «списанными» 1.68 и заниженной суммой, но
+  // loyalty_programs.balance НЕ уменьшался → orders.loyalty_points_used расходился
+  // с балансом, и в кабинете Verfügbare Punkte не падали. Теперь мы проверяем
+  // результат и приводим заказ к РЕАЛЬНО списанному количеству (инвариант:
+  // loyaltyPointsUsed на финализированном заказе всегда равен реальному списанию).
   if (order.loyaltyPointsUsed && order.loyaltyPointsUsed > 0) {
     try {
-      await redeemPointsForOrder(order);
+      const result = await redeemPointsForOrder(order);
+      const recorded = Number(order.loyaltyPointsUsed) || 0;
+      const redeemed = Number(result.redeemed) || 0;
+      if (!result.success && result.reason !== 'no_points' && redeemed !== recorded) {
+        console.error(
+          `Loyalty redeem not applied for order ${order.orderNumber || order._id} ` +
+            `(reason=${result.reason}): recorded=${recorded}, redeemed=${redeemed}`
+        );
+        // Не оставляем на заказе баллы, которых нет в журнале списаний.
+        order.loyaltyPointsUsed = redeemed;
+        // Заказ ещё не оплачен (cash/card финализируются до оплаты) → возвращаем
+        // «скидку баллами» в сумму к оплате, чтобы деньги сходились с позициями.
+        // Для онлайн-оплаты (paymentStatus уже 'completed') сумму НЕ трогаем —
+        // она уже списана; здесь только фиксируем фактическое (не)списание.
+        if (order.paymentStatus !== 'completed') {
+          const { pointValueEuro } = await getLoyaltyRules();
+          const refundEuro = (recorded - redeemed) * pointValueEuro;
+          if (refundEuro > 0) {
+            order.total = Number(order.total || 0) + refundEuro;
+          }
+        }
+        await order.save();
+      }
     } catch (error) {
       console.error('Error redeeming loyalty points:', error);
     }

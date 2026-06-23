@@ -149,3 +149,94 @@ d('loyalty service (integration, real DB)', () => {
     expect(await svc.getBalance(userId)).toBe(1); // 6 − 5 сгоревших
   });
 });
+
+// =====================================================================
+// Регрессия тикета: «Verfügbare Punkte не уменьшаются».
+// Отдельный временный клиент: ровно 1.68 балла, заказ из тикета (total 26.22),
+// списание через redeemPointsForOrder (как из finalizeOrderPlacement).
+// =====================================================================
+const userId2 = genObjectId();
+const phone2 = `+49TICKET${stamp}`;
+const ticketOrderId = genObjectId();
+
+let db2: any;
+let svc2: typeof import('../service');
+
+d('loyalty redeem — регрессия тикета (real DB)', () => {
+  beforeAll(async () => {
+    loadDatabaseUrl();
+    db2 = (await import('../../db/client')).default;
+    svc2 = await import('../service');
+    await db2.insert(users).values({ id: userId2, name: 'Ticket User', phoneNumber: phone2, role: 'customer' });
+    // Заказ-источник 1.68 балла (completed) — чтобы появилась программа и earn-батч.
+    await db2.insert(orders).values({
+      id: genObjectId(),
+      orderNumber: `T${stamp}TE`,
+      customerName: 'Ticket User',
+      phoneNumber: phone2,
+      user: userId2,
+      deliveryType: 'pickup',
+      subtotal: 56,
+      total: 56,
+      paymentMethod: 'cash',
+      status: 'completed',
+    });
+  });
+
+  afterAll(async () => {
+    if (!db2) return;
+    await db2.delete(loyaltyTransactions).where(eq(loyaltyTransactions.user, userId2));
+    await db2.delete(loyaltyPrograms).where(eq(loyaltyPrograms.user, userId2));
+    await db2.delete(orders).where(eq(orders.user, userId2));
+    await db2.delete(users).where(eq(users.id, userId2));
+  });
+
+  it('подготовка: ровно 1.68 доступных баллов', async () => {
+    // 56 € × 3% (Bronze) = 1.68. Это и есть «Verfügbare Punkte» = «Insgesamt gesammelt».
+    await svc2.adjustPoints(userId2, 0, 'init', phone2); // гарантируем программу
+    // Доводим баланс ровно до 1.68 через корректировку (детерминированно).
+    const cur = await svc2.getBalance(userId2);
+    if (cur !== 1.68) await svc2.adjustPoints(userId2, 1.68 - cur, 'set to 1.68', phone2);
+    expect(await svc2.getBalance(userId2)).toBeCloseTo(1.68, 2);
+  });
+
+  it('РЕГРЕССИЯ: списание 1.68 на заказ → available=0, totalRedeemed=1.68', async () => {
+    const order = {
+      _id: ticketOrderId,
+      user: userId2,
+      phoneNumber: phone2,
+      loyaltyPointsUsed: 1.68,
+      total: 26.22,
+      orderNumber: `T${stamp}TK`,
+    };
+    const res = await svc2.redeemPointsForOrder(order);
+    expect(res.success).toBe(true);
+    expect(res.redeemed).toBeCloseTo(1.68, 2);
+
+    const sum = await svc2.getLoyaltySummary(userId2, phone2);
+    expect(sum.balance).toBeCloseTo(0, 2); // Verfügbare Punkte = 0
+    expect(sum.totalRedeemed).toBeCloseTo(1.68, 2); // Insgesamt eingelöst = 1.68
+    // Profile-инвариант: доступные ≠ всего собрано, раз часть уже списана.
+    expect(sum.balance).not.toBeCloseTo(sum.totalEarned, 2);
+  });
+
+  it('идемпотентность: повторное списание того же заказа НЕ уводит баланс в минус', async () => {
+    const order = {
+      _id: ticketOrderId, // тот же заказ
+      user: userId2,
+      phoneNumber: phone2,
+      loyaltyPointsUsed: 1.68,
+      total: 26.22,
+      orderNumber: `T${stamp}TK`,
+    };
+    // 3 повторных вызова (ретраи confirm/вебхука/смены статуса).
+    for (let i = 0; i < 3; i++) await svc2.redeemPointsForOrder(order);
+    expect(await svc2.getBalance(userId2)).toBeCloseTo(0, 2); // не ушёл в минус, списано один раз
+  });
+
+  it('нельзя списать больше доступного: при балансе 0 запрос отклоняется', async () => {
+    const res = await svc2.redeemPoints(userId2, 5, genObjectId(), 26.22, phone2);
+    expect(res.success).toBe(false);
+    expect(await svc2.getBalance(userId2)).toBeCloseTo(0, 2);
+  });
+});

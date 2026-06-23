@@ -218,6 +218,9 @@ export async function redeemPoints(
   }
 
   const result = await db.transaction(async (tx) => {
+    // Гарантируем строку программы (как в earn/reverse/adjust) — иначе guarded
+    // UPDATE по отсутствующей строке молча затронет 0 строк и спишет «вникуда».
+    await ensureProgram(tx as unknown as Db, userId, phoneNumber || userId);
     const updated = await tx
       .update(loyaltyPrograms)
       .set({
