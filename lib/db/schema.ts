@@ -177,8 +177,11 @@ export const orders = pgTable(
       >()
       .notNull()
       .default([]),
-    loyaltyPointsUsed: integer('loyalty_points_used'),
-    loyaltyPointsEarned: integer('loyalty_points_earned'),
+    // Баллы лояльности хранятся с центовой точностью (1 балл = 1 €, допускается
+    // дробная часть — см. computeMaxRedeemablePoints/roundPoints). Поэтому
+    // doublePrecision, а не integer: иначе insert падает на значениях вроде 1.68.
+    loyaltyPointsUsed: doublePrecision('loyalty_points_used'),
+    loyaltyPointsEarned: doublePrecision('loyalty_points_earned'),
     total: doublePrecision('total').notNull(),
     paymentMethod: text('payment_method').notNull(), // 'cash' | 'card' | 'online'
     paymentStatus: text('payment_status').notNull().default('pending'),
@@ -591,7 +594,7 @@ export const whatsappQueue = pgTable(
     id: id(),
     phone: text('phone').notNull(),
     text: text('text').notNull(),
-    status: text('status').notNull().default('pending'), // 'pending' | 'sent' | 'failed'
+    status: text('status').notNull().default('pending'), // 'pending' | 'sending' | 'sent' | 'failed'
     error: text('error'),
     orderId: text('order_id'),
     sentAt: timestamp('sent_at', { withTimezone: true, mode: 'date' }),

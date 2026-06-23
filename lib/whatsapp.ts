@@ -62,9 +62,15 @@ export async function enqueueWhatsAppMessageOnce(input: {
     const existing = await WhatsAppQueue.findOne({
       orderId: input.orderId,
       text: input.text,
-      status: { $in: ['pending', 'sent'] },
+      status: { $in: ['pending', 'sending', 'sent'] },
     });
-    if (existing) return false;
+    if (existing) {
+      console.info(
+        '[whatsapp] enqueue skipped — message already queued/sent for order',
+        JSON.stringify({ orderId: input.orderId })
+      );
+      return false;
+    }
   }
 
   await WhatsAppQueue.create({
@@ -73,6 +79,7 @@ export async function enqueueWhatsAppMessageOnce(input: {
     status: 'pending',
     orderId: input.orderId,
   });
+  console.info('[whatsapp] enqueued message', JSON.stringify({ orderId: input.orderId }));
   return true;
 }
 

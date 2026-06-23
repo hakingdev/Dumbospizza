@@ -34,10 +34,25 @@ export async function POST(request: NextRequest) {
     if (!item) {
       return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
     }
+
+    // Идемпотентность: финальный статус выставляем только один раз. Повторный
+    // /mark-sent на уже отправленном сообщении (повтор воркера) ничего не меняет.
+    if (item.status === 'sent') {
+      console.info(
+        '[whatsapp/mark-sent] skip — already sent',
+        JSON.stringify({ id, orderId: item.orderId })
+      );
+      return NextResponse.json({ success: true, alreadyMarked: true });
+    }
+
     item.status = success ? 'sent' : 'failed';
     item.sentAt = new Date();
     if (error) item.error = error;
     await item.save();
+    console.info(
+      '[whatsapp/mark-sent] marked',
+      JSON.stringify({ id, orderId: item.orderId, status: item.status })
+    );
     return NextResponse.json({ success: true });
   } catch (error: any) {
     console.error('Error marking WhatsApp sent:', error);

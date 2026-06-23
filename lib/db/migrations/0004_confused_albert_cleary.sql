@@ -1,0 +1,2 @@
+ALTER TABLE "orders" ALTER COLUMN "loyalty_points_used" SET DATA TYPE double precision;--> statement-breakpoint
+ALTER TABLE "orders" ALTER COLUMN "loyalty_points_earned" SET DATA TYPE double precision;

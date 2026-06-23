@@ -4,7 +4,7 @@ import { whatsappQueue } from '../db/schema';
 export interface IWhatsAppQueue {
   phone: string;
   text: string;
-  status: 'pending' | 'sent' | 'failed';
+  status: 'pending' | 'sending' | 'sent' | 'failed';
   error?: string;
   orderId?: string;
   createdAt: Date;
