@@ -1,27 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { and, asc, eq, inArray, lt, or } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, lt, ne, or } from 'drizzle-orm';
 import db from '../../../../lib/db/client';
 import { whatsappQueue } from '../../../../lib/db/schema';
 import { connectToDatabase } from '../../../../lib/models';
 import { getSetting } from '../../../../lib/settings';
+import { dedupKey, planDelivery } from '../../../../lib/whatsapp-delivery';
 
 /**
  * GET /api/whatsapp/pending
  * Для WhatsApp Web worker: получить pending сообщения. Воркер сам опрашивает сайт (исходящее соединение).
  * Заголовок X-API-Key должен совпадать с WHATSAPP_WEB_WORKER_SECRET (env или storeSettings).
  *
- * ВАЖНО (идемпотентность доставки): сообщения выдаются воркеру АТОМАРНО с
- * переводом в статус 'sending'. Раньше строки оставались 'pending' до тех пор,
- * пока воркер не вызовет /mark-sent, поэтому при следующем опросе (или при
- * перекрытии опросов / медленной отправке / рестарте воркера) одно и то же
- * сообщение выдавалось снова и отправлялось клиенту повторно (дубли 4x).
- * Теперь каждое сообщение выдаётся ровно один раз; повторно — только если воркер
- * «завис» и не подтвердил отправку дольше CLAIM_STALE_MS (тогда строка повторно
- * становится доступной для доставки).
+ * ИДЕМПОТЕНТНОСТЬ ДОСТАВКИ (серверный обход, скрипт воркера НЕ трогаем):
+ * воркер на рабочей машине может опросить сайт повторно / отправить одно и то же
+ * сообщение дважды — управлять им мы не можем. Единственный серверный рычаг — что
+ * именно эндпоинт ОТДАЁТ воркеру. Поэтому гарантируется, что одно и то же
+ * сообщение (одинаковые orderId+text) выдаётся воркеру максимум ОДИН РАЗ за всё
+ * время:
+ *   1) выдача атомарна (pending -> 'sending') — повторный опрос не увидит строку;
+ *   2) если идентичное сообщение уже 'sent' или прямо сейчас 'sending' (in-flight),
+ *      все дубликаты помечаются 'skipped' и НИКОГДА не отправляются;
+ *   3) если в очереди несколько дублей разом — выдаётся только самый старый,
+ *      остальные -> 'skipped'.
+ * Повторная выдача одной строки возможна лишь если воркер «завис» и не подтвердил
+ * отправку дольше CLAIM_STALE_MS (тогда at-least-once после падения воркера).
  */
 
-// Сколько ждать подтверждения (/mark-sent) от воркера, прежде чем считать выдачу
-// «зависшей» и снова разрешить доставку сообщения (на случай падения воркера).
+// Сколько ждать подтверждения (/mark-sent), прежде чем считать выдачу зависшей.
 const CLAIM_STALE_MS = 2 * 60 * 1000;
 const BATCH_SIZE = 50;
 
@@ -44,15 +49,20 @@ export async function GET(request: NextRequest) {
     const now = new Date();
     const staleBefore = new Date(now.getTime() - CLAIM_STALE_MS);
 
-    // Кандидаты на выдачу: новые ('pending') и «зависшие» ('sending', выданные
-    // давно, но так и не подтверждённые воркером).
+    // Кандидаты на выдачу: новые ('pending') и зависшие ('sending', выданные
+    // давно и не подтверждённые воркером). Старые — первыми.
     const eligible = or(
       eq(whatsappQueue.status, 'pending'),
       and(eq(whatsappQueue.status, 'sending'), lt(whatsappQueue.sentAt, staleBefore))
     );
 
     const candidates = await db
-      .select({ id: whatsappQueue.id })
+      .select({
+        id: whatsappQueue.id,
+        phone: whatsappQueue.phone,
+        text: whatsappQueue.text,
+        orderId: whatsappQueue.orderId,
+      })
       .from(whatsappQueue)
       .where(eligible)
       .orderBy(asc(whatsappQueue.createdAt))
@@ -62,16 +72,58 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: true, items: [] });
     }
 
-    const candidateIds = candidates.map((c) => c.id);
+    // Уже доставленные / прямо сейчас отправляемые идентичные сообщения: их ключи
+    // нельзя выдавать повторно. Берём по orderId кандидатов (узкая выборка).
+    const candidateOrderIds = Array.from(
+      new Set(candidates.map((c) => c.orderId).filter((v): v is string => !!v))
+    );
+    const occupiedKeys = new Set<string>();
+    if (candidateOrderIds.length > 0) {
+      const occupiedRows = await db
+        .select({
+          phone: whatsappQueue.phone,
+          text: whatsappQueue.text,
+          orderId: whatsappQueue.orderId,
+        })
+        .from(whatsappQueue)
+        .where(
+          and(
+            inArray(whatsappQueue.orderId, candidateOrderIds),
+            or(
+              eq(whatsappQueue.status, 'sent'),
+              // свежий in-flight 'sending' (захвачен прошлым опросом, ещё не подтверждён)
+              and(eq(whatsappQueue.status, 'sending'), gte(whatsappQueue.sentAt, staleBefore))
+            )
+          )
+        );
+      for (const r of occupiedRows) occupiedKeys.add(dedupKey(r));
+    }
 
-    // Атомарная «заявка»: одним UPDATE ... RETURNING переводим строки в 'sending'
-    // и возвращаем только те, что были реально захвачены этим запросом. Повторное
-    // условие eligible внутри WHERE защищает от гонки параллельных опросов — второй
-    // запрос не получит уже захваченные строки.
+    // Решаем, что выдать (по одному на ключ), а что пометить 'skipped'.
+    const { toClaim, toSkip } = planDelivery(candidates, occupiedKeys);
+
+    // Дубликаты/занятые ключи -> 'skipped' (финальный статус, больше не выдаются).
+    if (toSkip.length > 0) {
+      await db
+        .update(whatsappQueue)
+        .set({ status: 'skipped', sentAt: now, updatedAt: now })
+        .where(and(inArray(whatsappQueue.id, toSkip), ne(whatsappQueue.status, 'sent')));
+      console.info(
+        '[whatsapp/pending] skipped duplicate/occupied messages',
+        JSON.stringify({ count: toSkip.length, ids: toSkip })
+      );
+    }
+
+    if (toClaim.length === 0) {
+      return NextResponse.json({ success: true, items: [] });
+    }
+
+    // Атомарная заявка: переводим в 'sending' только строки, всё ещё eligible —
+    // защита от гонки параллельных опросов (второй не получит уже захваченные).
     const claimed = await db
       .update(whatsappQueue)
       .set({ status: 'sending', sentAt: now, updatedAt: now })
-      .where(and(inArray(whatsappQueue.id, candidateIds), eligible))
+      .where(and(inArray(whatsappQueue.id, toClaim), eligible))
       .returning({
         id: whatsappQueue.id,
         phone: whatsappQueue.phone,
@@ -92,11 +144,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      items: claimed.map((it) => ({
-        id: it.id,
-        phone: it.phone,
-        text: it.text,
-      })),
+      items: claimed.map((it) => ({ id: it.id, phone: it.phone, text: it.text })),
     });
   } catch (error: any) {
     console.error('Error fetching WhatsApp pending:', error);

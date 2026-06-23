@@ -594,7 +594,7 @@ export const whatsappQueue = pgTable(
     id: id(),
     phone: text('phone').notNull(),
     text: text('text').notNull(),
-    status: text('status').notNull().default('pending'), // 'pending' | 'sending' | 'sent' | 'failed'
+    status: text('status').notNull().default('pending'), // 'pending' | 'sending' | 'sent' | 'failed' | 'skipped'
     error: text('error'),
     orderId: text('order_id'),
     sentAt: timestamp('sent_at', { withTimezone: true, mode: 'date' }),
