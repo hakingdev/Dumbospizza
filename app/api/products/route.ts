@@ -6,6 +6,7 @@ import { fetchMewsPosProducts } from '../../../lib/mews-pos/sync';
 import { Category } from '../../../lib/models/category.model';
 import { getServerSession } from 'next-auth';
 import { authOptions, isStaff } from '../../../lib/auth';
+import { sanitizeProductInput } from '../../../lib/products/sanitize';
 
 async function isAuthorized() {
   const session = await getServerSession(authOptions);
@@ -75,7 +76,7 @@ export async function POST(request: NextRequest) {
     }
 
     await connectToDatabase();
-    const data = await request.json();
+    const data = sanitizeProductInput(await request.json());
     if (data?.category) {
       const isObjectId = typeof data.category === 'string' && /^[a-f\d]{24}$/i.test(data.category);
       if (!isObjectId) {

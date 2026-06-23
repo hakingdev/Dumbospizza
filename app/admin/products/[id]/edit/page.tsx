@@ -8,6 +8,8 @@ import ImageUpload from '../../../../../components/ImageUpload';
 import StatusModal from '../../../../../components/admin/StatusModal';
 import ProductSizesEditor from '../../../../../components/admin/ProductSizesEditor';
 import ProductOptionGroupsEditor from '../../../../../components/admin/ProductOptionGroupsEditor';
+import VatRateSelector from '../../../../../components/admin/VatRateSelector';
+import { FOOD_VAT_RATE } from '../../../../../lib/orders/tax';
 
 export default function EditProductPage() {
   const router = useRouter();
@@ -42,6 +44,7 @@ export default function EditProductPage() {
         if (data.success) {
           setProduct({
             ...data.product,
+            taxRate: data.product.taxRate ?? FOOD_VAT_RATE,
             sizes: data.product.sizes || [],
             extras: data.product.extras || { toppings: [], sauces: [], sides: [] }
           });
@@ -115,12 +118,23 @@ export default function EditProductPage() {
         body: JSON.stringify(updatedProduct)
       });
 
-      if (response.ok) {
+      const data = await response.json().catch(() => ({}));
+      if (response.ok && data?.success !== false) {
         setModal({ open: true, title: 'Готово', message: 'Продукт обновлен!' });
         setTimeout(() => router.push('/admin/products'), 300);
+      } else {
+        setModal({
+          open: true,
+          title: 'Ошибка',
+          message: data?.error || `Не удалось сохранить (код ${response.status})`,
+        });
       }
     } catch (error) {
-      setModal({ open: true, title: 'Ошибка', message: 'Ошибка обновления продукта' });
+      setModal({
+        open: true,
+        title: 'Ошибка',
+        message: 'Нет связи с сервером. Проверьте, что приложение запущено, и повторите.',
+      });
     }
   };
 
@@ -232,6 +246,11 @@ export default function EditProductPage() {
             />
           </div>
         </div>
+
+        <VatRateSelector
+          value={product.taxRate}
+          onChange={(rate) => setProduct({ ...product, taxRate: rate })}
+        />
 
         {/* Sizes */}
         <ProductSizesEditor

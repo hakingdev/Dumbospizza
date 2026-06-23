@@ -8,6 +8,8 @@ import { useLanguage } from '../../lib/contexts/LanguageContext';
 import { loadTranslation } from '../../lib/i18n';
 import OrderSummaryBreakdown from './OrderSummaryBreakdown';
 import BogoRewardLines from '../promotions/BogoRewardLines';
+import { groupCartRows } from '../../lib/cart/combo';
+import { ComboCartGroup } from './ComboCartGroup';
 
 interface CartModalProps {
   isOpen: boolean;
@@ -15,7 +17,7 @@ interface CartModalProps {
 }
 
 export function CartModal({ isOpen, onClose }: CartModalProps) {
-  const { state, updateItem, removeItem } = useCart();
+  const { state, updateItem, removeItem, removeCombo } = useCart();
   const {
     items,
     subtotal,
@@ -96,26 +98,38 @@ export function CartModal({ isOpen, onClose }: CartModalProps) {
             </div>
           ) : (
             <div className="space-y-4">
-              {items.map((item) => (
+              {groupCartRows(items).map((row) => {
+                if (row.kind === 'combo') {
+                  return (
+                    <ComboCartGroup
+                      key={row.comboId}
+                      group={row}
+                      onRemove={removeCombo}
+                      freeLabel={t('cart.free', 'gratis')}
+                    />
+                  );
+                }
+                const item = row.item;
+                return (
                 <div key={item.id} className="bg-gray-50 rounded-xl p-4">
                   <div className="flex items-start space-x-4">
                     {/* Image placeholder */}
                     <div className="w-20 h-20 bg-gray-200 rounded-lg flex-shrink-0 flex items-center justify-center">
                       <span className="text-2xl">🍕</span>
                     </div>
-                    
+
                     {/* Details */}
                     <div className="flex-1 min-w-0">
                       <div className="flex justify-between items-start mb-2">
                         <h3 className="font-bold text-gray-900">{item.name}</h3>
-                        <button 
+                        <button
                           onClick={() => removeItem(item.id)}
                           className="text-gray-400 hover:text-red-500 transition-colors ml-2"
                         >
                           <Trash2 className="h-4 w-4" />
                         </button>
                       </div>
-                      
+
                       {item.size && (
                         <p className="text-sm text-gray-600 mb-1">
                           {item.size.name}{(item.size.label || item.size.size) ? ` (${item.size.label || item.size.size})` : ''}
@@ -133,31 +147,32 @@ export function CartModal({ isOpen, onClose }: CartModalProps) {
                           + {item.extras.toppings.map(t => t.name).join(', ')}
                         </p>
                       )}
-                      
+
                       <div className="flex items-center justify-between mt-3">
                         <div className="flex items-center border border-gray-300 rounded-lg">
-                          <button 
+                          <button
                             onClick={() => handleUpdateQuantity(item.id, item.quantity - 1)}
                             className="p-2 hover:bg-gray-100 transition-colors rounded-l-lg"
                           >
                             <Minus className="h-4 w-4 text-gray-600" />
                           </button>
                           <span className="px-4 py-1 font-medium">{item.quantity}</span>
-                          <button 
+                          <button
                             onClick={() => handleUpdateQuantity(item.id, item.quantity + 1)}
                             className="p-2 hover:bg-gray-100 transition-colors rounded-r-lg"
                           >
                             <Plus className="h-4 w-4 text-gray-600" />
                           </button>
                         </div>
-                        <span className="font-bold text-primary-600 text-lg">
+                        <span className="font-bold text-lg text-primary-600">
                           {(item.price * item.quantity).toFixed(2)} €
                         </span>
                       </div>
                     </div>
                   </div>
                 </div>
-              ))}
+                );
+              })}
               {/* Награды акции (2-й товар со скидкой) — строками рядом с товарами */}
               <BogoRewardLines calculation={promotionCalculation} selectedFreeGifts={selectedFreeGifts} variant="card" />
             </div>
@@ -178,8 +193,9 @@ export function CartModal({ isOpen, onClose }: CartModalProps) {
               promotionCalculation={promotionCalculation}
               selectedFreeGifts={selectedFreeGifts}
               t={t}
+              showDelivery={false}
             />
-            
+
             {/* Actions */}
             <Link 
               href="/checkout"

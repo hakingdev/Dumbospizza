@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Search, ShoppingBag, Eye, ChevronDown, ChevronUp, Download } from 'lucide-react';
+import OrderTaxSummary from '../../../components/admin/OrderTaxSummary';
 const EXPORT_STATUSES = [
   { value: '', label: 'Все статусы' },
   { value: 'new', label: 'Новый' },
@@ -300,6 +301,7 @@ export default function OrdersPage() {
                                   <span>{order.total?.toFixed(2)} €</span>
                                 </div>
                               </div>
+                              <OrderTaxSummary order={order} />
                             </div>
                             <div>
                               <h4 className="font-semibold mb-2">Контактная информация</h4>

@@ -295,9 +295,9 @@ export const deliveryZones = [
 
 // Restaurant location (центральная точка для расчёта расстояний)
 export const restaurantLocation = {
-  address: 'Hauptstraße 100, 97688 Bad Kissingen',
-  lat: 50.2006,
-  lng: 10.0767
+  address: 'Kurhausstr. 11A, 97688 Bad Kissingen',
+  lat: 50.19526,
+  lng: 10.07827
 };
 
 

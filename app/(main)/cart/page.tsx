@@ -13,6 +13,8 @@ import GratisGiftPickerModal from '../../../components/promotions/GratisGiftPick
 import BogoHalfPricePickerModal from '../../../components/promotions/BogoHalfPricePickerModal'
 import { SafeImage } from '../../../components/SafeImage'
 import { useCart } from '../../../lib/contexts/CartContext'
+import { groupCartRows } from '../../../lib/cart/combo'
+import { ComboCartGroup } from '../../../components/cart/ComboCartGroup'
 import { getConflictingPromotions } from '../../../lib/promotions/coupon-conflict'
 import { PROMO_CONFLICT_MESSAGE } from '../../../components/cart/PromoConflictDialog'
 
@@ -29,6 +31,7 @@ export default function CartPage() {
     totals,
     updateItem,
     removeItem,
+    removeCombo,
     applyCoupon,
     removeCoupon,
     setPromotionPromoCode,
@@ -80,6 +83,10 @@ export default function CartPage() {
   const subtotal = totals.subtotal ?? 0;
   const deliveryFee = totals.deliveryFee ?? state.deliveryFee;
   const grandTotal = Math.max(0, totals.total ?? 0);
+  // Купон считается только по обычным товарам — combo (Angebot) исключаем из базы.
+  const couponOrderAmount = state.items
+    .filter((i) => !i.comboId)
+    .reduce((s, i) => s + i.price * i.quantity, 0);
 
   const handleProceedToCheckout = () => {
     // Награда BOGO опциональна — не блокируем оформление.
@@ -132,7 +139,16 @@ export default function CartPage() {
             {/* Cart Items */}
             <div className="bg-white rounded-lg shadow-md overflow-hidden">
               <ul className="divide-y divide-gray-200">
-                {state.items.map((item) => (
+                {groupCartRows(state.items).map((row) => {
+                  if (row.kind === 'combo') {
+                    return (
+                      <li key={row.comboId} className="p-4">
+                        <ComboCartGroup group={row} onRemove={removeCombo} freeLabel={t('cart.free', 'gratis')} />
+                      </li>
+                    )
+                  }
+                  const item = row.item
+                  return (
                   <li key={item.id} className="p-4">
                     <div className="flex flex-col md:flex-row md:items-center gap-4">
                       <div className="md:w-24 h-24 bg-gray-200 rounded-md flex items-center justify-center text-gray-500 flex-shrink-0 overflow-hidden">
@@ -142,11 +158,11 @@ export default function CartPage() {
                           <>[{t('category.image_placeholder', 'Изображение')} {item.name}]</>
                         )}
                       </div>
-                      
+
                       <div className="flex-1">
                         <div className="flex items-start justify-between gap-3">
                           <h3 className="min-w-0 break-words text-lg font-semibold leading-tight">{item.name}</h3>
-                          <button 
+                          <button
                             className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-gray-400 transition-colors hover:bg-red-50 hover:text-red-500"
                             onClick={() => removeItem(item.id)}
                             aria-label={t('cart.remove_item', 'Удалить')}
@@ -207,7 +223,8 @@ export default function CartPage() {
                       </div>
                     </div>
                   </li>
-                ))}
+                  )
+                })}
               </ul>
               {/* Награды акции — строками рядом с товарами */}
               <div className="p-4 pt-0 space-y-2">
@@ -232,12 +249,13 @@ export default function CartPage() {
                   promotionCalculation={state.promotionCalculation}
                   selectedFreeGifts={state.selectedFreeGifts}
                   t={t}
+                  showDelivery={false}
                 />
               </div>
               
               {/* Coupon input */}
               <CouponInput
-                orderAmount={subtotal}
+                orderAmount={couponOrderAmount}
                 appliedCode={state.couponCode}
                 appliedDiscount={state.couponDiscount}
                 onCouponApplied={(coupon) => applyCoupon(coupon.code, coupon.discount || 0)}

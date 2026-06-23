@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '../../../../../lib/models';
 import { Order } from '../../../../../lib/models/order.model';
 import { createSumUpCheckout } from '../../../../../lib/sumup';
+import { buildSumUpCheckoutDescription } from '../../../../../lib/orders/tax';
 
 /**
  * POST /api/payments/sumup/checkout
@@ -35,11 +36,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Order is already paid' }, { status: 409 });
     }
 
+    // Чек SumUp формируется из единственного текстового поля description.
+    // Передаём в него реальные позиции (Artikel) и разбивку налогов (USt. 7 % /
+    // 19 %), а не одну общую строку. VAT применяется только к онлайн-заказам —
+    // этот маршрут вызывается исключительно для paymentMethod === 'online'.
     const checkout = await createSumUpCheckout({
       reference: order.orderNumber,
       amount: order.total,
       currency: 'EUR',
-      description: `Dumbo Pizza Bestellung #${order.orderNumber}`,
+      description: buildSumUpCheckoutDescription({
+        orderNumber: order.orderNumber,
+        items: order.items,
+        paymentMethod: order.paymentMethod,
+      }),
     });
 
     return NextResponse.json({

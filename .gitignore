@@ -90,3 +90,10 @@ test-results/
 # установок (npm ci) и сборки на Vercel. Раньше тут была опечатка, удалена.
 Dockerfile.new
 Thumbs.db
+
+# Stripe online payments — отключено (используем SumUp). Код оставлен локально,
+# чтобы при желании переключиться обратно; в git не коммитим.
+/lib/stripe.ts
+/lib/__tests__/stripe.test.ts
+/app/api/payments/stripe/
+/components/checkout/StripePaymentForm.tsx

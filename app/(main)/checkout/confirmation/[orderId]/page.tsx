@@ -7,6 +7,8 @@ import Link from 'next/link';
 import { useCart } from '../../../../../lib/contexts/CartContext';
 import { useLanguage } from '../../../../../lib/contexts/LanguageContext';
 import { loadTranslation } from '../../../../../lib/i18n';
+import OrderVatReceipt from '../../../../../components/checkout/OrderVatReceipt';
+import OrderVatReceiptModal from '../../../../../components/checkout/OrderVatReceiptModal';
 
 interface OrderConfirmationProps {
   params: {
@@ -19,6 +21,7 @@ export default function OrderConfirmationPage({ params }: OrderConfirmationProps
   const [order, setOrder] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [receiptModalOpen, setReceiptModalOpen] = useState(false);
   const { clearCart } = useCart();
   const router = useRouter();
   const { language } = useLanguage();
@@ -53,6 +56,24 @@ export default function OrderConfirmationPage({ params }: OrderConfirmationProps
     
     fetchOrder();
   }, [orderId, clearCart]);
+
+  // После успешной онлайн-оплаты checkout редиректит сюда с ?paid=1 — тогда
+  // автоматически показываем клиенту НДС-чек (Beleg) во всплывающей модалке.
+  // Параметр снимаем из URL, чтобы при обновлении страницы чек не всплывал снова.
+  useEffect(() => {
+    if (!order) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('paid') === '1') {
+      setReceiptModalOpen(true);
+      params.delete('paid');
+      const query = params.toString();
+      window.history.replaceState(
+        null,
+        '',
+        `${window.location.pathname}${query ? `?${query}` : ''}`
+      );
+    }
+  }, [order]);
 
   useEffect(() => {
     const loadTranslations = async () => {
@@ -163,9 +184,9 @@ export default function OrderConfirmationPage({ params }: OrderConfirmationProps
                   <div>
                     <p className="font-medium">{item.name}</p>
                     {item.size && <span className="text-gray-500">{item.size.name}</span>}
-                    
+
                     {/* Display customizations if any */}
-                    {(item.extras?.toppings?.length > 0 || 
+                    {(item.extras?.toppings?.length > 0 ||
                       item.extras?.sauces?.length > 0 || 
                       item.extras?.sides?.length > 0) && (
                       <ul className="text-sm text-gray-500 mt-1 ml-4">
@@ -274,7 +295,18 @@ export default function OrderConfirmationPage({ params }: OrderConfirmationProps
             </div>
           </div>
         </div>
+
+        {/* НДС-чек (Beleg) — только для онлайн-оплаты, провайдер-независимо.
+            Рендерим встроенно, только когда не открыта модалка: в DOM должен быть
+            единственный #vat-receipt, иначе печать в PDF сработает некорректно. */}
+        {!receiptModalOpen && <OrderVatReceipt order={order} />}
       </div>
+
+      <OrderVatReceiptModal
+        order={order}
+        open={receiptModalOpen}
+        onClose={() => setReceiptModalOpen(false)}
+      />
     </div>
   );
 }

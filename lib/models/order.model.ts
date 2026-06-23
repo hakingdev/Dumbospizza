@@ -8,6 +8,8 @@ export interface IOrderItem {
   name: string;
   quantity: number;
   price: number;
+  /** Ставка НДS товара (доля 0.07 / 0.19) — для налоговой разбивки онлайн-чека. */
+  taxRate?: number;
   size?: {
     id: string;
     name: string;

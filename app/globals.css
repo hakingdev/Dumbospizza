@@ -107,3 +107,27 @@ body {
 .animate-slideInUp {
   animation: slideInUp 0.3s ease-out;
 }
+
+/* Печать НДС-чека (Beleg): изолируем #vat-receipt, прячем остальное. */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #vat-receipt,
+  #vat-receipt * {
+    visibility: visible;
+  }
+  #vat-receipt {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    padding: 0;
+  }
+  .no-print {
+    display: none !important;
+  }
+  @page {
+    margin: 16mm;
+  }
+}

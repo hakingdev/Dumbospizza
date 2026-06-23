@@ -262,9 +262,9 @@ export default function TrackOrderPage() {
                       <div>
                         <span className="font-medium">{item.name}</span>
                         {item.size && <span className="text-gray-500 ml-1">({item.size.name})</span>}
-                        
+
                         {/* Display customizations */}
-                        {(item.extras?.toppings?.length > 0 || 
+                        {(item.extras?.toppings?.length > 0 ||
                           item.extras?.sauces?.length > 0 || 
                           item.extras?.sides?.length > 0) && (
                           <ul className="text-sm text-gray-500 mt-1 ml-4">

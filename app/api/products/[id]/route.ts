@@ -10,6 +10,7 @@ import { fetchMewsPosProductById } from '../../../../lib/mews-pos/sync';
 import { getServerSession } from 'next-auth';
 import { authOptions, isStaff } from '../../../../lib/auth';
 import { toRefId } from '../../../../lib/normalize-id';
+import { sanitizeProductInput } from '../../../../lib/products/sanitize';
 
 async function isAuthorized() {
   const session = await getServerSession(authOptions);
@@ -58,7 +59,9 @@ export async function PUT(
     }
 
     await connectToDatabase();
-    const data = await request.json();
+    // Форма редактирования шлёт весь товар назад (вкл. _id/createdAt/updatedAt) —
+    // убираем иммутабельные поля и нормализуем taxRate, иначе update падает с 500.
+    const data = sanitizeProductInput(await request.json());
 
     // GET отдаёт category/optionGroupIds через .populate() ОБЪЕКТАМИ, форма шлёт их
     // обратно как есть. Без нормализации объект попадает в SQL/колонку → 500.

@@ -8,6 +8,8 @@ import ImageUpload from '../../../../components/ImageUpload';
 import StatusModal from '../../../../components/admin/StatusModal';
 import ProductSizesEditor from '../../../../components/admin/ProductSizesEditor';
 import ProductOptionGroupsEditor from '../../../../components/admin/ProductOptionGroupsEditor';
+import VatRateSelector from '../../../../components/admin/VatRateSelector';
+import { FOOD_VAT_RATE } from '../../../../lib/orders/tax';
 
 export default function NewProductPage() {
   const router = useRouter();
@@ -22,6 +24,7 @@ export default function NewProductPage() {
     description: '',
     category: '',
     basePrice: 0,
+    taxRate: FOOD_VAT_RATE,
     available: true,
     featured: false,
     valentinePromo: false,
@@ -114,12 +117,23 @@ export default function NewProductPage() {
         body: JSON.stringify(newProduct)
       });
 
-      if (response.ok) {
+      const data = await response.json().catch(() => ({}));
+      if (response.ok && data?.success !== false) {
         setModal({ open: true, title: 'Готово', message: 'Продукт создан!' });
         setTimeout(() => router.push('/admin/products'), 300);
+      } else {
+        setModal({
+          open: true,
+          title: 'Ошибка',
+          message: data?.error || `Не удалось создать (код ${response.status})`,
+        });
       }
     } catch (error) {
-      setModal({ open: true, title: 'Ошибка', message: 'Ошибка создания продукта' });
+      setModal({
+        open: true,
+        title: 'Ошибка',
+        message: 'Нет связи с сервером. Проверьте, что приложение запущено, и повторите.',
+      });
     }
   };
 
@@ -211,6 +225,13 @@ export default function NewProductPage() {
                   </div>
                 </div>
               )}
+            </div>
+
+            <div className="mt-4">
+              <VatRateSelector
+                value={product.taxRate}
+                onChange={(rate) => setProduct({ ...product, taxRate: rate })}
+              />
             </div>
 
             {/* Sizes */}

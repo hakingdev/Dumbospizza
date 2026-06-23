@@ -54,6 +54,39 @@ describe('OrderSummaryBreakdown — объяснимый total', () => {
     expect(screen.queryByTestId('coupon-discount-line')).toBeNull();
   });
 
+  it('showDelivery=false: keine Liefergebühr-Zeile, Gesamt ohne Lieferung', () => {
+    // subtotal 20 + delivery 3 − coupon 5 = total 18; Gesamt ohne Lieferung = 18 − 3 = 15,00
+    const { rerender } = render(
+      <OrderSummaryBreakdown
+        subtotal={20}
+        deliveryFee={3}
+        total={18}
+        couponCode="X"
+        couponDiscount={5}
+        loyaltyPointsDiscount={0}
+        promotionCalculation={null}
+        showDelivery={false}
+      />
+    );
+    const root = screen.getByTestId('order-summary-breakdown');
+    expect(root.textContent).not.toContain('Liefergebühr');
+    expect(within(root).getByText('15.00 €')).toBeTruthy();
+
+    // Standard (showDelivery=true) zeigt die Zeile weiterhin.
+    rerender(
+      <OrderSummaryBreakdown
+        subtotal={20}
+        deliveryFee={3}
+        total={18}
+        couponCode="X"
+        couponDiscount={5}
+        loyaltyPointsDiscount={0}
+        promotionCalculation={null}
+      />
+    );
+    expect(screen.getByTestId('order-summary-breakdown').textContent).toContain('Liefergebühr');
+  });
+
   it('Treuepunkte-скидка отображается', () => {
     render(
       <OrderSummaryBreakdown

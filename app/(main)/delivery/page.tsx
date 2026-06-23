@@ -22,8 +22,8 @@ export default function DeliveryPage() {
   const [t, setT] = useState<any>(() => (k: string) => k);
   const [zones, setZones] = useState<any[]>([]);
   const [restaurantCoords, setRestaurantCoords] = useState<{ lat: number; lng: number }>({
-    lat: 50.2006,
-    lng: 10.0767,
+    lat: 50.19526,
+    lng: 10.07827,
   });
   const [hoveredZoneId, setHoveredZoneId] = useState<string | null>(null);
   // Выбранная зона (клик/чип) — для подсветки на карте и деталей в мобильной версии.

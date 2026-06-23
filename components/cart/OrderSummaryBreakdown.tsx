@@ -20,6 +20,11 @@ export interface OrderSummaryBreakdownProps {
   selectedFreeGifts?: Record<string, string>;
   t?: (key: string, fallback?: string) => string;
   className?: string;
+  /**
+   * Liefergebühr-Zeile anzeigen. Im Warenkorb ausgeblendet (Zone/Gebühr noch
+   * unbekannt) — die Liefergebühr kommt erst beim Checkout dazu.
+   */
+  showDelivery?: boolean;
 }
 
 export default function OrderSummaryBreakdown({
@@ -33,6 +38,7 @@ export default function OrderSummaryBreakdown({
   selectedFreeGifts = {},
   t = (k: string, fb?: string) => fb || k,
   className = '',
+  showDelivery = true,
 }: OrderSummaryBreakdownProps) {
   const eur = (v: number) => `${v.toFixed(2)} €`;
 
@@ -43,12 +49,14 @@ export default function OrderSummaryBreakdown({
         <span className="whitespace-nowrap">{eur(subtotal)}</span>
       </div>
 
-      <div className="flex justify-between text-gray-600">
-        <span>{t('cart.delivery_fee', 'Liefergebühr')}</span>
-        <span className="whitespace-nowrap">
-          {deliveryFee === 0 ? t('cart.free_delivery', 'Kostenlos') : eur(deliveryFee)}
-        </span>
-      </div>
+      {showDelivery && (
+        <div className="flex justify-between text-gray-600">
+          <span>{t('cart.delivery_fee', 'Liefergebühr')}</span>
+          <span className="whitespace-nowrap">
+            {deliveryFee === 0 ? t('cart.free_delivery', 'Kostenlos') : eur(deliveryFee)}
+          </span>
+        </div>
+      )}
 
       {/* Скидка по промокоду — с явным указанием кода */}
       {couponDiscount > 0 && (
@@ -78,7 +86,9 @@ export default function OrderSummaryBreakdown({
 
       <div className="border-t pt-2 flex justify-between font-bold text-lg">
         <span>{t('cart.total', 'Gesamtsumme')}</span>
-        <span className="text-primary-600 whitespace-nowrap">{eur(total)}</span>
+        <span className="text-primary-600 whitespace-nowrap">
+          {eur(showDelivery ? total : total - deliveryFee)}
+        </span>
       </div>
     </div>
   );

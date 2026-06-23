@@ -140,11 +140,11 @@ export async function createCheckoutSession(
       
       // Toppings and other extras as description
       let description = '';
-      
+
       if (item.extras?.toppings?.length) {
         description += 'Toppings: ' + item.extras.toppings.map(t => t.name).join(', ');
       }
-      
+
       if (item.extras?.sauces?.length) {
         if (description) description += '; ';
         description += 'Sauce: ' + item.extras.sauces.map(s => s.name).join(', ');

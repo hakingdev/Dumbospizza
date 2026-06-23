@@ -548,7 +548,8 @@ export default function CheckoutPage() {
       const orderId = sumup.orderId
       setSumup(null)
       clearCart()
-      window.location.href = `/checkout/confirmation/${orderId}`
+      // ?paid=1 → на странице подтверждения автоматически всплывёт НДС-чек (Beleg).
+      window.location.href = `/checkout/confirmation/${orderId}?paid=1`
     } catch (error: any) {
       setErrors({ submit: error.message || t('checkout.errors.payment_confirm', 'Zahlung konnte nicht bestätigt werden') })
     }
@@ -1198,7 +1199,7 @@ export default function CheckoutPage() {
             {/* Coupon Input */}
             <div className="border-b pb-4 mb-4">
               <CouponInput
-                orderAmount={state.subtotal}
+                orderAmount={state.items.filter((i) => !i.comboId).reduce((s, i) => s + i.price * i.quantity, 0)}
                 appliedCode={state.couponCode}
                 appliedDiscount={state.couponDiscount}
                 onCouponApplied={(coupon) => {

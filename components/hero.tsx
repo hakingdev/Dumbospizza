@@ -4,13 +4,14 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
-import { ArrowRight, Clock, Truck, Star, Heart, Package } from 'lucide-react';
+import { ArrowRight, Clock, Truck, Star } from 'lucide-react';
 import { useLanguage } from '../lib/contexts/LanguageContext';
 import { loadTranslation } from '../lib/i18n';
+import { MatchdayComboBuilder } from './matchday-combo-builder';
 
 export function Hero() {
   const { language } = useLanguage();
-  const [t, setT] = useState<any>(() => (k: string) => k);
+  const [t, setT] = useState<any>(() => (k: string, d?: string) => d ?? k);
 
   useEffect(() => {
     const loadTranslations = async () => {
@@ -23,112 +24,174 @@ export function Hero() {
   const isDe = language === 'de';
 
   return (
-    <div className="relative overflow-hidden bg-gradient-to-br from-primary-600 to-primary-800">
-      <div className="container mx-auto px-4 pt-16 pb-28 md:pb-32 relative z-10">
-        <div className="grid md:grid-cols-2 gap-8 md:gap-10 items-center">
-          <motion.div
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.4 }}
-            className="order-2 md:order-1"
+    <section className="relative overflow-hidden">
+      <div className="container mx-auto px-0 md:px-4 md:py-10">
+        <div
+          className="relative overflow-hidden md:rounded-[28px] shadow-2xl"
+          style={{
+            background:
+              'radial-gradient(120% 140% at 85% 10%, rgba(212,42,71,.55) 0%, rgba(212,42,71,0) 55%), linear-gradient(135deg, #b8956b 0%, #7c6145 60%, #4a3826 100%)',
+          }}
+        >
+          {/* faint pitch markings */}
+          <svg
+            className="pointer-events-none absolute inset-0 hidden h-full w-full opacity-50 lg:block"
+            viewBox="0 0 1180 600"
+            preserveAspectRatio="none"
+            fill="none"
+            aria-hidden="true"
           >
-            <div className="inline-flex items-center bg-yellow-400 rounded-full px-4 py-2 mb-4 shadow-sm">
-              <Star className="h-4 w-4 text-yellow-800 mr-2 fill-yellow-800" />
-              <span className="text-sm font-semibold text-yellow-900">
-                {isDe ? 'Beste Pizza in der Stadt' : t('hero.badge', 'Лучшая пицца в городе')}
-              </span>
-            </div>
+            <line x1="590" y1="0" x2="590" y2="600" stroke="white" strokeWidth="2" />
+            <rect x="0" y="180" width="120" height="240" stroke="white" strokeWidth="2" />
+            <rect x="1060" y="180" width="120" height="240" stroke="white" strokeWidth="2" />
+            <rect x="0" y="250" width="46" height="100" stroke="white" strokeWidth="2" />
+            <rect x="1134" y="250" width="46" height="100" stroke="white" strokeWidth="2" />
+          </svg>
+          {/* grain */}
+          <div
+            className="pointer-events-none absolute inset-0 opacity-[0.05]"
+            style={{
+              backgroundImage:
+                'radial-gradient(rgba(255,255,255,.7) 1px, transparent 1px)',
+              backgroundSize: '4px 4px',
+            }}
+            aria-hidden="true"
+          />
 
-            <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold mb-3 leading-tight">
-              {isDe ? (
-                <>
-                  <span className="text-white">Leckere Pizza </span>
-                  <span className="bg-gradient-to-r from-pink-200 via-pink-300 to-rose-300 bg-clip-text text-transparent">mit Lieferung</span>
-                </>
-              ) : (
-                t('hero.title', 'Вкусная пицца с доставкой')
-              )}
-            </h1>
-
-            <p className="text-base md:text-lg mb-5 text-white/95 leading-relaxed max-w-xl">
-              {isDe
-                ? 'Frisch zubereitet aus den feinsten Zutaten. Perfekt für deinen besonderen Abend!'
-                : t('hero.subtitle_valentine', 'Свежеприготовленная из лучших ингредиентов. Идеально для вашего особенного вечера!')}
-            </p>
-
-            <div className="mb-6 flex flex-col gap-3 sm:flex-row">
-              <Link
-                href="#menu"
-                className="inline-flex min-h-[56px] items-center justify-center whitespace-nowrap rounded-xl border border-gray-300 bg-white px-6 py-3.5 text-center text-base font-bold leading-tight text-gray-800 shadow-md transition-all hover:bg-gray-100"
-              >
-                {isDe ? 'Jetzt bestellen' : t('hero.cta_order', 'Заказать сейчас')}
-                <ArrowRight className="ml-2 h-5 w-5 shrink-0" />
-              </Link>
-              <Link
-                href="/menu"
-                className="inline-flex min-h-[56px] items-center justify-center whitespace-nowrap rounded-xl border-2 border-white bg-white/10 px-6 py-3.5 text-center text-base font-bold leading-tight text-white transition-all hover:bg-white/20"
-              >
-                {isDe ? 'Speisekarte ansehen' : t('hero.cta_menu', 'Посмотреть меню')}
-              </Link>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 max-w-md">
-              <div className="flex min-h-[54px] min-w-0 items-center gap-2 rounded-xl border border-white/25 bg-white/15 px-3 py-3 backdrop-blur-sm sm:px-4">
-                <Clock className="h-5 w-5 shrink-0 text-white" />
-                <span className="font-bold text-white">30-60</span>
-                <span className="min-w-0 truncate text-sm text-white">{isDe ? 'Minuten' : t('hero.minutes', 'минут')}</span>
-              </div>
-              <div className="flex min-h-[54px] min-w-0 items-center gap-2 rounded-xl border border-white/25 bg-white/15 px-3 py-3 backdrop-blur-sm sm:px-4">
-                <Package className="h-5 w-5 shrink-0 text-white" />
-                <span className="font-bold text-white">ab 20€</span>
-                <span className="min-w-0 truncate text-sm text-white">{isDe ? '' : t('hero.free_from', 'от 20€')}</span>
-              </div>
-              <div className="flex min-h-[54px] min-w-0 items-center gap-2 rounded-xl border border-white/25 bg-white/15 px-3 py-3 backdrop-blur-sm sm:px-4">
-                {/* <Heart className="h-5 w-5 text-white fill-white" /> */}
-                <span className="font-bold text-white">4.8</span>
-                <span className="min-w-0 truncate text-sm text-white">{isDe ? 'Bewertung' : t('hero.rating', 'рейтинг')}</span>
-              </div>
-              <div className="flex min-h-[54px] min-w-0 items-center gap-2 rounded-xl border border-white/25 bg-white/15 px-3 py-3 backdrop-blur-sm sm:px-4">
-                <span className="font-bold text-white">17-21:30</span>
-                <span className="min-w-0 truncate text-sm text-white">{isDe ? 'Lieferung' : t('hero.badge_delivery', 'доставка')}</span>
-              </div>
-            </div>
-          </motion.div>
-
-          <motion.div
-            className="relative hidden md:flex order-1 md:order-2 items-center justify-center min-h-[320px] md:min-h-[360px]"
-            initial={{ opacity: 0, scale: 0.98 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.4, delay: 0.1 }}
-          >
-            <div className="relative w-full min-h-[320px] md:min-h-[360px] max-h-[420px] rounded-2xl overflow-hidden shadow-2xl bg-stone-300">
-              <Image
-                src="/images/pizza-hero.png"
-                alt={isDe ? 'Pizza' : t('hero.image_alt', 'Пицца')}
-                fill
-                className="object-cover object-center"
-                priority
-                unoptimized
-                sizes="(max-width: 768px) 100vw, 55vw"
+          <div className="relative grid grid-cols-1 lg:min-h-[600px] lg:grid-cols-[1.05fr_0.95fr]">
+            {/* RIGHT (story) — first on mobile, second on desktop */}
+            <div className="relative order-1 flex flex-col items-center justify-center px-6 py-10 md:px-10 md:py-12 lg:order-2 lg:px-11">
+              <div
+                className="pointer-events-none absolute inset-0"
+                style={{
+                  background:
+                    'linear-gradient(180deg, rgba(0,0,0,.04), rgba(0,0,0,.22))',
+                }}
+                aria-hidden="true"
               />
-              {/* Светло-серый бейдж времени доставки слева внизу */}
-              <div className="absolute bottom-4 left-4 bg-gray-300 text-gray-800 rounded-xl px-4 py-2.5 shadow-lg border border-gray-400/50">
-                <div className="font-bold text-lg">17-21:30</div>
-                <div className="text-xs text-gray-700">{isDe ? 'Lieferung' : t('hero.badge_delivery', 'доставка')}</div>
+              <div className="relative z-10 text-center">
+                {/* emblem */}
+                <div className="relative mx-auto mb-4 h-[250px] w-full max-w-[320px] md:mb-[18px] md:h-[296px] md:max-w-[380px]">
+                  <div className="absolute left-1/2 top-1.5 h-[190px] w-[190px] -translate-x-1/2 rounded-full border-2 border-white/30 md:h-[230px] md:w-[230px]" />
+                  <Image
+                    className="absolute bottom-3.5 left-1.5 w-[60%] max-w-[196px] -rotate-[9deg] md:w-[232px] md:max-w-none"
+                    style={{ filter: 'drop-shadow(0 18px 26px rgba(0,0,0,.4))' }}
+                    src="/images/pizza-format.png"
+                    width={840}
+                    height={640}
+                    alt="Pizza 30 × 40 cm"
+                    priority
+                  />
+                  <motion.img
+                    className="absolute right-1 top-1.5 w-[46%] max-w-[148px] md:w-[176px] md:max-w-none"
+                    style={{ filter: 'drop-shadow(0 16px 24px rgba(0,0,0,.42))' }}
+                    src="/images/soccer-ball.png"
+                    alt="Fußball WM 2026"
+                    animate={{ y: [0, -12, 0] }}
+                    transition={{ duration: 5, ease: 'easeInOut', repeat: Infinity }}
+                  />
+                  <span className="absolute bottom-4 left-4 inline-flex items-center gap-1.5 whitespace-nowrap rounded-full bg-white px-3 py-1.5 text-[13px] font-extrabold text-gray-900 shadow-lg sm:left-6">
+                    🍕 <b className="text-secondary-600">30×40</b> · Ø33 cm
+                  </span>
+                </div>
+
+                {/* story card */}
+                <div className="mx-auto mt-[18px] w-full max-w-[360px] rounded-2xl bg-white/95 p-6 text-left text-gray-800 shadow-xl">
+                  <div className="mb-3 flex flex-wrap gap-2">
+                    <span className="rounded-full bg-primary-100 px-[11px] py-[5px] text-xs font-bold text-primary-800">
+                      11. Juni – 19. Juli 2026
+                    </span>
+                    <span className="rounded-full bg-secondary-100 px-[11px] py-[5px] text-xs font-bold text-secondary-700">
+                      48 Teams · 104 Spiele
+                    </span>
+                  </div>
+                  <h3 className="mb-2 text-xl font-extrabold text-gray-900">
+                    {isDe
+                      ? 'Hol dir das Stadiongefühl nach Hause'
+                      : t('hero.story_title', 'Почувствуй атмосферу стадиона дома')}
+                  </h3>
+                  <p className="text-[14.5px] leading-relaxed text-gray-600">
+                    {isDe
+                      ? 'Die größte WM aller Zeiten kommt nach Nordamerika — und jedes Spiel schmeckt besser mit frischer Pizza und kaltem Bier vom Lieblings-Italiener in Bad Kissingen. Freunde einladen, Kombi bestellen, anfeuern. ⚽🍕'
+                      : t(
+                          'hero.story_text',
+                          'Самый большой чемпионат мира приходит в Северную Америку — и каждый матч вкуснее со свежей пиццей и холодным пивом. ⚽🍕'
+                        )}
+                  </p>
+                  <div className="mt-3 text-[22px] tracking-[2px]">🇺🇸 🇨🇦 🇲🇽</div>
+                </div>
               </div>
             </div>
-          </motion.div>
+
+            {/* LEFT — combo offer */}
+            <motion.div
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.4 }}
+              className="order-2 flex flex-col justify-center px-6 py-10 text-white md:px-10 md:py-14 lg:order-1 lg:px-12"
+            >
+              <span className="mb-5 inline-flex max-w-full items-center gap-2 self-start whitespace-nowrap rounded-full bg-yellow-400 px-3 py-2 text-xs font-bold tracking-[.02em] text-yellow-900 shadow-md sm:px-4 sm:text-sm">
+                <span className="sm:hidden">
+                  ⚽ {isDe ? 'WM 2026 · Aktion' : t('hero.kicker_short', 'ЧМ 2026 · Акция')}
+                </span>
+                <span className="hidden sm:inline">
+                  ⚽ {isDe ? 'Fußball-WM 2026 · Anpfiff-Aktion' : t('hero.kicker', 'ЧМ 2026 · Акция')}
+                </span>
+              </span>
+
+              <h1 className="mb-4 text-[34px] font-extrabold leading-[1.04] tracking-[-.02em] sm:text-[38px] md:text-[48px] lg:text-[56px]">
+                {isDe ? (
+                  <>
+                    Matchday-Kombi
+                    <br />
+                    <span className="bg-gradient-to-r from-pink-200 to-rose-300 bg-clip-text text-transparent">
+                      für die ganze Mannschaft
+                    </span>
+                  </>
+                ) : (
+                  t('hero.title', 'Комбо на матч для всей команды')
+                )}
+              </h1>
+
+              <p className="mb-7 max-w-[460px] text-base leading-relaxed text-white/90 md:text-lg">
+                {isDe
+                  ? 'Stell dir deine Kombi zusammen: zwei Pizzen 30 × 40 cm nach Wahl, dazu Getränke gratis — und beim Anpfiff seid ihr startklar. Frisch geliefert, pünktlich zum Spiel.'
+                  : t(
+                      'hero.lede',
+                      'Собери своё комбо: две пиццы 30 × 40 см на выбор, напитки бесплатно — и вы готовы к матчу.'
+                    )}
+              </p>
+
+              {/* interaktiver Kombi-Builder (echte Menüdaten, Preise live) */}
+              <MatchdayComboBuilder isDe={isDe} />
+
+              {/* CTA */}
+              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+                <Link
+                  href="/menu"
+                  className="inline-flex min-h-[56px] w-full items-center justify-center gap-2 whitespace-nowrap rounded-xl border-2 border-white bg-white/10 px-6 py-3.5 text-base font-bold text-white transition-all hover:bg-white/20 sm:w-auto"
+                >
+                  {isDe ? 'Ganzes Menü ansehen' : t('hero.cta_menu', 'Всё меню')}
+                  <ArrowRight className="h-[18px] w-[18px] shrink-0" />
+                </Link>
+              </div>
+
+              {/* trust */}
+              <div className="mt-6 flex flex-wrap gap-x-[22px] gap-y-3.5 text-sm text-white/85">
+                <span className="inline-flex items-center gap-[7px]">
+                  <Clock className="h-4 w-4" /> {isDe ? '30–60 Min. Lieferung' : t('hero.trust_time', '30–60 мин доставка')}
+                </span>
+                <span className="inline-flex items-center gap-[7px]">
+                  <Truck className="h-4 w-4" /> {isDe ? 'Gratis ab 30 €' : t('hero.trust_free', 'Бесплатно от 30 €')}
+                </span>
+                <span className="inline-flex items-center gap-[7px]">
+                  <Star className="h-4 w-4" /> {isDe ? '4,8 Bewertung' : t('hero.trust_rating', '4,8 рейтинг')}
+                </span>
+              </div>
+            </motion.div>
+          </div>
         </div>
       </div>
-      {/* Плавная белая волна внизу */}
-      <div className="absolute bottom-0 left-0 right-0 w-full pointer-events-none">
-        <svg viewBox="0 0 1440 100" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full block">
-          <path
-            d="M0 50 C 240 10 480 90 720 50 C 960 10 1200 90 1440 50 L 1440 100 L 0 100 Z"
-            fill="white"
-          />
-        </svg>
-      </div>
-    </div>
+    </section>
   );
 }

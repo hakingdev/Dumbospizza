@@ -89,12 +89,34 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Ставка НДС берётся из карточки товара (taxRate, назначается в админке).
+    // Подтягиваем её с сервера по productId — не доверяем клиенту.
+    const lineProductIds = Array.from(
+      new Set(
+        (orderData.items || [])
+          .map((i: any) => i.productId || i.id)
+          .filter((id: any): id is string => typeof id === 'string' && id.length > 0)
+      )
+    );
+    const taxRateByProduct = new Map<string, number>();
+    if (lineProductIds.length > 0) {
+      const lineProducts = await Product.find({ _id: { $in: lineProductIds } })
+        .select('taxRate')
+        .lean();
+      for (const p of lineProducts) {
+        if (typeof (p as any).taxRate === 'number' && (p as any).taxRate > 0) {
+          taxRateByProduct.set(String((p as any)._id), (p as any).taxRate);
+        }
+      }
+    }
+
     // Transform items to match Order schema
     const transformedItems = orderData.items.map((item: any) => ({
       product: item.productId || item.id, // Product ID from cart
       name: item.name,
       quantity: item.quantity,
       price: item.price, // Price per unit
+      taxRate: taxRateByProduct.get(item.productId || item.id),
       size: item.size ? {
         id: item.size.id || '',
         name: item.size.name || '',
@@ -192,7 +214,15 @@ export async function POST(request: NextRequest) {
         )
       : [];
 
-    let promotionCalc = await calculateOrderPromotions(orderData.items, {
+    // Matchday-Kombi-Positionen nehmen NICHT an anderen Aktionen teil — wie im
+    // Client (CartContext.recalculatePromotions). Sonst würde der Server für eine
+    // Kombi-Bestellung ein Gratis-Angebot erzeugen, das der Kunde nie zu sehen bekam,
+    // und die Bestellung fälschlich blockieren ("Bitte wählen Sie Ihr Gratis-Produkt aus").
+    const promotionItems = Array.isArray(orderData.items)
+      ? orderData.items.filter((i: any) => !i.comboId)
+      : [];
+
+    let promotionCalc = await calculateOrderPromotions(promotionItems, {
       channel: orderData.channel === 'app' ? 'app' : 'web',
       promoCode: promotionPromoCode || undefined,
       phoneNumber: orderData.phoneNumber,

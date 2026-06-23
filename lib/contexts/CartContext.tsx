@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useReducer, useEffect, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useReducer, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import type { PromotionCalculationResult } from '../promotions/types';
 import { calculatePromotions as fetchPromotionCalculation } from '../api-client';
@@ -36,6 +36,10 @@ export interface CartItem {
   image?: string;
   notes?: string;
   categoryId?: string;
+  /** Matchday-Kombi: gruppiert mehrere Positionen (Pizzen/Getränke/Rabatt) zu einer Kombi. */
+  comboId?: string;
+  comboLabel?: string;
+  comboRole?: 'pizza' | 'drink' | 'discount';
 }
 
 export interface CartState {
@@ -83,6 +87,7 @@ type CartAction =
   | { type: 'ADD_ITEM'; payload: CartItem }
   | { type: 'UPDATE_ITEM'; payload: { id: string; updates: Partial<CartItem> } }
   | { type: 'REMOVE_ITEM'; payload: string }
+  | { type: 'REMOVE_COMBO'; payload: string }
   | { type: 'CLEAR_CART' }
   | { type: 'SET_DELIVERY_TYPE'; payload: 'delivery' | 'pickup' }
   | { type: 'SET_DELIVERY_ZONE'; payload: { zone: string; minOrderAmount: number } }
@@ -235,6 +240,16 @@ export function cartReducer(state: CartState, action: CartAction): CartState {
         ...calculateTotals(newState),
       };
     }
+
+    case 'REMOVE_COMBO': {
+      // Kombi als Ganzes entfernen (alle Positionen mit derselben comboId).
+      const newItems = state.items.filter(item => item.comboId !== action.payload);
+      const newState = { ...state, items: newItems };
+      return {
+        ...newState,
+        ...calculateTotals(newState),
+      };
+    }
     
     case 'CLEAR_CART':
       return {
@@ -309,8 +324,14 @@ export function cartReducer(state: CartState, action: CartAction): CartState {
     }
     
     case 'APPLY_COUPON': {
+      // Combo (Matchday-Kombi/Angebot) и промокод НЕ суммируются: применяя купон,
+      // удаляем ВСЕ позиции combo целиком (пиццы, gratis-напитки, строку Kombi-Rabatt).
+      // Купон считается только по обычным товарам (orderAmount в CouponInput тоже
+      // передаётся без combo), combo больше не участвует в сумме.
+      const itemsWithoutCombo = state.items.filter((item) => !item.comboId);
       const newState = {
         ...state,
+        items: itemsWithoutCombo,
         couponCode: action.payload.code,
         couponDiscount: action.payload.discount,
       };
@@ -376,6 +397,20 @@ export function cartReducer(state: CartState, action: CartAction): CartState {
             const key = item.id || item.productId;
             (grouped[item.promotionId] = grouped[item.promotionId] || []).push(key);
           }
+          // Symmetrisch zu freeGifts: noch nicht aufgelöste, aber gültige BOGO-Auswahl
+          // beibehalten, solange das Angebot offen ist. Sonst entfernt eine
+          // Zwischen-Neuberechnung (z. B. nach Auswahl des Gratis-Geschenks) die
+          // bereits gewählte 2. Gratis-Pizza wieder aus dem Warenkorb.
+          for (const offer of payload.bogoSecondOffers || []) {
+            const prev = state.selectedBogoSecond[offer.promotionId] || [];
+            if (prev.length === 0) continue;
+            const validIds = new Set(offer.options.map((o) => o.id));
+            const already = new Set(grouped[offer.promotionId] || []);
+            const keptPending = prev.filter((id) => validIds.has(id) && !already.has(id));
+            if (keptPending.length > 0) {
+              grouped[offer.promotionId] = [...(grouped[offer.promotionId] || []), ...keptPending];
+            }
+          }
           selectedBogoSecond = grouped;
         }
       }
@@ -420,8 +455,12 @@ export function cartReducer(state: CartState, action: CartAction): CartState {
     }
 
     case 'SET_PROMOTION_PROMO_CODE': {
-      const newState = { ...state, promotionPromoCode: action.payload };
-      return newState;
+      // Аналогично купону: при ПРИМЕНЕНИИ промокода акции combo удаляется целиком
+      // (combo — это уже спец-Angebot и не комбинируется с промокодом). При снятии
+      // кода (payload undefined) товары не трогаем.
+      const items = action.payload ? state.items.filter((item) => !item.comboId) : state.items;
+      const newState = { ...state, promotionPromoCode: action.payload, items };
+      return { ...newState, ...calculateTotals(newState) };
     }
     
     case 'RESET_CHECKOUT_DATA': {
@@ -462,6 +501,7 @@ interface CartContextType {
   addItem: (item: CartItem) => void;
   updateItem: (id: string, updates: Partial<CartItem>) => void;
   removeItem: (id: string) => void;
+  removeCombo: (comboId: string) => void;
   clearCart: () => void;
   setDeliveryType: (type: 'delivery' | 'pickup') => void;
   setDeliveryZone: (zone: string, minOrderAmount: number) => void;
@@ -519,7 +559,10 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   });
   
   const router = useRouter();
-  
+
+  // Monoton steigende Sequenz, um veraltete Promotion-Antworten zu verwerfen.
+  const recalcSeqRef = useRef(0);
+
   // Save cart to localStorage when it changes
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -528,12 +571,21 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   }, [state]);
 
   const recalculatePromotions = useCallback(async () => {
-    if (state.items.length === 0) {
+    // Veraltete/out-of-order Antworten dürfen frische Daten NICHT überschreiben.
+    // (Sonst kann eine langsame/fehlgeschlagene Neuberechnung eine bereits gewählte
+    //  Belohnung — z. B. die 2. Gratis-Pizza — wieder aus dem Warenkorb entfernen.)
+    const seq = ++recalcSeqRef.current;
+    const isStale = () => seq !== recalcSeqRef.current;
+
+    // Kombi-Positionen (Pizzen/Getränke/Rabatt) nehmen NICHT an anderen Aktionen teil
+    // und werden aus der Promotion-Berechnung ausgeschlossen.
+    const promotionItems = state.items.filter((item) => !item.comboId);
+    if (promotionItems.length === 0) {
       dispatch({ type: 'SET_PROMOTION_CALCULATION', payload: null });
       return;
     }
     try {
-      const items = state.items.map((item) => ({
+      const items = promotionItems.map((item) => ({
         productId: item.productId || item.id,
         categoryId: normalizeObjectId(item.categoryId),
         name: item.name,
@@ -552,6 +604,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         // Купон активен → денежные акции подавляются (несовместимы с купоном).
         couponActive: !!state.couponCode,
       });
+      // Inzwischen wurde eine neuere Neuberechnung gestartet → dieses Ergebnis verwerfen.
+      if (isStale()) return;
       if (res.success) {
         dispatch({ type: 'SET_PROMOTION_CALCULATION', payload: res.calculation });
         dispatch({
@@ -602,6 +656,10 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   
   const removeItem = (id: string) => {
     dispatch({ type: 'REMOVE_ITEM', payload: id });
+  };
+
+  const removeCombo = (comboId: string) => {
+    dispatch({ type: 'REMOVE_COMBO', payload: comboId });
   };
   
   const clearCart = () => {
@@ -678,6 +736,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     addItem,
     updateItem,
     removeItem,
+    removeCombo,
     clearCart,
     setDeliveryType,
     setDeliveryZone,
