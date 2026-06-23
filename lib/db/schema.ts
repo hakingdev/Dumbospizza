@@ -324,6 +324,72 @@ export const loyaltyPrograms = pgTable(
 );
 
 // =====================================================================
+// Loyalty transactions (реальные строки — атомарность + полная история)
+//
+// loyaltyPrograms остаётся агрегатом баланса; здесь — журнал каждого
+// начисления/списания/сгорания/корректировки. Списание идёт атомарным
+// guarded-апдейтом баланса, журнал пишется строкой → нет двойного списания.
+// =====================================================================
+export const loyaltyTransactions = pgTable(
+  'loyalty_transactions',
+  {
+    id: id(),
+    user: text('user').notNull(), // ref users.id
+    order: text('order'), // ref orders.id (для earn/redeem по заказу)
+    // 'earn' | 'redeem' | 'expire' | 'adjust' | 'reverse'
+    type: text('type').notNull(),
+    // amount всегда положительный; знак определяется type (earn/adjust+/reverse-earn вычитают и т.п.)
+    amount: doublePrecision('amount').notNull(),
+    // Дельта баланса со знаком (+начисление / -списание) — упрощает аудит/реверс.
+    delta: doublePrecision('delta').notNull(),
+    balanceAfter: doublePrecision('balance_after').notNull().default(0),
+    description: text('description').notNull().default(''),
+    // Для earn: когда сгорают эти баллы (createdAt + expiryMonths).
+    expiresAt: timestamp('expires_at', { withTimezone: true, mode: 'date' }),
+    // Сколько из этого earn-батча уже израсходовано (FIFO-списание/сгорание).
+    consumed: doublePrecision('consumed').notNull().default(0),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    userIdx: index('loyalty_tx_user_idx').on(t.user, t.createdAt),
+    orderTypeIdx: index('loyalty_tx_order_type_idx').on(t.order, t.type),
+    expiryIdx: index('loyalty_tx_expiry_idx').on(t.type, t.expiresAt),
+  })
+);
+
+// =====================================================================
+// Customer notifications (по строке на получателя → статус прочтения на юзера)
+//
+// Рассылка всем/сегменту создаёт N строк (по одной на пользователя). Так
+// read/readAt естественно живут на уровне пользователя без отдельной таблицы
+// прочтений. campaignId группирует строки одной рассылки (для админ-аналитики).
+// =====================================================================
+export const customerNotifications = pgTable(
+  'customer_notifications',
+  {
+    id: id(),
+    user: text('user').notNull(), // ref users.id (получатель)
+    title: text('title').notNull(),
+    body: text('body').notNull(),
+    // Необязательная ссылка на акцию/товар.
+    link: text('link'),
+    linkLabel: text('link_label'),
+    // 'promo' | 'order' | 'loyalty' | 'system' — для иконки/фильтра.
+    category: text('category').notNull().default('system'),
+    read: boolean('read').notNull().default(false),
+    readAt: timestamp('read_at', { withTimezone: true, mode: 'date' }),
+    // Группировка строк одной рассылки + кто/как отправил.
+    campaignId: text('campaign_id'),
+    audience: text('audience'),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    userReadIdx: index('cust_notif_user_read_idx').on(t.user, t.read, t.createdAt),
+    campaignIdx: index('cust_notif_campaign_idx').on(t.campaignId),
+  })
+);
+
+// =====================================================================
 // Options (библиотека опций)
 // =====================================================================
 export const options = pgTable('options', {
@@ -558,6 +624,8 @@ export type User = typeof users.$inferSelect;
 export type Coupon = typeof coupons.$inferSelect;
 export type DeliveryZone = typeof deliveryZones.$inferSelect;
 export type LoyaltyProgram = typeof loyaltyPrograms.$inferSelect;
+export type LoyaltyTransaction = typeof loyaltyTransactions.$inferSelect;
+export type CustomerNotification = typeof customerNotifications.$inferSelect;
 export type Option = typeof options.$inferSelect;
 export type OptionGroup = typeof optionGroups.$inferSelect;
 export type Promotion = typeof promotions.$inferSelect;

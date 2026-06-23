@@ -55,6 +55,7 @@
     "node-telegram-bot-api": "^0.64.0",
     "node-thermal-printer": "^4.4.1",
     "nodemailer": "^7.0.13",
+    "pdf-lib": "^1.17.1",
     "postcss": "^8.4.31",
     "postgres": "^3.4.9",
     "react": "^18",

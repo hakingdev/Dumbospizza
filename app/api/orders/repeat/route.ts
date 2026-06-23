@@ -1,29 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '../../../../lib/models';
 import { Order } from '../../../../lib/models/order.model';
-
-function normalizePhone(value?: string | null) {
-  return String(value || '').replace(/[^\d+]/g, '');
-}
+import { User } from '../../../../lib/models/user.model';
+import { getCustomerSession, normalizePhone } from '../../../../lib/customer-auth';
 
 // POST /api/orders/repeat - Функция для повторения заказа
+// Авторизация: cookie-сессия клиента (приоритет) ИЛИ совпадение телефона (legacy).
 export async function POST(request: NextRequest) {
   try {
     await connectToDatabase();
-    
+
     const data = await request.json();
     const { orderId, phoneNumber } = data;
-    
+
     if (!orderId) {
       return NextResponse.json({
         success: false,
         error: 'Order ID is required'
       }, { status: 400 });
     }
-    
+
     // Найти оригинальный заказ
     const originalOrder = await Order.findById(orderId);
-    
+
     if (!originalOrder) {
       return NextResponse.json({
         success: false,
@@ -31,7 +30,21 @@ export async function POST(request: NextRequest) {
       }, { status: 404 });
     }
 
-    if (!phoneNumber || normalizePhone(originalOrder.phoneNumber) !== normalizePhone(phoneNumber)) {
+    // Проверка владения: сессия клиента (user_id из cookie) или legacy-телефон.
+    const session = getCustomerSession(request);
+    let authorized = false;
+    if (session) {
+      const user = await User.findById(session.userId);
+      authorized = Boolean(
+        user &&
+          (String(originalOrder.user || '') === session.userId ||
+            normalizePhone(originalOrder.phoneNumber) === normalizePhone(user.phoneNumber))
+      );
+    } else if (phoneNumber) {
+      authorized = normalizePhone(originalOrder.phoneNumber) === normalizePhone(phoneNumber);
+    }
+
+    if (!authorized) {
       return NextResponse.json({
         success: false,
         error: 'Unauthorized'

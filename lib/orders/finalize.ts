@@ -1,6 +1,6 @@
 import type { NextRequest } from 'next/server';
 import { Coupon } from '../models/coupon.model';
-import { addLoyaltyPoints, redeemLoyaltyPoints } from '../loyalty';
+import { redeemPointsForOrder } from '../loyalty/service';
 import { recordPromotionOrderAnalytics } from '../promotions/order-integration';
 import { sendServerPurchaseConversionEvents } from '../conversions/server-purchase-events';
 import { sendOrderNotification } from '../telegram';
@@ -72,17 +72,14 @@ export async function finalizeOrderPlacement(order: any, request: NextRequest): 
     }
   }
 
-  // Баллы лояльности
-  if (order.phoneNumber) {
-    if (order.loyaltyPointsUsed && order.loyaltyPointsUsed > 0) {
-      await redeemLoyaltyPoints(order.phoneNumber, order.loyaltyPointsUsed, order._id.toString());
-    }
-    if (order.total > 0) {
-      const pointsAdded = await addLoyaltyPoints(order.phoneNumber, order.total, order._id.toString());
-      if (pointsAdded) {
-        order.loyaltyPointsEarned = pointsAdded.transactions.slice(-1)[0]?.amount || 0;
-        await order.save();
-      }
+  // Баллы лояльности: СПИСАНИЕ фиксируется при размещении заказа (атомарно).
+  // НАЧИСЛЕНИЕ перенесено на статус completed (см. lib/loyalty/service.ts
+  // earnForCompletedOrder, вызывается из PUT /api/orders/[id]).
+  if (order.loyaltyPointsUsed && order.loyaltyPointsUsed > 0) {
+    try {
+      await redeemPointsForOrder(order);
+    } catch (error) {
+      console.error('Error redeeming loyalty points:', error);
     }
   }
 

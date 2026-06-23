@@ -15,6 +15,20 @@
       "when": 1781880570602,
       "tag": "0001_reflective_cargill",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1782211234317,
+      "tag": "0002_dashing_titania",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1782213107576,
+      "tag": "0003_thankful_machine_man",
+      "breakpoints": true
     }
   ]
 }

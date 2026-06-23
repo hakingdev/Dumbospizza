@@ -66,6 +66,12 @@ body {
   }
 }
 
+@layer utilities {
+  .text-pretty {
+    text-wrap: pretty;
+  }
+}
+
 /* Animations */
 @keyframes fadeIn {
   from {

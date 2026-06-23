@@ -1,19 +1,24 @@
 'use client'
 
-import { Printer } from 'lucide-react'
+import { useState } from 'react'
+import { Download, Loader2 } from 'lucide-react'
 import {
   buildOrderTax,
   formatAmount,
   formatVatRate,
   FOOD_VAT_RATE,
 } from '../../lib/orders/tax'
+import { downloadOrderInvoice } from '../../lib/orders/download-invoice'
 import { SELLER } from '../../lib/company'
 
 interface OrderVatReceiptProps {
   order: {
+    _id?: string
+    id?: string
     orderNumber: string | number
     createdAt: string | Date
     paymentMethod?: string | null
+    phoneNumber?: string
     subtotal?: number
     deliveryFee?: number
     total: number
@@ -40,6 +45,26 @@ interface OrderVatReceiptProps {
  * Печатается только этот блок (#vat-receipt), см. @media print в globals.css.
  */
 export default function OrderVatReceipt({ order }: OrderVatReceiptProps) {
+  const [downloading, setDownloading] = useState(false)
+  const [downloadError, setDownloadError] = useState<string | null>(null)
+
+  const handleDownload = async () => {
+    const orderId = order._id || order.id
+    if (!orderId || downloading) return
+    setDownloading(true)
+    setDownloadError(null)
+    try {
+      await downloadOrderInvoice(String(orderId), {
+        phoneNumber: order.phoneNumber,
+        orderNumber: order.orderNumber,
+      })
+    } catch (err: any) {
+      setDownloadError(err?.message || 'Die Rechnung konnte nicht erstellt werden.')
+    } finally {
+      setDownloading(false)
+    }
+  }
+
   const tax = buildOrderTax({
     paymentMethod: order.paymentMethod,
     items: (order.items || []).map((it) => ({
@@ -60,16 +85,24 @@ export default function OrderVatReceipt({ order }: OrderVatReceiptProps) {
 
   return (
     <div className="mt-6 rounded-lg border border-gray-200 bg-white shadow-sm">
-      <div className="flex items-center justify-between border-b border-gray-100 p-4 no-print">
+      <div className="flex flex-col gap-2 border-b border-gray-100 p-4 no-print sm:flex-row sm:items-center sm:justify-between">
         <h3 className="font-semibold">Beleg (inkl. MwSt.)</h3>
-        <button
-          type="button"
-          onClick={() => window.print()}
-          className="inline-flex items-center gap-2 rounded-md border border-primary-600 px-3 py-1.5 text-sm text-primary-600 hover:bg-primary-50"
-        >
-          <Printer className="h-4 w-4" />
-          Beleg als PDF speichern
-        </button>
+        <div className="flex flex-col items-stretch gap-1 sm:items-end">
+          <button
+            type="button"
+            onClick={handleDownload}
+            disabled={downloading}
+            className="inline-flex items-center justify-center gap-2 rounded-md border border-primary-600 px-3 py-1.5 text-sm text-primary-600 hover:bg-primary-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {downloading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4" />
+            )}
+            {downloading ? 'Rechnung wird erstellt…' : 'Rechnung als PDF speichern'}
+          </button>
+          {downloadError && <span className="text-xs text-red-600">{downloadError}</span>}
+        </div>
       </div>
 
       {/* Печатаемая область */}

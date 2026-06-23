@@ -21,6 +21,9 @@ import {
 } from '../../../lib/order-acceptance-hours';
 import { getServerSession } from 'next-auth';
 import { authOptions, isStaff } from '../../../lib/auth';
+import { getCustomerSession } from '../../../lib/customer-auth';
+import { getBalance } from '../../../lib/loyalty/service';
+import { getLoyaltyRules, computeMaxRedeemablePoints } from '../../../lib/loyalty/config';
 
 function toPublicOrderView(order: any) {
   const source = typeof order.toObject === 'function' ? order.toObject() : order;
@@ -163,8 +166,8 @@ export async function POST(request: NextRequest) {
       ? 0
       : (orderData.deliveryType === 'pickup' ? 0 : (orderData.deliveryFee || 0));
     
-    // Recalculate total with free delivery if applicable
-    const loyaltyPointsDiscount = (orderData.loyaltyPointsToRedeem || 0) / 100;
+    // Списание баллов считаем НИЖЕ (после купона/акций) на сервере —
+    // не доверяя клиенту: cap 30% и минимальная сумма проверяются здесь.
     let couponDiscount = 0;
     let validatedCoupon: any = null;
     const couponCode = normalizeCouponCode(orderData.couponCode);
@@ -303,20 +306,33 @@ export async function POST(request: NextRequest) {
 
     const orderItems = [...transformedItems, ...bogoOrderItems, ...giftOrderItems];
 
-    const calculatedTotal = Math.max(
-      calculatedSubtotal +
-        bogoMerchandise +
-        effectiveDeliveryFee -
-        loyaltyPointsDiscount -
-        couponDiscount -
-        promotionDiscount,
+    // --- Списание баллов лояльности (сервер — источник истины) ---
+    // Разрешено только авторизованному клиенту; cap (30%) и минимальная сумма
+    // проверяются по серверным правилам. user_id берётся из cookie-сессии.
+    const amountBeforePoints = Math.max(
+      calculatedSubtotal + bogoMerchandise + effectiveDeliveryFee - couponDiscount - promotionDiscount,
       0
     );
+    let loyaltyPointsUsed = 0;
+    let loyaltyPointsDiscount = 0;
+    const customerSession = getCustomerSession(request);
+    const requestedPoints = Number(orderData.loyaltyPointsToRedeem) || 0;
+    if (customerSession && requestedPoints > 0) {
+      const rules = await getLoyaltyRules();
+      const balance = await getBalance(customerSession.userId);
+      const maxRedeemable = computeMaxRedeemablePoints(balance, amountBeforePoints, rules);
+      loyaltyPointsUsed = Math.min(requestedPoints, maxRedeemable);
+      loyaltyPointsDiscount = loyaltyPointsUsed * rules.pointValueEuro;
+    }
+
+    const calculatedTotal = Math.max(amountBeforePoints - loyaltyPointsDiscount, 0);
 
     const orderPayload = {
       customerName: orderData.customerName,
       phoneNumber: orderData.phoneNumber,
       email: orderData.email,
+      // Привязка к аккаунту, если клиент авторизован (для кабинета/лояльности).
+      user: customerSession?.userId,
       items: orderItems,
       deliveryType: orderData.deliveryType,
       deliveryAddress: orderData.deliveryAddress,
@@ -330,7 +346,7 @@ export async function POST(request: NextRequest) {
       status: 'new',
       kitchenPrintStatus: 'pending',
       customerPrintStatus: 'pending',
-      loyaltyPointsUsed: orderData.loyaltyPointsToRedeem || 0,
+      loyaltyPointsUsed,
       discount: couponDiscount > 0
         ? {
             code: couponCode,

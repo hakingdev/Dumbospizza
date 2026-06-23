@@ -10,6 +10,7 @@ import CouponInput from '../../../components/cart/CouponInput'
 import { getConflictingPromotions } from '../../../lib/promotions/coupon-conflict'
 import PromotionCartSummary from '../../../components/promotions/PromotionCartSummary'
 import BogoRewardLines from '../../../components/promotions/BogoRewardLines'
+import LoyaltyRedeem from '../../../components/checkout/LoyaltyRedeem'
 import { useLanguage } from '../../../lib/contexts/LanguageContext'
 import { loadTranslation } from '../../../lib/i18n'
 import {
@@ -74,7 +75,7 @@ function filterSlotsByCurrentTime(slots: string[], timeZone: string): string[] {
 
 export default function CheckoutPage() {
   const router = useRouter()
-  const { state, setDeliveryType: setCartDeliveryType, setDeliveryZone: setCartDeliveryZone, setDeliveryFee, setContactInfo, setDeliveryAddress, setPaymentMethod: setCartPaymentMethod, clearCart, applyCoupon, removeCoupon, setPromotionPromoCode } = useCart()
+  const { state, setDeliveryType: setCartDeliveryType, setDeliveryZone: setCartDeliveryZone, setDeliveryFee, setContactInfo, setDeliveryAddress, setPaymentMethod: setCartPaymentMethod, clearCart, applyCoupon, removeCoupon, setPromotionPromoCode, setLoyaltyPoints } = useCart()
   const { language } = useLanguage()
   const [t, setT] = useState<any>(() => (k: string) => k)
   const [step, setStep] = useState(1)
@@ -1214,7 +1215,15 @@ export default function CheckoutPage() {
                 angebotName={getConflictingPromotions(state.promotionCalculation)[0]?.promotionName || undefined}
               />
             </div>
-            
+
+            {/* Treuepunkte einlösen — только для авторизованных клиентов с балансом */}
+            <LoyaltyRedeem
+              orderAmountBeforePoints={state.total + state.loyaltyPointsDiscount}
+              appliedPoints={state.loyaltyPointsToRedeem || 0}
+              onChange={setLoyaltyPoints}
+              t={t}
+            />
+
             <div className="border-b pb-4 mb-4">
               <div className="flex justify-between mb-2">
                 <span>{t('checkout.items', 'Товары')} ({totalItems})</span>

@@ -5,6 +5,7 @@ import { connectToDatabase } from './models';
 import { Order } from './models/order.model';
 import type { IOrder } from './models/order.model';
 import { sendOrderStatusNotification } from './whatsapp';
+import { earnForCompletedOrder, reverseOrder } from './loyalty/service';
 
 const botCache = new Map<string, any>();
 
@@ -299,7 +300,7 @@ export interface StatusCallbackDeps {
   answerCallbackQuery: (id: string, opts?: { text?: string; show_alert?: boolean }) => PromiseLike<unknown>;
   findOrder: (orderNumber: string) => PromiseLike<any | null>;
   editMessage?: (messageId: number, status: OrderStatus, orderId: string, order: any) => Promise<void>;
-  onStatusChanged?: (order: any, status: OrderStatus) => void;
+  onStatusChanged?: (order: any, status: OrderStatus) => void | Promise<void>;
   log?: (...args: any[]) => void;
 }
 
@@ -392,7 +393,8 @@ export async function handleStatusCallbackQuery(
   await ack({ text: `Статус заказа #${parsed.orderId} → ${status}` });
 
   try {
-    deps.onStatusChanged?.(order, status);
+    // Дожидаемся (важно на serverless): здесь висят начисление баллов и т.п.
+    await deps.onStatusChanged?.(order, status);
   } catch (e) {
     log('onStatusChanged failed', (e as Error)?.message);
   }
@@ -424,7 +426,20 @@ export async function processTelegramUpdate(update: any): Promise<void> {
     editMessage: async (messageId, status, orderId, order) => {
       await updateOrderStatus(messageId, status, orderId, undefined, orderToNotification(order));
     },
-    onStatusChanged: (order, status) => {
+    onStatusChanged: async (order, status) => {
+      // Баллы лояльности по смене статуса из Telegram (та же логика, что в
+      // PUT /api/orders/[id]): completed → начислить, cancelled → реверс.
+      // Идемпотентно по (order, type), поэтому повторный клик не дублирует.
+      if (status === 'completed') {
+        await earnForCompletedOrder(order).catch((e) =>
+          console.error('Loyalty earn on Telegram completion:', e)
+        );
+      } else if (status === 'cancelled') {
+        await reverseOrder(order).catch((e) =>
+          console.error('Loyalty reverse on Telegram cancel:', e)
+        );
+      }
+
       sendOrderStatusNotification(
         { phoneNumber: order.phoneNumber, orderNumber: order.orderNumber },
         status

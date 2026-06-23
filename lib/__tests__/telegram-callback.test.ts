@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect, vi } from 'vitest';
 import {
   parseStatusCallback,
@@ -150,6 +151,26 @@ describe('handleStatusCallbackQuery', () => {
     expect(order.save).toHaveBeenCalledTimes(1);
     expect(order.status).toBe('preparing');
     expect(res).toMatchObject({ handled: true, status: 'preparing' });
+  });
+
+  it('onStatusChanged ОЖИДАЕТСЯ (await): медленный побочный эффект (начисление баллов) завершается до возврата — критично для serverless', async () => {
+    // Регрессия: раньше onStatusChanged вызывался без await, и на serverless
+    // функция замораживалась до начисления баллов по статусу из Telegram.
+    const order = makeOrder('delivering');
+    let sideEffectDone = false;
+    const deps = makeDeps(order, {
+      onStatusChanged: vi.fn(async () => {
+        await new Promise((r) => setTimeout(r, 10));
+        sideEffectDone = true; // имитация завершённого начисления баллов
+      }),
+    });
+
+    const res = await handleStatusCallbackQuery(cbq('status_completed_260620001'), deps);
+
+    expect(order.status).toBe('completed');
+    expect(deps.onStatusChanged).toHaveBeenCalledWith(order, 'completed');
+    expect(sideEffectDone).toBe(true); // дождались побочного эффекта
+    expect(res).toMatchObject({ handled: true, status: 'completed' });
   });
 
   it('callback без message → статус меняется, editMessage пропущен', async () => {

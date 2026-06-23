@@ -11,7 +11,6 @@ import { DEFAULT_STORE_PHONE, phoneToTelHref } from '../lib/store-phone'
 
 export function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isCartModalOpen, setIsCartModalOpen] = useState(false);
   const [storeInfo, setStoreInfo] = useState({
     phone: DEFAULT_STORE_PHONE,
@@ -94,13 +93,13 @@ export function Header() {
             
             {/* Action Buttons */}
             <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-              <button 
-                onClick={() => setIsLoginModalOpen(true)}
+              <Link
+                href="/account"
                 className="hidden h-12 w-12 items-center justify-center rounded-full text-gray-700 transition-colors hover:bg-primary-50 hover:text-primary-600 md:flex"
-                title={t('nav.login', 'Войти')}
+                title={t('nav.account', 'Mein Konto')}
               >
                 <User className="h-6 w-6" />
-              </button>
+              </Link>
               
               <button 
                 onClick={() => setIsCartModalOpen(true)}
@@ -143,16 +142,14 @@ export function Header() {
               <Link href="/track" className="text-gray-700 hover:text-primary-600 py-2 font-medium" onClick={() => setIsMenuOpen(false)}>
                 {t('nav.track', 'Отследить заказ')}
               </Link>
-              <button 
-                onClick={() => {
-                  setIsLoginModalOpen(true);
-                  setIsMenuOpen(false);
-                }}
+              <Link
+                href="/account"
+                onClick={() => setIsMenuOpen(false)}
                 className="text-gray-700 hover:text-primary-600 py-2 font-medium text-left flex items-center"
               >
                 <User className="h-5 w-5 mr-2" />
-                {t('nav.login', 'Войти')}
-              </button>
+                {t('nav.account', 'Mein Konto')}
+              </Link>
               <a href={phoneToTelHref(storeInfo.phone)} className="flex items-center text-primary-600 hover:text-primary-700 py-2 font-medium">
                 <Phone className="h-5 w-5 mr-2" />
                 <span>{storeInfo.phone}</span>
@@ -161,61 +158,6 @@ export function Header() {
           </div>
         )}
       </header>
-      
-      {/* Login Modal */}
-      {isLoginModalOpen && (
-        <>
-          <div 
-            className="modal-backdrop"
-            onClick={() => setIsLoginModalOpen(false)}
-          />
-          <div className="modal-content">
-            <div className="p-6">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-2xl font-bold text-gray-900">
-                  {t('login_modal.title', 'Вход')}
-                </h2>
-                <button 
-                  onClick={() => setIsLoginModalOpen(false)}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <X className="h-6 w-6" />
-                </button>
-              </div>
-              <p className="text-gray-600 mb-6">
-                {t('login_modal.subtitle', 'Введите номер телефона для входа')}
-              </p>
-              <div className="space-y-4">
-                <div>
-                  <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-2">
-                    {t('login_modal.phone_label', 'Номер телефона')}
-                  </label>
-                  <div className="flex">
-                    <span className="inline-flex items-center px-3 rounded-l-lg border border-r-0 border-gray-300 bg-gray-50 text-gray-500 text-sm">
-                      +49
-                    </span>
-                    <input
-                      type="tel"
-                      id="phone"
-                      className="flex-1 border border-gray-300 rounded-r-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                      placeholder={t('login_modal.phone_placeholder', '971 99999')}
-                    />
-                  </div>
-                </div>
-                <button className="btn-primary w-full">
-                  {t('login_modal.send_code', 'Отправить код')}
-                </button>
-                <p className="text-xs text-gray-500 text-center">
-                  {t('login_modal.agreement', 'Продолжая, вы соглашаетесь с')} {' '}
-                  <Link href="/datenschutz" className="text-primary-600 hover:underline">
-                    {t('footer.privacy', 'политикой конфиденциальности')}
-                  </Link>
-                </p>
-              </div>
-            </div>
-          </div>
-        </>
-      )}
       
       {/* Cart Modal */}
       <CartModal 

@@ -18,7 +18,9 @@ import {
   Megaphone,
   Ruler,
   Layers,
-  ListPlus
+  ListPlus,
+  Bell,
+  Star
 } from 'lucide-react';
 
 export default function AdminSidebar() {
@@ -80,6 +82,16 @@ export default function AdminSidebar() {
       name: 'Customers',
       href: '/admin/customers',
       icon: Users
+    },
+    {
+      name: 'Уведомления',
+      href: '/admin/notifications',
+      icon: Bell
+    },
+    {
+      name: 'Бонусы',
+      href: '/admin/loyalty',
+      icon: Star
     },
     {
       name: 'Settings',

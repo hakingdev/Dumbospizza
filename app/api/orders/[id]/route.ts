@@ -4,6 +4,7 @@ import { Order } from '../../../../lib/models/order.model';
 import { isStaff, authOptions } from '../../../../lib/auth';
 import { getServerSession } from 'next-auth';
 import { sendOrderStatusNotification } from '../../../../lib/whatsapp';
+import { earnForCompletedOrder, reverseOrder } from '../../../../lib/loyalty/service';
 
 interface Params {
   params: {
@@ -70,17 +71,19 @@ export async function PUT(request: NextRequest, { params }: Params) {
     
     const data = await request.json();
     const { status, notes, kitchenPrintStatus, customerPrintStatus } = data;
-    
+
     // Get the current order
     const order = await Order.findById(params.id);
-    
+
     if (!order) {
       return NextResponse.json(
-        { success: false, error: 'Order not found' }, 
+        { success: false, error: 'Order not found' },
         { status: 404 }
       );
     }
-    
+
+    const previousStatus = order.status;
+
     // Update status if provided
     if (status) {
       order.status = status;
@@ -109,6 +112,21 @@ export async function PUT(request: NextRequest, { params }: Params) {
     
     // Save updates
     await order.save();
+
+    // Бонусы лояльности по переходу статуса (не валим ответ при ошибке):
+    //  - completed: начислить баллы (идемпотентно);
+    //  - cancelled: реверс начисления + возврат списанных баллов.
+    if (status && status !== previousStatus) {
+      if (status === 'completed') {
+        await earnForCompletedOrder(order).catch((e) =>
+          console.error('Loyalty earn on completion:', e)
+        );
+      } else if (status === 'cancelled') {
+        await reverseOrder(order).catch((e) =>
+          console.error('Loyalty reverse on cancel:', e)
+        );
+      }
+    }
 
     if (status) {
       sendOrderStatusNotification(

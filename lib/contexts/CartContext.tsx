@@ -138,7 +138,7 @@ const calculateTotals = (state: CartState): Partial<CartState> => {
 
   const tax = 0;
 
-  const loyaltyPointsDiscount = state.loyaltyPointsToRedeem / 100; // 100 points = 1 euro
+  const loyaltyPointsDiscount = state.loyaltyPointsToRedeem * 1; // 1 балл = 1 € (pointValueEuro)
   const couponDiscount = state.couponDiscount || 0;
   // Купон и денежная акция не комбинируются: при активном купоне денежные акции
   // (включая BOGO-награду) не учитываем в total — Gratis-Artikel не даёт скидки и так.
