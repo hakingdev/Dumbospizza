@@ -25,6 +25,7 @@ export function CartModal({ isOpen, onClose }: CartModalProps) {
     total,
     promotionCalculation,
     selectedFreeGifts,
+    declinedFreeGifts,
     couponCode,
     couponDiscount,
     loyaltyPointsDiscount,
@@ -192,6 +193,7 @@ export function CartModal({ isOpen, onClose }: CartModalProps) {
               loyaltyPointsDiscount={loyaltyPointsDiscount}
               promotionCalculation={promotionCalculation}
               selectedFreeGifts={selectedFreeGifts}
+              declinedFreeGifts={declinedFreeGifts}
               t={t}
               showDelivery={false}
             />

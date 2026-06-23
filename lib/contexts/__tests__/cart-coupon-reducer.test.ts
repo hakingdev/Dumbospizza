@@ -22,6 +22,7 @@ function baseState(over: Record<string, any> = {}): any {
     moneyPromotionAvailable: false,
     promotionCalculation: null,
     selectedFreeGifts: {},
+    declinedFreeGifts: {},
     selectedBogoSecond: {},
     contactInfo: { name: '', phoneNumber: '' },
     ...over,
@@ -184,13 +185,53 @@ describe('cartReducer / SET_PROMOTION_CALCULATION — сохранение вы�
     expect(next.selectedFreeGifts).toEqual({ promo1: 'g1' });
   });
 
+  it('declinedFreeGifts сохраняется только для актуального незаполненного gift-offer', () => {
+    const state = baseState({
+      declinedFreeGifts: { promo1: true, promoGone: true },
+    });
+    const next = cartReducer(state, {
+      type: 'SET_PROMOTION_CALCULATION',
+      payload: calc({
+        freeGiftOffers: [
+          { promotionId: 'promo1', promotionName: 'Gratis', label: '', options: [{ id: 'g1', productId: 'g1' }] },
+        ],
+      }),
+    });
+    expect(next.declinedFreeGifts).toEqual({ promo1: true });
+  });
+
+  it('выбор подарка очищает предыдущий отказ по тому же offer', () => {
+    const state = baseState({
+      declinedFreeGifts: { promo1: true, promo2: true },
+    });
+    const next = cartReducer(state, {
+      type: 'SET_SELECTED_FREE_GIFT',
+      payload: { promotionId: 'promo1', productId: 'g1' },
+    });
+    expect(next.selectedFreeGifts).toEqual({ promo1: 'g1' });
+    expect(next.declinedFreeGifts).toEqual({ promo2: true });
+  });
+
+  it('изменение корзины сбрасывает отказ от gift-offer как устаревший', () => {
+    const state = baseState({
+      declinedFreeGifts: { promo1: true },
+    });
+    const next = cartReducer(state, {
+      type: 'ADD_ITEM',
+      payload: { id: 'p1', productId: 'p1', name: 'Pizza', price: 10, basePrice: 10, quantity: 1 },
+    });
+    expect(next.declinedFreeGifts).toEqual({});
+  });
+
   it('payload=null → выбор очищается (корзина пуста)', () => {
     const state = baseState({
       selectedFreeGifts: { promo1: 'g1' },
+      declinedFreeGifts: { promo1: true },
       selectedBogoSecond: { promo2: ['p2'] },
     });
     const next = cartReducer(state, { type: 'SET_PROMOTION_CALCULATION', payload: null });
     expect(next.selectedFreeGifts).toEqual({});
+    expect(next.declinedFreeGifts).toEqual({});
     expect(next.selectedBogoSecond).toEqual({});
   });
 });

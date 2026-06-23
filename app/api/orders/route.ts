@@ -47,6 +47,24 @@ function toPublicOrderView(order: any) {
   };
 }
 
+async function claimPendingPrintOrders(query: any, limit: number) {
+  const candidates = await Order.find(query)
+    .sort({ createdAt: -1 })
+    .limit(limit);
+
+  const claimed: any[] = [];
+  for (const candidate of candidates) {
+    const id = String(candidate._id || candidate.id);
+    const order = await Order.findOneAndUpdate(
+      { _id: id, kitchenPrintStatus: 'pending' },
+      { $set: { kitchenPrintStatus: 'printing' } }
+    );
+    if (order) claimed.push(order);
+  }
+
+  return claimed;
+}
+
 export async function POST(request: NextRequest) {
   try {
     await connectToDatabase();
@@ -258,15 +276,9 @@ export async function POST(request: NextRequest) {
       promotionCalc = applySelectedFreeGifts(promotionCalc, selectedFreeGifts);
     }
 
-    if ((promotionCalc.freeGiftOffers || []).length > 0) {
-      return NextResponse.json(
-        { success: false, error: 'Bitte wählen Sie Ihr Gratis-Produkt aus.' },
-        { status: 400 }
-      );
-    }
-
-    // Награда BOGO опциональна (вариант «только попап»): наличие непринятого
-    // оффера НЕ блокирует заказ — клиент мог отказаться («Nein, danke»).
+    // Награды BOGO и Gratis-Artikel опциональны (вариант «только попап»):
+    // наличие непринятого оффера НЕ блокирует заказ — клиент мог отказаться
+    // («Nein, danke»).
 
     const bogoError = validateBogoSecondSelection(promotionCalc, selectedBogoSecond);
     if (bogoError.error) {
@@ -287,6 +299,10 @@ export async function POST(request: NextRequest) {
     if (giftError) {
       return NextResponse.json({ success: false, error: giftError }, { status: 400 });
     }
+    const resolvedGiftPromotionIds = new Set(resolvedFreeGifts.map((g) => g.promotionId));
+    const appliedPromotions = promotionCalc.appliedPromotions.filter(
+      (p) => p.promotionType !== 'gratis_article' || resolvedGiftPromotionIds.has(p.promotionId)
+    );
 
     const bogoOrderItems = bogoSecondItems.map((item) => ({
       product: item.productId,
@@ -356,7 +372,7 @@ export async function POST(request: NextRequest) {
         : undefined,
       promotionDiscount,
       promotionPromoCode: promotionPromoCode || undefined,
-      appliedPromotions: promotionCalc.appliedPromotions.map((p) => ({
+      appliedPromotions: appliedPromotions.map((p) => ({
         promotionId: p.promotionId,
         name: p.promotionName,
         type: p.promotionType,
@@ -423,12 +439,13 @@ export async function GET(request: NextRequest) {
     const skip = (page - 1) * limit;
 
     let canReadFullOrders = false;
+    let isPrintAgent = false;
     if (!phoneNumber && !orderNumber) {
       // Принт-агент забирает очередь печати без staff-сессии: авторизуем его тем же
       // секретом, что и /mark-printed (X-Print-Agent-Key), и только для запросов
       // очереди печати (kitchenPrintStatus задан).
       const printAgentKey = request.headers.get('X-Print-Agent-Key');
-      const isPrintAgent =
+      isPrintAgent =
         !!process.env.PRINT_AGENT_SECRET &&
         printAgentKey === process.env.PRINT_AGENT_SECRET &&
         !!kitchenPrintStatus;
@@ -460,6 +477,21 @@ export async function GET(request: NextRequest) {
         { paymentMethod: { $ne: 'online' } },
         { paymentStatus: 'completed' },
       ];
+    }
+
+    if (isPrintAgent && kitchenPrintStatus === 'pending') {
+      const orders = await claimPendingPrintOrders(query, limit);
+
+      return NextResponse.json({
+        success: true,
+        orders,
+        pagination: {
+          total: orders.length,
+          page,
+          limit,
+          pages: orders.length > 0 ? 1 : 0
+        }
+      });
     }
 
     // Get orders with pagination

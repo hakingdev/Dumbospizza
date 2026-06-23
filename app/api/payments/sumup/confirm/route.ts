@@ -59,19 +59,41 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Помечаем оплаченным ДО финализации — это гейт идемпотентности и условие
-    // допуска заказа к печати (см. GET /api/orders гейт по paymentStatus).
-    order.paymentStatus = 'completed';
-    await order.save();
+    // Атомарно помечаем оплаченным ДО финализации: при двух одновременных
+    // confirm-запросах только один запустит побочные эффекты.
+    const claimedOrder = await Order.findOneAndUpdate(
+      { _id: orderId, paymentStatus: 'pending' },
+      { $set: { paymentStatus: 'completed' } }
+    );
 
-    await finalizeOrderPlacement(order, request);
+    if (!claimedOrder) {
+      const latestOrder = await Order.findById(orderId);
+      if (latestOrder?.paymentStatus === 'completed') {
+        return NextResponse.json({
+          success: true,
+          alreadyPaid: true,
+          order: {
+            id: latestOrder._id.toString(),
+            orderNumber: latestOrder.orderNumber,
+            loyaltyPointsEarned: latestOrder.loyaltyPointsEarned || 0,
+          },
+        });
+      }
+
+      return NextResponse.json(
+        { success: false, error: 'Payment status changed before confirmation' },
+        { status: 409 }
+      );
+    }
+
+    await finalizeOrderPlacement(claimedOrder, request);
 
     return NextResponse.json({
       success: true,
       order: {
-        id: order._id.toString(),
-        orderNumber: order.orderNumber,
-        loyaltyPointsEarned: order.loyaltyPointsEarned || 0,
+        id: claimedOrder._id.toString(),
+        orderNumber: claimedOrder.orderNumber,
+        loyaltyPointsEarned: claimedOrder.loyaltyPointsEarned || 0,
       },
     });
   } catch (error: any) {

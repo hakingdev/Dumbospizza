@@ -1,7 +1,16 @@
 'use client';
 
 import { useState } from 'react';
-import { User as UserIcon, Mail, Phone, Calendar, MapPin, Edit, LogOut, Loader2 } from 'lucide-react';
+import {
+  User as UserIcon,
+  Mail,
+  Phone,
+  Calendar,
+  MapPin,
+  Edit,
+  LogOut,
+  Loader2,
+} from 'lucide-react';
 
 interface ProfileTabProps {
   user: any;
@@ -9,7 +18,11 @@ interface ProfileTabProps {
   onLogout: () => void;
 }
 
-export default function ProfileTab({ user, onUpdated, onLogout }: ProfileTabProps) {
+export default function ProfileTab({
+  user,
+  onUpdated,
+  onLogout,
+}: ProfileTabProps) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(user.name || '');
   const [email, setEmail] = useState(user.email || '');
@@ -49,7 +62,9 @@ export default function ProfileTab({ user, onUpdated, onLogout }: ProfileTabProp
     <div className="space-y-6">
       <div className="rounded-lg bg-white p-4 shadow sm:p-6">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <h2 className="min-w-0 text-lg font-semibold leading-tight">Persönliche Daten</h2>
+          <h2 className="min-w-0 text-lg font-semibold leading-tight">
+            Persönliche Daten
+          </h2>
           {!editing && (
             <button
               onClick={() => setEditing(true)}
@@ -63,7 +78,9 @@ export default function ProfileTab({ user, onUpdated, onLogout }: ProfileTabProp
         {editing ? (
           <form onSubmit={save} className="space-y-4">
             <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">Name</label>
+              <label className="mb-1 block text-sm font-medium text-gray-700">
+                Name
+              </label>
               <input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
@@ -72,7 +89,9 @@ export default function ProfileTab({ user, onUpdated, onLogout }: ProfileTabProp
               />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">E-Mail</label>
+              <label className="mb-1 block text-sm font-medium text-gray-700">
+                E-Mail
+              </label>
               <input
                 type="email"
                 value={email}
@@ -87,7 +106,9 @@ export default function ProfileTab({ user, onUpdated, onLogout }: ProfileTabProp
                 disabled={saving}
                 className="flex min-h-[40px] flex-1 items-center justify-center rounded-md bg-primary-600 px-4 py-2 text-sm font-medium leading-none text-white hover:bg-primary-700 disabled:opacity-50"
               >
-                {saving && <Loader2 className="mr-2 h-4 w-4 shrink-0 animate-spin" />}
+                {saving && (
+                  <Loader2 className="mr-2 h-4 w-4 shrink-0 animate-spin" />
+                )}
                 Speichern
               </button>
               <button
@@ -108,7 +129,9 @@ export default function ProfileTab({ user, onUpdated, onLogout }: ProfileTabProp
           <div className="space-y-3 text-sm">
             <div className="flex min-w-0 items-center text-gray-700">
               <UserIcon className="mr-3 h-5 w-5 shrink-0 text-gray-400" />
-              <span className="min-w-0 truncate font-medium">{user.name || '—'}</span>
+              <span className="min-w-0 truncate font-medium">
+                {user.name || '—'}
+              </span>
             </div>
             <div className="flex min-w-0 items-center text-gray-700">
               <Mail className="mr-3 h-5 w-5 shrink-0 text-gray-400" />
@@ -128,11 +151,16 @@ export default function ProfileTab({ user, onUpdated, onLogout }: ProfileTabProp
 
       {/* Addresses */}
       <div className="rounded-lg bg-white p-4 shadow sm:p-6">
-        <h2 className="mb-4 text-lg font-semibold leading-tight">Lieferadressen</h2>
+        <h2 className="mb-4 text-lg font-semibold leading-tight">
+          Lieferadressen
+        </h2>
         {Array.isArray(user.addresses) && user.addresses.length > 0 ? (
           <ul className="space-y-2">
             {user.addresses.map((a: any, i: number) => (
-              <li key={i} className="flex min-w-0 items-start text-sm leading-6 text-gray-700">
+              <li
+                key={i}
+                className="flex min-w-0 items-start text-sm leading-6 text-gray-700"
+              >
                 <MapPin className="mr-2 mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
                 <span className="min-w-0 break-words">
                   {a.street} {a.houseNumber}, {a.postalCode} {a.city}
@@ -143,7 +171,8 @@ export default function ProfileTab({ user, onUpdated, onLogout }: ProfileTabProp
           </ul>
         ) : (
           <p className="text-pretty text-sm leading-6 text-gray-500">
-            Noch keine gespeicherten Adressen. Sie werden bei Ihrer nächsten Bestellung ergänzt.
+            Noch keine gespeicherten Adressen. Sie werden bei Ihrer nächsten
+            Bestellung ergänzt.
           </p>
         )}
       </div>

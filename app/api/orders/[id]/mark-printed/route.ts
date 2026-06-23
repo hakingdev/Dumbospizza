@@ -20,13 +20,19 @@ export async function POST(
 
   try {
     await connectToDatabase();
+    const body = await request.json().catch(() => ({}));
+    const printed = body?.success !== false;
+
     const order = await Order.findById(params.id);
     if (!order) {
       return NextResponse.json({ success: false, error: 'Order not found' }, { status: 404 });
     }
-    order.kitchenPrintStatus = 'completed';
+    order.kitchenPrintStatus = printed ? 'completed' : 'failed';
     await order.save();
-    return NextResponse.json({ success: true, order: { id: order._id, kitchenPrintStatus: order.kitchenPrintStatus } });
+    return NextResponse.json({
+      success: true,
+      order: { id: order._id, kitchenPrintStatus: order.kitchenPrintStatus }
+    });
   } catch (error: any) {
     console.error('Error marking order printed:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

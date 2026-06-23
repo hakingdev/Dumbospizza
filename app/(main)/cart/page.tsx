@@ -36,13 +36,14 @@ export default function CartPage() {
     removeCoupon,
     setPromotionPromoCode,
     setSelectedFreeGift,
+    declineFreeGift,
     setSelectedBogoSecond,
   } = useCart();
 
   const giftOffers = state.promotionCalculation?.freeGiftOffers || [];
   const bogoOffers = state.promotionCalculation?.bogoSecondOffers || [];
   const needsGiftSelection = giftOffers.some(
-    (offer) => !state.selectedFreeGifts[offer.promotionId]
+    (offer) => !state.selectedFreeGifts[offer.promotionId] && !state.declinedFreeGifts[offer.promotionId]
   );
   // оффер присутствует только когда есть незаполненный слот награды (движок так решает)
   const needsBogoSelection = bogoOffers.length > 0;
@@ -69,7 +70,7 @@ export default function CartPage() {
   }, [language]);
 
   useEffect(() => {
-    // только подарок авто-открываем (он обязателен); BOGO — по кнопке/попапу на меню
+    // Gratis-Artikel einmal anbieten; BOGO — по кнопке/попапу на меню.
     if (giftOffers.length > 0 && needsGiftSelection) {
       setShowGiftModal(true);
     }
@@ -248,6 +249,7 @@ export default function CartPage() {
                   loyaltyPointsDiscount={state.loyaltyPointsDiscount}
                   promotionCalculation={state.promotionCalculation}
                   selectedFreeGifts={state.selectedFreeGifts}
+                  declinedFreeGifts={state.declinedFreeGifts}
                   t={t}
                   showDelivery={false}
                 />
@@ -354,7 +356,11 @@ export default function CartPage() {
           selections={giftSlot}
           onSelect={(promotionId, optionId) => setGiftSlot((s) => ({ ...s, [promotionId]: optionId }))}
           onConfirm={handleGiftConfirm}
-          onClose={() => { setGiftSlot({}); setShowGiftModal(false); }}
+          onClose={() => {
+            giftOffers.forEach((offer) => declineFreeGift(offer.promotionId));
+            setGiftSlot({});
+            setShowGiftModal(false);
+          }}
           t={t}
         />
       )}

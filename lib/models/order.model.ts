@@ -87,8 +87,8 @@ export interface IOrder {
   desiredDeliveryTime?: string;
   telegramMessageId?: number;
   mewsOrderId?: string;
-  kitchenPrintStatus?: 'pending' | 'completed' | 'failed';
-  customerPrintStatus?: 'pending' | 'completed' | 'failed';
+  kitchenPrintStatus?: 'pending' | 'printing' | 'completed' | 'failed';
+  customerPrintStatus?: 'pending' | 'printing' | 'completed' | 'failed';
   createdAt: Date;
   updatedAt: Date;
   statusUpdates?: {

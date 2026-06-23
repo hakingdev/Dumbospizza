@@ -36,7 +36,9 @@ export default function OrdersTab() {
         <h3 className="mb-1 text-pretty text-lg font-medium leading-tight text-gray-900">
           Noch keine Bestellungen
         </h3>
-        <p className="mb-4 text-pretty text-gray-500">Ihre Bestellungen erscheinen hier.</p>
+        <p className="mb-4 text-pretty text-gray-500">
+          Ihre Bestellungen erscheinen hier.
+        </p>
         <Link
           href="/"
           className="inline-flex min-h-[40px] items-center justify-center whitespace-nowrap rounded-md bg-primary-600 px-4 py-2 text-sm font-medium leading-none text-white hover:bg-primary-700"

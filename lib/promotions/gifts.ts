@@ -75,7 +75,9 @@ export function resolveFreeGiftsForOrder(
   for (const offer of calculation.freeGiftOffers || []) {
     const selected = selectionMap.get(offer.promotionId);
     if (!selected) {
-      return { freeGifts: [], error: 'Bitte wählen Sie Ihr Gratis-Produkt aus.' };
+      // Gratis-Artikel sind optional. Ohne Auswahl wird der Geschenk-Offer einfach
+      // nicht in die Bestellung übernommen.
+      continue;
     }
     const option = offer.options.find((o) => optionMatchesSelection(o, selected));
     if (!option) {

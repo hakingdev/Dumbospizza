@@ -1,7 +1,14 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { User as UserIcon, ShoppingBag, Star, Heart, Bell, Loader2 } from 'lucide-react';
+import {
+  User as UserIcon,
+  ShoppingBag,
+  Star,
+  Heart,
+  Bell,
+  Loader2,
+} from 'lucide-react';
 import AccountAuth from '../../../components/account/AccountAuth';
 import ProfileTab from '../../../components/account/ProfileTab';
 import OrdersTab from '../../../components/account/OrdersTab';
@@ -80,17 +87,23 @@ export default function AccountPage() {
   return (
     <div className="container mx-auto max-w-3xl px-3 py-6 sm:px-4 sm:py-8">
       <div className="mb-5 min-w-0 sm:mb-6">
-        <h1 className="text-2xl font-bold leading-tight text-gray-900">Mein Konto</h1>
-        <p className="mt-1 truncate text-sm text-gray-500">Hallo, {user?.name}</p>
+        <h1 className="text-2xl font-bold leading-tight text-gray-900">
+          Mein Konto
+        </h1>
+        <p className="mt-1 truncate text-sm text-gray-500">
+          Hallo, {user?.name}
+        </p>
       </div>
 
-      {/* Tabs: horizontal scroll on small screens, equal columns from sm up. */}
-      <div className="scrollbar-hide mb-6 flex gap-1 overflow-x-auto rounded-lg bg-white p-1 shadow-sm sm:grid sm:grid-cols-5 sm:overflow-visible">
+      {/* Tabs: two columns on phones, equal row on wider screens. */}
+      <div className="mb-6 grid grid-cols-2 gap-1 rounded-lg bg-white p-1 shadow-sm sm:grid-cols-5">
         {TABS.map(({ key, label, icon: Icon }) => (
           <button
             key={key}
             onClick={() => setTab(key)}
-            className={`relative flex h-10 min-w-max shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-3 text-sm font-medium leading-none transition-colors sm:min-w-0 sm:px-2 ${
+            className={`relative flex h-10 min-w-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-2 text-xs font-medium leading-none transition-colors min-[380px]:text-sm ${
+              key === 'notifications' ? 'col-span-2 sm:col-span-1' : ''
+            } ${
               tab === key
                 ? 'bg-primary-600 text-white'
                 : 'text-gray-600 hover:bg-gray-50'
@@ -116,7 +129,9 @@ export default function AccountPage() {
         {tab === 'orders' && <OrdersTab />}
         {tab === 'points' && <PointsTab />}
         {tab === 'favorites' && <FavoritesTab />}
-        {tab === 'notifications' && <NotificationsTab onChanged={refreshUnread} />}
+        {tab === 'notifications' && (
+          <NotificationsTab onChanged={refreshUnread} />
+        )}
       </div>
     </div>
   );

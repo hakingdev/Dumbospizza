@@ -51,7 +51,11 @@ export default function PointsTab() {
   }
 
   if (!data) {
-    return <p className="py-8 text-center text-gray-500">Konnte Treuepunkte nicht laden.</p>;
+    return (
+      <p className="py-8 text-center text-gray-500">
+        Konnte Treuepunkte nicht laden.
+      </p>
+    );
   }
 
   const { loyalty, rules } = data;
@@ -89,13 +93,17 @@ export default function PointsTab() {
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="rounded-lg bg-white p-4 text-center shadow">
-          <p className="text-xs leading-tight text-gray-500">Insgesamt gesammelt</p>
+          <p className="text-xs leading-tight text-gray-500">
+            Insgesamt gesammelt
+          </p>
           <p className="mt-1 truncate text-xl font-semibold text-gray-900">
             {loyalty.totalEarned.toFixed(2)}
           </p>
         </div>
         <div className="rounded-lg bg-white p-4 text-center shadow">
-          <p className="text-xs leading-tight text-gray-500">Insgesamt eingelöst</p>
+          <p className="text-xs leading-tight text-gray-500">
+            Insgesamt eingelöst
+          </p>
           <p className="mt-1 truncate text-xl font-semibold text-gray-900">
             {loyalty.totalRedeemed.toFixed(2)}
           </p>
@@ -110,21 +118,22 @@ export default function PointsTab() {
         </h3>
         <ul className="list-disc space-y-2 pl-5 text-pretty text-sm leading-6 text-gray-600">
           <li>
-            Sie erhalten <strong>{earnPercent}%</strong> des bezahlten Betrags als Punkte zurück
-            (nach Abschluss der Bestellung).
+            Sie erhalten <strong>{earnPercent}%</strong> des bezahlten Betrags
+            als Punkte zurück (nach Abschluss der Bestellung).
           </li>
           <li>
             Mit Punkten zahlen Sie bis zu{' '}
-            <strong>{Math.round(rules.redeemMaxShare * 100)}%</strong> Ihrer nächsten Bestellung
-            (ab {rules.minOrderToRedeem} €).
+            <strong>{Math.round(rules.redeemMaxShare * 100)}%</strong> Ihrer
+            nächsten Bestellung (ab {rules.minOrderToRedeem} €).
           </li>
           <li>
             Punkte verfallen nach <strong>{rules.expiryMonths} Monaten</strong>.
           </li>
           <li>
-            Stufen: Bronze {Math.round(rules.earnPercentByTier.bronze * 100)}% · Silber{' '}
-            {Math.round(rules.earnPercentByTier.silver * 100)}% (ab {rules.tierThresholds.silver}{' '}
-            Bestellungen) · Gold {Math.round(rules.earnPercentByTier.gold * 100)}% (ab{' '}
+            Stufen: Bronze {Math.round(rules.earnPercentByTier.bronze * 100)}% ·
+            Silber {Math.round(rules.earnPercentByTier.silver * 100)}% (ab{' '}
+            {rules.tierThresholds.silver} Bestellungen) · Gold{' '}
+            {Math.round(rules.earnPercentByTier.gold * 100)}% (ab{' '}
             {rules.tierThresholds.gold}).
           </li>
         </ul>
@@ -132,9 +141,13 @@ export default function PointsTab() {
 
       {/* History */}
       <div className="rounded-lg bg-white shadow">
-        <h3 className="border-b p-4 font-semibold leading-tight text-gray-900 sm:p-5">Verlauf</h3>
+        <h3 className="border-b p-4 font-semibold leading-tight text-gray-900 sm:p-5">
+          Verlauf
+        </h3>
         {loyalty.transactions.length === 0 ? (
-          <p className="p-6 text-center text-sm text-gray-500">Noch keine Bewegungen.</p>
+          <p className="p-6 text-center text-sm text-gray-500">
+            Noch keine Bewegungen.
+          </p>
         ) : (
           <ul className="divide-y">
             {loyalty.transactions.map((t: any) => (
@@ -143,7 +156,9 @@ export default function PointsTab() {
                 className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5"
               >
                 <div className="min-w-0">
-                  <p className="text-sm font-medium text-gray-900">{TX_LABEL[t.type] || t.type}</p>
+                  <p className="text-sm font-medium text-gray-900">
+                    {TX_LABEL[t.type] || t.type}
+                  </p>
                   <p className="mt-1 flex min-w-0 items-start text-xs leading-5 text-gray-500">
                     <Clock className="mr-1 mt-1 h-3 w-3 shrink-0" />
                     <span className="min-w-0 text-pretty">

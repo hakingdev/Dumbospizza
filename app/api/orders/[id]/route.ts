@@ -84,8 +84,11 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
     const previousStatus = order.status;
 
-    // Update status if provided
-    if (status) {
+    const statusChanged = Boolean(status && status !== previousStatus);
+
+    // Update status if provided and actually changed. Re-sending the same
+    // status should be idempotent: no duplicate history or WhatsApp message.
+    if (statusChanged) {
       order.status = status;
       
       // Add status update to history
@@ -116,7 +119,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
     // Бонусы лояльности по переходу статуса (не валим ответ при ошибке):
     //  - completed: начислить баллы (идемпотентно);
     //  - cancelled: реверс начисления + возврат списанных баллов.
-    if (status && status !== previousStatus) {
+    if (statusChanged) {
       if (status === 'completed') {
         await earnForCompletedOrder(order).catch((e) =>
           console.error('Loyalty earn on completion:', e)
@@ -128,7 +131,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
       }
     }
 
-    if (status) {
+    if (statusChanged) {
       sendOrderStatusNotification(
         { phoneNumber: order.phoneNumber, orderNumber: order.orderNumber },
         status

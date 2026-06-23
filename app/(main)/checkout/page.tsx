@@ -469,6 +469,9 @@ export default function CheckoutPage() {
         selectedFreeGifts: Object.entries(state.selectedFreeGifts || {}).map(
           ([promotionId, productId]) => ({ promotionId, productId })
         ),
+        declinedFreeGifts: Object.entries(state.declinedFreeGifts || {})
+          .filter(([, declined]) => declined)
+          .map(([promotionId]) => promotionId),
       }
       
       // Create order via API
@@ -1194,6 +1197,7 @@ export default function CheckoutPage() {
             <PromotionCartSummary
               calculation={state.promotionCalculation}
               selectedFreeGifts={state.selectedFreeGifts}
+              declinedFreeGifts={state.declinedFreeGifts}
               t={t}
             />
 

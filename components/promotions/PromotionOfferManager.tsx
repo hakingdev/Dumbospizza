@@ -18,7 +18,7 @@ import GratisGiftPickerModal from './GratisGiftPickerModal';
  */
 export default function PromotionOfferManager() {
   const pathname = usePathname();
-  const { state, setSelectedFreeGift, setSelectedBogoSecond } = useCart();
+  const { state, setSelectedFreeGift, declineFreeGift, setSelectedBogoSecond } = useCart();
   const { language } = useLanguage();
   const [t, setT] = useState<any>(() => (k: string, fb?: string) => fb || k);
   const [open, setOpen] = useState<'bogo' | 'gift' | null>(null);
@@ -55,7 +55,9 @@ export default function PromotionOfferManager() {
 
   const pendingBogo = bogoOffers.filter((o) => !dismissed.current.has(o.promotionId));
   // оффер подарка присутствует, пока не выбран; dismissed — отказ
-  const pendingGift = giftOffers.filter((o) => !dismissed.current.has(o.promotionId));
+  const pendingGift = giftOffers.filter(
+    (o) => !dismissed.current.has(o.promotionId) && !state.declinedFreeGifts[o.promotionId]
+  );
 
   useEffect(() => {
     if (onCartPage || open) return;
@@ -114,7 +116,10 @@ export default function PromotionOfferManager() {
           setOpen(null);
         }}
         onClose={() => {
-          giftOffers.forEach((o) => dismissed.current.add(o.promotionId));
+          giftOffers.forEach((o) => {
+            dismissed.current.add(o.promotionId);
+            declineFreeGift(o.promotionId);
+          });
           handledCalc.current = state.promotionCalculation;
           setGiftSlot({});
           setOpen(null);

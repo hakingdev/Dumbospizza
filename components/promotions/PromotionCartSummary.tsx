@@ -15,12 +15,13 @@ function resolveDisplayedFreeGifts(
 ): PromotionFreeGift[] {
   const gifts = [...calculation.freeGifts];
   for (const offer of calculation.freeGiftOffers || []) {
-    const productId = selectedFreeGifts[offer.promotionId];
-    if (!productId) continue;
-    const option = offer.options.find((o) => o.productId === productId);
+    const selected = selectedFreeGifts[offer.promotionId];
+    if (!selected) continue;
+    const option = offer.options.find((o) => o.id === selected || o.productId === selected);
     if (!option) continue;
     gifts.push({
-      productId,
+      productId: option.productId,
+      sizeName: option.sizeName,
       name: option.name,
       quantity: 1,
       promotionId: offer.promotionId,
@@ -34,10 +35,12 @@ function resolveDisplayedFreeGifts(
 export default function PromotionCartSummary({
   calculation,
   selectedFreeGifts = {},
+  declinedFreeGifts = {},
   t = (k: string, fb?: string) => fb || k,
 }: {
   calculation: PromotionCalculationResult | null;
   selectedFreeGifts?: Record<string, string>;
+  declinedFreeGifts?: Record<string, boolean>;
   t?: (key: string, fallback?: string) => string;
 }) {
   if (!calculation) return null;
@@ -46,7 +49,7 @@ export default function PromotionCartSummary({
   // В СПИСКЕ корзины (PromoRewardLines), а не здесь.
   const rabattTotal = getAppliedPromotionDiscount(calculation);
   const pendingOffers = (calculation.freeGiftOffers || []).filter(
-    (offer) => !selectedFreeGifts[offer.promotionId]
+    (offer) => !selectedFreeGifts[offer.promotionId] && !declinedFreeGifts[offer.promotionId]
   );
 
   if (rabattTotal <= 0 && pendingOffers.length === 0) {

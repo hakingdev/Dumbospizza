@@ -53,6 +53,29 @@ export interface OrderForWhatsApp {
   orderNumber: string;
 }
 
+export async function enqueueWhatsAppMessageOnce(input: {
+  phone: string;
+  text: string;
+  orderId?: string;
+}): Promise<boolean> {
+  if (input.orderId) {
+    const existing = await WhatsAppQueue.findOne({
+      orderId: input.orderId,
+      text: input.text,
+      status: { $in: ['pending', 'sent'] },
+    });
+    if (existing) return false;
+  }
+
+  await WhatsAppQueue.create({
+    phone: input.phone,
+    text: input.text,
+    status: 'pending',
+    orderId: input.orderId,
+  });
+  return true;
+}
+
 /**
  * Send "order placed" message with thank-you text and tracking link (once, when order is created).
  * Fire-and-forget, never throws.
@@ -82,11 +105,10 @@ export async function sendOrderPlacedNotification(order: OrderForWhatsApp): Prom
         (storeSettings?.whatsappWebWorkerSecret as string)?.trim() || process.env.WHATSAPP_WEB_WORKER_SECRET?.trim();
       if (!workerSecret) return false;
 
-      await WhatsAppQueue.create({
+      await enqueueWhatsAppMessageOnce({
         phone: order.phoneNumber,
         text: messageText,
-        status: 'pending',
-        orderId: order.orderNumber
+        orderId: order.orderNumber,
       });
       return true;
     }
@@ -160,11 +182,10 @@ export async function sendOrderStatusNotification(
         (storeSettings?.whatsappWebWorkerSecret as string)?.trim() || process.env.WHATSAPP_WEB_WORKER_SECRET?.trim();
       if (!workerSecret) return false;
 
-      await WhatsAppQueue.create({
+      await enqueueWhatsAppMessageOnce({
         phone: order.phoneNumber,
         text: messageText,
-        status: 'pending',
-        orderId: order.orderNumber
+        orderId: order.orderNumber,
       });
       return true;
     }

@@ -18,6 +18,7 @@ export interface OrderSummaryBreakdownProps {
   loyaltyPointsDiscount: number;
   promotionCalculation: PromotionCalculationResult | null;
   selectedFreeGifts?: Record<string, string>;
+  declinedFreeGifts?: Record<string, boolean>;
   t?: (key: string, fallback?: string) => string;
   className?: string;
   /**
@@ -36,6 +37,7 @@ export default function OrderSummaryBreakdown({
   loyaltyPointsDiscount,
   promotionCalculation,
   selectedFreeGifts = {},
+  declinedFreeGifts = {},
   t = (k: string, fb?: string) => fb || k,
   className = '',
   showDelivery = true,
@@ -81,6 +83,7 @@ export default function OrderSummaryBreakdown({
       <PromotionCartSummary
         calculation={promotionCalculation}
         selectedFreeGifts={selectedFreeGifts}
+        declinedFreeGifts={declinedFreeGifts}
         t={t}
       />
 

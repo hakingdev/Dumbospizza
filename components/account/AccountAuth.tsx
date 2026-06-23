@@ -24,9 +24,13 @@ export default function AccountAuth({ onAuthenticated }: AccountAuthProps) {
     setLoading(true);
     try {
       const url =
-        mode === 'login' ? '/api/customer/auth/login' : '/api/customer/auth/register';
+        mode === 'login'
+          ? '/api/customer/auth/login'
+          : '/api/customer/auth/register';
       const body =
-        mode === 'login' ? { email, password } : { name, email, phoneNumber, password };
+        mode === 'login'
+          ? { email, password }
+          : { name, email, phoneNumber, password };
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -106,7 +110,9 @@ export default function AccountAuth({ onAuthenticated }: AccountAuthProps) {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Passwort"
-              autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+              autoComplete={
+                mode === 'login' ? 'current-password' : 'new-password'
+              }
               className="w-full min-w-0 rounded-md border border-gray-300 py-2 pl-10 pr-4 focus:border-primary-500 focus:ring-primary-500"
               minLength={6}
               required

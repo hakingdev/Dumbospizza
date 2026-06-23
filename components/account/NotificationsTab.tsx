@@ -2,7 +2,15 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { Bell, Loader2, Gift, ShoppingBag, Star, Info, CheckCheck } from 'lucide-react';
+import {
+  Bell,
+  Loader2,
+  Gift,
+  ShoppingBag,
+  Star,
+  Info,
+  CheckCheck,
+} from 'lucide-react';
 
 const CATEGORY_ICON: Record<string, any> = {
   promo: Gift,
@@ -21,7 +29,11 @@ function fmtDate(d: string) {
   });
 }
 
-export default function NotificationsTab({ onChanged }: { onChanged?: () => void }) {
+export default function NotificationsTab({
+  onChanged,
+}: {
+  onChanged?: () => void;
+}) {
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState<any[]>([]);
 
@@ -37,7 +49,9 @@ export default function NotificationsTab({ onChanged }: { onChanged?: () => void
   }, [load]);
 
   const markRead = async (id: string) => {
-    setItems((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+    setItems((prev) =>
+      prev.map((n) => (n.id === id ? { ...n, read: true } : n)),
+    );
     await fetch('/api/customer/notifications', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -83,7 +97,8 @@ export default function NotificationsTab({ onChanged }: { onChanged?: () => void
             onClick={markAll}
             className="inline-flex items-center whitespace-nowrap text-sm font-medium text-primary-600 hover:text-primary-700"
           >
-            <CheckCheck className="mr-1 h-4 w-4 shrink-0" /> Alle als gelesen markieren
+            <CheckCheck className="mr-1 h-4 w-4 shrink-0" /> Alle als gelesen
+            markieren
           </button>
         </div>
       )}
@@ -95,13 +110,17 @@ export default function NotificationsTab({ onChanged }: { onChanged?: () => void
               key={n.id}
               onClick={() => !n.read && markRead(n.id)}
               className={`cursor-pointer rounded-lg border p-3 shadow-sm transition-colors sm:p-4 ${
-                n.read ? 'border-gray-100 bg-white' : 'border-primary-200 bg-primary-50/60'
+                n.read
+                  ? 'border-gray-100 bg-white'
+                  : 'border-primary-200 bg-primary-50/60'
               }`}
             >
               <div className="flex items-start gap-3">
                 <span
                   className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
-                    n.read ? 'bg-gray-100 text-gray-500' : 'bg-primary-600 text-white'
+                    n.read
+                      ? 'bg-gray-100 text-gray-500'
+                      : 'bg-primary-600 text-white'
                   }`}
                 >
                   <Icon className="h-4 w-4" />
@@ -119,7 +138,9 @@ export default function NotificationsTab({ onChanged }: { onChanged?: () => void
                     {n.body}
                   </p>
                   <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                    <span className="text-xs leading-none text-gray-400">{fmtDate(n.createdAt)}</span>
+                    <span className="text-xs leading-none text-gray-400">
+                      {fmtDate(n.createdAt)}
+                    </span>
                     {n.link && (
                       <Link
                         href={n.link}

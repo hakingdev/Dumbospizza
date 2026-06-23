@@ -65,6 +65,8 @@ export interface CartState {
   promotionCalculation: PromotionCalculationResult | null;
   /** promotionId → productId для Gratis-Auswahl (1 aus N) */
   selectedFreeGifts: Record<string, string>;
+  /** promotionId → true, wenn Kunde den optionalen Gratis-Artikel abgelehnt hat */
+  declinedFreeGifts: Record<string, boolean>;
   /** promotionId → productId для BOGO 2. zum halben Preis */
   selectedBogoSecond: Record<string, string[]>;
   contactInfo: {
@@ -102,6 +104,7 @@ type CartAction =
   | { type: 'SET_MONEY_PROMOTION_AVAILABLE'; payload: boolean }
   | { type: 'SET_PROMOTION_PROMO_CODE'; payload: string | undefined }
   | { type: 'SET_SELECTED_FREE_GIFT'; payload: { promotionId: string; productId: string } }
+  | { type: 'SET_DECLINED_FREE_GIFT'; payload: { promotionId: string } }
   | { type: 'CLEAR_SELECTED_FREE_GIFTS' }
   | { type: 'SET_SELECTED_BOGO_SECOND'; payload: { promotionId: string; productId: string } }
   | { type: 'SYNC_TOTALS'; payload: Partial<CartState> }
@@ -122,6 +125,7 @@ const initialState: CartState = {
   moneyPromotionAvailable: false,
   promotionCalculation: null,
   selectedFreeGifts: {},
+  declinedFreeGifts: {},
   selectedBogoSecond: {},
   contactInfo: {
     name: '',
@@ -213,7 +217,7 @@ export function cartReducer(state: CartState, action: CartAction): CartState {
         newItems = [...state.items, action.payload];
       }
       
-      const newState = { ...state, items: newItems };
+      const newState = { ...state, items: newItems, declinedFreeGifts: {} };
       return {
         ...newState,
         ...calculateTotals(newState),
@@ -225,7 +229,7 @@ export function cartReducer(state: CartState, action: CartAction): CartState {
         item.id === action.payload.id ? { ...item, ...action.payload.updates } : item
       );
       
-      const newState = { ...state, items: newItems };
+      const newState = { ...state, items: newItems, declinedFreeGifts: {} };
       return {
         ...newState,
         ...calculateTotals(newState),
@@ -234,7 +238,7 @@ export function cartReducer(state: CartState, action: CartAction): CartState {
     
     case 'REMOVE_ITEM': {
       const newItems = state.items.filter(item => item.id !== action.payload);
-      const newState = { ...state, items: newItems };
+      const newState = { ...state, items: newItems, declinedFreeGifts: {} };
       return {
         ...newState,
         ...calculateTotals(newState),
@@ -244,7 +248,7 @@ export function cartReducer(state: CartState, action: CartAction): CartState {
     case 'REMOVE_COMBO': {
       // Kombi als Ganzes entfernen (alle Positionen mit derselben comboId).
       const newItems = state.items.filter(item => item.comboId !== action.payload);
-      const newState = { ...state, items: newItems };
+      const newState = { ...state, items: newItems, declinedFreeGifts: {} };
       return {
         ...newState,
         ...calculateTotals(newState),
@@ -362,6 +366,7 @@ export function cartReducer(state: CartState, action: CartAction): CartState {
     case 'SET_PROMOTION_CALCULATION': {
       const payload = action.payload;
       let selectedFreeGifts: Record<string, string> = {};
+      let declinedFreeGifts: Record<string, boolean> = {};
       let selectedBogoSecond: Record<string, string[]> = {};
       if (payload) {
         // Ключ выбранного подарка — id опции (productId|sizeName), чтобы различать размеры.
@@ -381,6 +386,12 @@ export function cartReducer(state: CartState, action: CartAction): CartState {
             })
           );
           selectedFreeGifts = { ...fromResolvedGifts, ...pendingSelections };
+          declinedFreeGifts = Object.fromEntries(
+            Object.entries(state.declinedFreeGifts || {}).filter(
+              ([promotionId, declined]) =>
+                declined && validOffers.has(promotionId) && !selectedFreeGifts[promotionId]
+            )
+          );
         } else {
           selectedFreeGifts = fromResolvedGifts;
         }
@@ -418,6 +429,7 @@ export function cartReducer(state: CartState, action: CartAction): CartState {
         ...state,
         promotionCalculation: payload,
         selectedFreeGifts,
+        declinedFreeGifts,
         selectedBogoSecond,
       };
       return { ...newState, ...calculateTotals(newState) };
@@ -428,14 +440,30 @@ export function cartReducer(state: CartState, action: CartAction): CartState {
       return { ...state, moneyPromotionAvailable: action.payload };
 
     case 'SET_SELECTED_FREE_GIFT': {
+      const declinedFreeGifts = { ...(state.declinedFreeGifts || {}) };
+      delete declinedFreeGifts[action.payload.promotionId];
       const newState = {
         ...state,
         selectedFreeGifts: {
           ...state.selectedFreeGifts,
           [action.payload.promotionId]: action.payload.productId,
         },
+        declinedFreeGifts,
       };
       return newState;
+    }
+
+    case 'SET_DECLINED_FREE_GIFT': {
+      const selectedFreeGifts = { ...state.selectedFreeGifts };
+      delete selectedFreeGifts[action.payload.promotionId];
+      return {
+        ...state,
+        selectedFreeGifts,
+        declinedFreeGifts: {
+          ...(state.declinedFreeGifts || {}),
+          [action.payload.promotionId]: true,
+        },
+      };
     }
 
     case 'CLEAR_SELECTED_FREE_GIFTS':
@@ -477,6 +505,7 @@ export function cartReducer(state: CartState, action: CartAction): CartState {
         promotionPromoCode: undefined,
         promotionCalculation: null,
         selectedFreeGifts: {},
+        declinedFreeGifts: {},
         selectedBogoSecond: {},
         paymentMethod: undefined,
       };
@@ -514,6 +543,7 @@ interface CartContextType {
   removeCoupon: () => void;
   setPromotionPromoCode: (code: string | undefined) => void;
   setSelectedFreeGift: (promotionId: string, productId: string) => void;
+  declineFreeGift: (promotionId: string) => void;
   setSelectedBogoSecond: (promotionId: string, productId: string) => void;
   resetCheckoutData: () => void;
   cartItemsCount: number;
@@ -535,6 +565,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
             ...initialState,
             ...parsed,
             selectedFreeGifts: parsed.selectedFreeGifts || {},
+            declinedFreeGifts: parsed.declinedFreeGifts || {},
             // нормализуем к массивам (старый формат мог хранить одну строку)
             selectedBogoSecond: Object.fromEntries(
               Object.entries(parsed.selectedBogoSecond || {}).map(([k, v]) => [
@@ -710,6 +741,10 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: 'SET_SELECTED_FREE_GIFT', payload: { promotionId, productId } });
   };
 
+  const declineFreeGift = (promotionId: string) => {
+    dispatch({ type: 'SET_DECLINED_FREE_GIFT', payload: { promotionId } });
+  };
+
   const setSelectedBogoSecond = (promotionId: string, productId: string) => {
     dispatch({ type: 'SET_SELECTED_BOGO_SECOND', payload: { promotionId, productId } });
   };
@@ -749,6 +784,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     removeCoupon,
     setPromotionPromoCode,
     setSelectedFreeGift,
+    declineFreeGift,
     setSelectedBogoSecond,
     resetCheckoutData,
     cartItemsCount,

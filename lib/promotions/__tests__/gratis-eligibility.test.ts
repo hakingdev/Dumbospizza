@@ -86,6 +86,13 @@ describe('Gratis server-side eligibility (применение/отказ ски
     expect(bad.freeGifts).toHaveLength(0);
   });
 
+  it('сервер ПРИНИМАЕТ отказ от опционального подарка', () => {
+    const calc = calculatePromotions(cart, [makeGratis(['sprite033', 'coca033'])]);
+    const skipped = resolveFreeGiftsForOrder(calc, []);
+    expect(skipped.error).toBeFalsy();
+    expect(skipped.freeGifts).toHaveLength(0);
+  });
+
   it('сервер ПРИНИМАЕТ выбор подарка из списка (DoD #6 server)', () => {
     const calc = calculatePromotions(cart, [makeGratis(['sprite033', 'coca033'])]);
     const ok = resolveFreeGiftsForOrder(calc, [{ promotionId: 'gratis1', productId: 'sprite033' }]);
