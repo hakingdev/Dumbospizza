@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '../../../lib/models';
 import { Order } from '../../../lib/models/order.model';
 import { Product } from '../../../lib/models/product.model';
+import { Category } from '../../../lib/models/category.model';
 import { Coupon } from '../../../lib/models/coupon.model';
 import { isCouponCurrentlyValid, normalizeCouponCode } from '../../../lib/promotions/coupon-validity';
 import { calculateOrderPromotions } from '../../../lib/promotions/order-integration';
@@ -120,14 +121,28 @@ export async function POST(request: NextRequest) {
       )
     );
     const taxRateByProduct = new Map<string, number>();
+    const categoryByProduct = new Map<string, string>();
     if (lineProductIds.length > 0) {
       const lineProducts = await Product.find({ _id: { $in: lineProductIds } })
-        .select('taxRate')
+        .select('taxRate category')
         .lean();
+
+      // Имена категорий (для группировки в кухонном чеке): id → name.
+      const catIds = Array.from(
+        new Set(lineProducts.map((p) => String((p as any).category)).filter(Boolean))
+      );
+      const catNameById = new Map<string, string>();
+      if (catIds.length > 0) {
+        const cats = await Category.find({ _id: { $in: catIds } }).select('name').lean();
+        for (const c of cats) catNameById.set(String((c as any)._id), (c as any).name);
+      }
+
       for (const p of lineProducts) {
         if (typeof (p as any).taxRate === 'number' && (p as any).taxRate > 0) {
           taxRateByProduct.set(String((p as any)._id), (p as any).taxRate);
         }
+        const catName = catNameById.get(String((p as any).category));
+        if (catName) categoryByProduct.set(String((p as any)._id), catName);
       }
     }
 
@@ -137,6 +152,7 @@ export async function POST(request: NextRequest) {
       name: item.name,
       quantity: item.quantity,
       price: item.price, // Price per unit
+      category: categoryByProduct.get(item.productId || item.id),
       taxRate: taxRateByProduct.get(item.productId || item.id),
       size: item.size ? {
         id: item.size.id || '',

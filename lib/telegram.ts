@@ -43,6 +43,8 @@ export interface OrderNotification {
     name: string;
     quantity: number;
     price?: number;
+    /** Имя категории — для группировки в кухонном чеке. */
+    category?: string;
     customizations?: string[];
   }>;
   totalAmount: number;
@@ -242,12 +244,14 @@ function orderToNotification(order: IOrder): OrderNotification {
     items: order.items.map((item: any) => ({
       name: item.name,
       quantity: item.quantity,
+      price: item.price,
+      category: item.category,
       customizations: [
         ...(item.size ? [`Size: ${item.size.name}`] : []),
         ...(item.extras?.toppings?.map((t: any) => `Topping: ${t.name}`) || []),
         ...(item.extras?.sauces?.map((s: any) => `Sauce: ${s.name}`) || []),
         ...(item.extras?.sides?.map((s: any) => `Side: ${s.name}`) || []),
-        ...(item.options?.map((o: any) => `${o.group}: ${o.name}`) || [])
+        ...(item.options?.map((o: any) => (o.group ? `${o.group}: ${o.name}` : o.name)) || [])
       ]
     })),
     totalAmount: order.total,

@@ -14,10 +14,65 @@
  */
 
 import { OrderNotification } from './telegram';
+import {
+  buildKitchenReceiptOps,
+  type ReceiptOp,
+  type ReceiptOrder,
+} from './receipt/kitchen-receipt';
 
 // node-thermal-printer exports differ across versions; use require to avoid TS export mismatch
 const thermalPrinter = require('node-thermal-printer') as any;
 const { ThermalPrinter, PrinterTypes } = thermalPrinter;
+
+/** OrderNotification → модель чека для группировки по категориям. */
+function toReceiptOrder(order: OrderNotification): ReceiptOrder {
+  return {
+    orderId: order.orderId,
+    createdAt: new Date(),
+    deliveryType: order.deliveryType,
+    customerName: order.customerName,
+    phoneNumber: order.phoneNumber,
+    address: order.address,
+    desiredDeliveryTime: order.desiredDeliveryTime,
+    notes: order.notes,
+    items: order.items,
+    deliveryFee: order.deliveryFee,
+    totalAmount: order.totalAmount,
+    paymentMethod: order.paymentMethod,
+  };
+}
+
+/** Рендер ops чека в команды термопринтера. */
+function renderOpsToPrinter(printer: any, ops: ReceiptOp[]): void {
+  for (const op of ops) {
+    switch (op.type) {
+      case 'align':
+        if (op.value === 'center') printer.alignCenter();
+        else printer.alignLeft();
+        break;
+      case 'line':
+        printer.drawLine();
+        break;
+      case 'blank':
+        printer.newLine();
+        break;
+      case 'text':
+        if (op.bold) printer.bold(true);
+        printer.println(op.text);
+        if (op.bold) printer.bold(false);
+        break;
+      case 'lr':
+        if (op.bold) printer.bold(true);
+        if (op.right) printer.leftRight(op.left, op.right);
+        else printer.println(op.left);
+        if (op.bold) printer.bold(false);
+        break;
+      case 'cut':
+        printer.cut();
+        break;
+    }
+  }
+}
 
 interface PrinterConfig {
   type: any;
@@ -64,61 +119,12 @@ export async function printKitchenReceipt(order: OrderNotification): Promise<boo
   }
   try {
     const printer = await initializePrinter(getPrinterConfig(iface));
-    
-    // Header
-    printer.alignCenter();
-    printer.setTextSize(1, 1);
-    printer.bold(true);
-    printer.println('KITCHEN ORDER');
-    printer.bold(false);
-    printer.println(`ORDER #${order.orderId}`);
-    printer.println(new Date().toLocaleString('de-DE'));
-    printer.drawLine();
-    
-    // Order type
-    printer.alignLeft();
-    printer.bold(true);
-    printer.println(`ORDER TYPE: ${order.deliveryType.toUpperCase()}`);
-    printer.bold(false);
-    if (order.desiredDeliveryTime) {
-      printer.println(`DESIRED TIME: ${order.desiredDeliveryTime}`);
-    }
-    printer.drawLine();
-    
-    // Items
-    printer.bold(true);
-    printer.println('ITEMS:');
-    printer.bold(false);
-    order.items.forEach(item => {
-      printer.bold(true);
-      printer.print(`${item.quantity}x ${item.name}`);
-      printer.bold(false);
-      printer.newLine();
-      
-      // Customizations
-      if (item.customizations && item.customizations.length > 0) {
-        item.customizations.forEach(customization => {
-          printer.println(`  - ${customization}`);
-        });
-      }
-      printer.newLine();
-    });
-    
-    // Notes
-    if (order.notes) {
-      printer.drawLine();
-      printer.bold(true);
-      printer.println('NOTES:');
-      printer.bold(false);
-      printer.println(order.notes);
-    }
-    
-    // Footer
-    printer.drawLine();
-    printer.alignCenter();
-    printer.println(`${new Date().toLocaleTimeString('de-DE')}`);
-    printer.cut();
-    
+
+    // Компактный чек, сгруппированный ПО КАТЕГОРИЯМ (Lieferando-стиль).
+    // Обычный (не двойной) размер шрифта — мельче и компактнее.
+    printer.setTextNormal();
+    renderOpsToPrinter(printer, buildKitchenReceiptOps(toReceiptOrder(order)));
+
     // Execute print job
     await printer.execute();
     return true;

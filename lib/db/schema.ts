@@ -122,6 +122,7 @@ type OrderItem = {
   name: string;
   quantity: number;
   price: number;
+  category?: string;
   taxRate?: number;
   size?: { id: string; name: string; size: string; price: number };
   extras?: {
