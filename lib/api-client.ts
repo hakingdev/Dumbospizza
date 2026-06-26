@@ -171,11 +171,13 @@ export const getPromotionCampaignPreview = async (promotionId: string) => {
 export const sendPromotionCampaign = async (
   promotionId: string,
   channel: 'email' | 'push' | 'both',
-  testEmail?: string
+  testEmail?: string,
+  recipients?: string[]
 ) => {
   const response = await apiClient.post(`/api/promotions/${promotionId}/campaign`, {
     channel,
     testEmail,
+    ...(recipients ? { recipients } : {}),
   });
   return response.data;
 };

@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from 'react';
-import { Clock, Mail, Bell, Send, Loader2 } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Clock, Mail, Bell, Send, Loader2, Upload, XCircle } from 'lucide-react';
 import {
   getPromotionCampaignPreview,
   sendPromotionCampaign,
 } from '../../lib/api-client';
+import { parseEmailRecipients } from '../../lib/promotions/email-recipients';
 
 const DAY_LABELS = [
   { v: 1, l: 'Mo' },
@@ -48,6 +49,31 @@ export const defaultScheduleCampaignFields: ScheduleCampaignFormSlice = {
   pushTitle: '',
   pushBody: '',
 };
+
+const EMAIL_FILE_MAX_BYTES = 5 * 1024 * 1024;
+
+async function readRecipientFile(file: File): Promise<string> {
+  const name = file.name.toLowerCase();
+
+  if (name.endsWith('.xlsx') || name.endsWith('.xls')) {
+    const XLSX = await import('xlsx');
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: 'array' });
+    const sheetName = workbook.SheetNames[0];
+    if (!sheetName) return '';
+    const rows = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets[sheetName], {
+      header: 1,
+      raw: false,
+    });
+    return rows
+      .flat()
+      .map((cell) => String(cell ?? '').trim())
+      .filter(Boolean)
+      .join('\n');
+  }
+
+  return file.text();
+}
 
 export function PromotionScheduleFields({
   form,
@@ -229,8 +255,22 @@ export function PromotionCampaignActions({ promotionId }: { promotionId: string 
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState<string | null>(null);
   const [testEmail, setTestEmail] = useState('');
+  const [recipientText, setRecipientText] = useState('');
+  const [recipientFileName, setRecipientFileName] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [failures, setFailures] = useState<Array<{ email: string; error: string }>>([]);
+
+  const parsedRecipients = useMemo(() => parseEmailRecipients(recipientText), [recipientText]);
+  const hasManualRecipients = recipientText.trim().length > 0 || Boolean(recipientFileName);
+  const emailRecipientCount = hasManualRecipients
+    ? parsedRecipients.recipients.length
+    : preview?.emailRecipients ?? 0;
+  const emailSendDisabled =
+    !!sending ||
+    !preview?.emailConfigured ||
+    emailRecipientCount === 0 ||
+    (hasManualRecipients && parsedRecipients.recipients.length === 0);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -248,20 +288,74 @@ export function PromotionCampaignActions({ promotionId }: { promotionId: string 
     load();
   }, [load]);
 
-  const send = async (channel: 'email' | 'push' | 'both', opts?: { testEmail?: string }) => {
-    setSending(channel);
+  const handleRecipientFile = async (file?: File) => {
+    if (!file) return;
+    if (file.size > EMAIL_FILE_MAX_BYTES) {
+      setError('Datei ist zu groß (max. 5 MB)');
+      return;
+    }
+
     setError(null);
     setMessage(null);
     try {
-      const res = await sendPromotionCampaign(promotionId, channel, opts?.testEmail);
+      const text = await readRecipientFile(file);
+      setRecipientText(text);
+      setRecipientFileName(file.name);
+    } catch {
+      setError('E-Mail-Datei konnte nicht gelesen werden');
+    }
+  };
+
+  const clearManualRecipients = () => {
+    setRecipientText('');
+    setRecipientFileName(null);
+  };
+
+  const send = async (channel: 'email' | 'push' | 'both', opts?: { testEmail?: string }) => {
+    const massEmail = !opts?.testEmail && (channel === 'email' || channel === 'both');
+
+    if (massEmail) {
+      if (hasManualRecipients && parsedRecipients.recipients.length === 0) {
+        setError('Keine gültigen E-Mail-Adressen im Upload');
+        return;
+      }
+      if (emailRecipientCount === 0) {
+        setError('Keine E-Mail-Empfänger vorhanden');
+        return;
+      }
+      if (!window.confirm(`E-Mail an ${emailRecipientCount} Empfänger senden?`)) {
+        return;
+      }
+    }
+
+    setSending(channel);
+    setError(null);
+    setMessage(null);
+    setFailures([]);
+    try {
+      const res = await sendPromotionCampaign(
+        promotionId,
+        channel,
+        opts?.testEmail,
+        massEmail && hasManualRecipients ? parsedRecipients.recipients : undefined
+      );
       if (res.success) {
+        const emailResult = res.results?.email;
+        const ignored =
+          emailResult?.invalidCount || emailResult?.duplicateCount
+            ? ` · ${emailResult.invalidCount || 0} ungültig, ${emailResult.duplicateCount || 0} doppelt ignoriert`
+            : '';
+        const emailReport = emailResult
+          ? `E-Mail: ${emailResult.successCount ?? 0} gesendet, ${emailResult.failureCount ?? 0} fehlgeschlagen (von ${emailResult.recipientCount ?? 0})${ignored}`
+          : '';
         setMessage(
           channel === 'email'
-            ? `E-Mail: ${res.results?.email?.successCount ?? 0} gesendet`
+            ? emailReport
             : channel === 'push'
               ? `Push: ${res.results?.push?.successCount ?? 0} gesendet`
-              : 'Kampagne gesendet'
+              : `${emailReport} · Push: ${res.results?.push?.successCount ?? 0} gesendet`
         );
+        setFailures(Array.isArray(emailResult?.errors) ? emailResult.errors : []);
         load();
       } else setError(res.error || 'Fehler');
     } catch {
@@ -282,9 +376,12 @@ export function PromotionCampaignActions({ promotionId }: { promotionId: string 
       {preview && (
         <div className="grid grid-cols-2 gap-3 text-sm">
           <div>
-            E-Mail-Empfänger: <strong>{preview.emailRecipients}</strong>
+            E-Mail-Empfänger: <strong>{emailRecipientCount}</strong>
             {!preview.emailConfigured && (
               <span className="block text-red-600 text-xs">SMTP nicht konfiguriert</span>
+            )}
+            {hasManualRecipients && (
+              <span className="block text-gray-500 text-xs">Upload-Liste aktiv</span>
             )}
           </div>
           <div>
@@ -297,10 +394,20 @@ export function PromotionCampaignActions({ promotionId }: { promotionId: string 
       )}
       {error && <div className="text-sm text-red-600">{error}</div>}
       {message && <div className="text-sm text-green-700">{message}</div>}
+      {failures.length > 0 && (
+        <div className="text-xs text-red-600 space-y-1 max-h-32 overflow-y-auto rounded border border-red-200 bg-red-50 p-2">
+          <div className="font-medium">Fehlgeschlagene Adressen ({failures.length})</div>
+          {failures.map((f) => (
+            <div key={f.email}>
+              {f.email} — {f.error}
+            </div>
+          ))}
+        </div>
+      )}
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
-          disabled={!!sending || !preview?.emailConfigured}
+          disabled={emailSendDisabled}
           onClick={() => send('email')}
           className="px-3 py-2 bg-blue-600 text-white rounded text-sm disabled:opacity-50 flex items-center gap-1"
         >
@@ -318,12 +425,74 @@ export function PromotionCampaignActions({ promotionId }: { promotionId: string 
         </button>
         <button
           type="button"
-          disabled={!!sending}
+          disabled={emailSendDisabled || !preview?.pushConfigured}
           onClick={() => send('both')}
           className="px-3 py-2 border rounded text-sm disabled:opacity-50"
         >
           Beides senden
         </button>
+      </div>
+      <div className="space-y-2 border-t pt-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <label
+            htmlFor="campaign-email-upload"
+            className="px-3 py-2 border rounded text-sm cursor-pointer flex items-center gap-1 bg-white"
+          >
+            <Upload className="h-4 w-4" />
+            E-Mails hochladen
+          </label>
+          <input
+            id="campaign-email-upload"
+            type="file"
+            accept=".csv,.txt,.xlsx,.xls,text/csv,text/plain"
+            className="hidden"
+            onChange={(e) => {
+              handleRecipientFile(e.target.files?.[0]);
+              e.currentTarget.value = '';
+            }}
+          />
+          {hasManualRecipients && (
+            <button
+              type="button"
+              onClick={clearManualRecipients}
+              className="px-3 py-2 border rounded text-sm flex items-center gap-1"
+            >
+              <XCircle className="h-4 w-4" />
+              Liste leeren
+            </button>
+          )}
+          {recipientFileName && <span className="text-xs text-gray-500">{recipientFileName}</span>}
+        </div>
+        <textarea
+          rows={3}
+          value={recipientText}
+          onChange={(e) => {
+            setRecipientText(e.target.value);
+            setRecipientFileName(null);
+          }}
+          placeholder="E-Mails einfügen: eine pro Zeile, per Komma oder Semikolon getrennt"
+          className="w-full border rounded px-2 py-2 text-sm"
+        />
+        <div className="text-xs text-gray-600">
+          {hasManualRecipients
+            ? `${parsedRecipients.recipients.length} gültig · ${parsedRecipients.invalidEntries.length} ungültig · ${parsedRecipients.duplicateCount} doppelt`
+            : 'Ohne Upload werden die E-Mail-Adressen aus Bestellungen verwendet.'}
+          {parsedRecipients.truncated && ' · Limit 5000 erreicht'}
+        </div>
+        {parsedRecipients.recipients.length > 0 && (
+          <div className="flex flex-wrap gap-1 text-xs">
+            {parsedRecipients.recipients.slice(0, 12).map((email) => (
+              <span key={email} className="rounded border bg-gray-50 px-2 py-1">
+                {email}
+              </span>
+            ))}
+          </div>
+        )}
+        {parsedRecipients.invalidEntries.length > 0 && (
+          <div className="text-xs text-red-600">
+            Ungültig: {parsedRecipients.invalidEntries.slice(0, 5).join(', ')}
+          </div>
+        )}
       </div>
       <div className="flex gap-2 items-end">
         <div className="flex-1">
@@ -337,7 +506,7 @@ export function PromotionCampaignActions({ promotionId }: { promotionId: string 
         </div>
         <button
           type="button"
-          disabled={!!sending || !testEmail.trim()}
+          disabled={!!sending || !preview?.emailConfigured || !testEmail.trim()}
           onClick={() => send('email', { testEmail: testEmail.trim() })}
           className="px-3 py-1 border rounded text-sm"
         >

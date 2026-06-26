@@ -8,6 +8,7 @@ import {
   sendPromotionEmailCampaign,
   sendPromotionPushCampaign,
 } from '../../../../../lib/promotions/campaign';
+import { parseEmailRecipients } from '../../../../../lib/promotions/email-recipients';
 import { isEmailConfigured } from '../../../../../lib/email';
 import { isPushConfigured } from '../../../../../lib/push-notifications';
 
@@ -50,9 +51,23 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const body = await request.json();
     const channel = body.channel as 'email' | 'push' | 'both';
     const testEmail = typeof body.testEmail === 'string' ? body.testEmail.trim() : undefined;
+    const hasManualRecipients = !testEmail && Object.prototype.hasOwnProperty.call(body, 'recipients');
+    let manualRecipients: ReturnType<typeof parseEmailRecipients> | undefined;
 
     if (!channel || !['email', 'push', 'both'].includes(channel)) {
       return NextResponse.json({ success: false, error: 'channel must be email, push or both' }, { status: 400 });
+    }
+
+    if (hasManualRecipients && !Array.isArray(body.recipients)) {
+      return NextResponse.json({ success: false, error: 'recipients must be an array' }, { status: 400 });
+    }
+
+    if (hasManualRecipients) {
+      manualRecipients = parseEmailRecipients(body.recipients);
+    }
+
+    if ((channel === 'email' || channel === 'both') && manualRecipients && manualRecipients.recipients.length === 0) {
+      return NextResponse.json({ success: false, error: 'No valid email recipients' }, { status: 400 });
     }
 
     const results: Record<string, unknown> = {};
@@ -64,7 +79,27 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           { status: 503 }
         );
       }
-      results.email = await sendPromotionEmailCampaign(promo, { testEmail });
+      const emailResult = await sendPromotionEmailCampaign(promo, {
+        testEmail,
+        recipients: manualRecipients?.recipients,
+      });
+      const { failures, ...emailSummary } = emailResult;
+      results.email = {
+        ...emailSummary,
+        total: emailResult.recipientCount,
+        sent: emailResult.successCount,
+        failed: emailResult.failureCount,
+        // Per-recipient failures (capped) so the admin sees which addresses bounced.
+        errors: failures.slice(0, 50),
+        ...(manualRecipients
+          ? {
+              invalidCount: manualRecipients.invalidEntries.length,
+              duplicateCount: manualRecipients.duplicateCount,
+              truncated: manualRecipients.truncated,
+              invalidEntries: manualRecipients.invalidEntries.slice(0, 10),
+            }
+          : {}),
+      };
     }
 
     if (channel === 'push' || channel === 'both') {

@@ -194,12 +194,6 @@ export async function POST(request: NextRequest) {
       0
     );
     
-    // Free delivery for orders >= 30 euros
-    const FREE_DELIVERY_THRESHOLD = 30;
-    const effectiveDeliveryFee = (orderData.deliveryType === 'delivery' && calculatedSubtotal >= FREE_DELIVERY_THRESHOLD)
-      ? 0
-      : (orderData.deliveryType === 'pickup' ? 0 : (orderData.deliveryFee || 0));
-    
     // Списание баллов считаем НИЖЕ (после купона/акций) на сервере —
     // не доверяя клиенту: cap 30% и минимальная сумма проверяются здесь.
     let couponDiscount = 0;
@@ -307,6 +301,14 @@ export async function POST(request: NextRequest) {
       (sum, item) => sum + item.unitPrice * item.quantity,
       0
     );
+    const merchandiseSubtotal = calculatedSubtotal + bogoMerchandise;
+    const FREE_DELIVERY_THRESHOLD = 30;
+    const effectiveDeliveryFee =
+      orderData.deliveryType === 'delivery' && merchandiseSubtotal >= FREE_DELIVERY_THRESHOLD
+        ? 0
+        : orderData.deliveryType === 'pickup'
+          ? 0
+          : orderData.deliveryFee || 0;
 
     const { freeGifts: resolvedFreeGifts, error: giftError } = resolveFreeGiftsForOrder(
       promotionCalc,
@@ -342,7 +344,7 @@ export async function POST(request: NextRequest) {
     // Разрешено только авторизованному клиенту; cap (30%) и минимальная сумма
     // проверяются по серверным правилам. user_id берётся из cookie-сессии.
     const amountBeforePoints = Math.max(
-      calculatedSubtotal + bogoMerchandise + effectiveDeliveryFee - couponDiscount - promotionDiscount,
+      merchandiseSubtotal + effectiveDeliveryFee - couponDiscount - promotionDiscount,
       0
     );
     let loyaltyPointsUsed = 0;
@@ -370,7 +372,7 @@ export async function POST(request: NextRequest) {
       deliveryAddress: orderData.deliveryAddress,
       deliveryZone: orderData.deliveryZone,
       deliveryFee: effectiveDeliveryFee,
-      subtotal: calculatedSubtotal + bogoMerchandise,
+      subtotal: merchandiseSubtotal,
       tax: typeof orderData.tax === 'number' ? orderData.tax : 0,
       total: calculatedTotal,
       paymentMethod: orderData.paymentMethod,

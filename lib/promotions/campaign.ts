@@ -6,8 +6,21 @@ import { Promotion } from '../models/promotion.model';
 import { sendEmail, isEmailConfigured } from '../email';
 import { sendFcmToTokens, isPushConfigured } from '../push-notifications';
 import { formatHappyHourLabel } from './schedule';
+import { parseEmailRecipients } from './email-recipients';
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXTAUTH_URL || 'https://dumbospizza.de';
+
+/** Send mass email in chunks so a large list never becomes one huge request. */
+const EMAIL_BATCH_SIZE = 50;
+/** Small pause between batches to ease SMTP rate limits. */
+const EMAIL_BATCH_DELAY_MS = 250;
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+export interface CampaignEmailFailure {
+  email: string;
+  error: string;
+}
 
 export async function getCampaignPreview(promotionId: string) {
   const emails = await getPromotionEmailRecipients();
@@ -40,9 +53,7 @@ async function getPromotionEmailRecipients(): Promise<string[]> {
   const rows = await Order.distinct('email', {
     email: { $exists: true, $nin: [null, ''] },
   });
-  return rows
-    .map((e) => String(e).trim().toLowerCase())
-    .filter((e) => e.includes('@'));
+  return parseEmailRecipients(rows.map((e) => String(e))).recipients;
 }
 
 function buildEmailHtml(promo: PromotionDocument): string {
@@ -61,21 +72,49 @@ function buildEmailHtml(promo: PromotionDocument): string {
 
 export async function sendPromotionEmailCampaign(
   promo: PromotionDocument,
-  options: { testEmail?: string; triggeredBy?: 'manual' | 'cron' } = {}
-): Promise<{ recipientCount: number; successCount: number; failureCount: number }> {
+  options: { testEmail?: string; recipients?: string[]; triggeredBy?: 'manual' | 'cron' } = {}
+): Promise<{
+  recipientCount: number;
+  successCount: number;
+  failureCount: number;
+  failures: CampaignEmailFailure[];
+}> {
   const subject = promo.emailSubject?.trim() || `🍕 ${promo.name} — Dumbos Pizza`;
   const html = promo.emailBodyHtml?.trim() || buildEmailHtml(promo);
-  const recipients = options.testEmail ? [options.testEmail.trim()] : await getPromotionEmailRecipients();
+  const recipients = options.testEmail
+    ? parseEmailRecipients([options.testEmail]).recipients
+    : options.recipients
+      ? parseEmailRecipients(options.recipients).recipients
+      : await getPromotionEmailRecipients();
+
+  if (recipients.length === 0 && (options.testEmail || options.recipients)) {
+    throw new Error('No valid email recipients');
+  }
 
   let successCount = 0;
   let failureCount = 0;
+  const failures: CampaignEmailFailure[] = [];
 
-  for (const to of recipients) {
-    try {
-      await sendEmail({ to, subject, html });
-      successCount++;
-    } catch {
-      failureCount++;
+  // Send in batches so a large list never hammers SMTP in one burst.
+  for (let start = 0; start < recipients.length; start += EMAIL_BATCH_SIZE) {
+    const batch = recipients.slice(start, start + EMAIL_BATCH_SIZE);
+    const results = await Promise.allSettled(
+      batch.map((to) => sendEmail({ to, subject, html }))
+    );
+
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled') {
+        successCount++;
+      } else {
+        failureCount++;
+        const reason =
+          result.reason instanceof Error ? result.reason.message : String(result.reason);
+        failures.push({ email: batch[index], error: reason });
+      }
+    });
+
+    if (start + EMAIL_BATCH_SIZE < recipients.length) {
+      await sleep(EMAIL_BATCH_DELAY_MS);
     }
   }
 
@@ -94,9 +133,16 @@ export async function sendPromotionEmailCampaign(
     successCount,
     failureCount,
     subject,
+    // Summary only — keep persisted error short, never store the message body.
+    error: failures.length
+      ? `${failures.length} fehlgeschlagen: ${failures
+          .slice(0, 5)
+          .map((f) => f.email)
+          .join(', ')}`
+      : undefined,
   });
 
-  return { recipientCount: recipients.length, successCount, failureCount };
+  return { recipientCount: recipients.length, successCount, failureCount, failures };
 }
 
 export async function sendPromotionPushCampaign(

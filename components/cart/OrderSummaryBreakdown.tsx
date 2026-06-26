@@ -1,6 +1,7 @@
 "use client";
 
 import type { PromotionCalculationResult } from '../../lib/promotions/types';
+import { getBogoPickerMerchandise } from '../../lib/promotions/discount-total';
 import PromotionCartSummary from '../promotions/PromotionCartSummary';
 
 /**
@@ -43,12 +44,13 @@ export default function OrderSummaryBreakdown({
   showDelivery = true,
 }: OrderSummaryBreakdownProps) {
   const eur = (v: number) => `${v.toFixed(2)} €`;
+  const merchandiseSubtotal = subtotal + getBogoPickerMerchandise(promotionCalculation);
 
   return (
     <div data-testid="order-summary-breakdown" className={`space-y-2 ${className}`}>
       <div className="flex justify-between text-gray-600">
         <span>{t('cart.subtotal', 'Zwischensumme')}</span>
-        <span className="whitespace-nowrap">{eur(subtotal)}</span>
+        <span className="whitespace-nowrap">{eur(merchandiseSubtotal)}</span>
       </div>
 
       {showDelivery && (

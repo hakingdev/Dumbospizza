@@ -11,6 +11,7 @@ import { getConflictingPromotions } from '../../../lib/promotions/coupon-conflic
 import PromotionCartSummary from '../../../components/promotions/PromotionCartSummary'
 import BogoRewardLines from '../../../components/promotions/BogoRewardLines'
 import LoyaltyRedeem from '../../../components/checkout/LoyaltyRedeem'
+import { getBogoPickerMerchandise, getVisibleBogoSecondItems } from '../../../lib/promotions/discount-total'
 import { useLanguage } from '../../../lib/contexts/LanguageContext'
 import { loadTranslation } from '../../../lib/i18n'
 import {
@@ -103,6 +104,13 @@ export default function CheckoutPage() {
   const [orderSettings, setOrderSettings] = useState<any>(null)
   const [orderBlocked, setOrderBlocked] = useState(false)
   const [orderBlockMessage, setOrderBlockMessage] = useState('')
+
+  const bogoMerchandise = getBogoPickerMerchandise(state.promotionCalculation)
+  const merchandiseSubtotal = state.subtotal + bogoMerchandise
+  const bogoItemCount = getVisibleBogoSecondItems(state.promotionCalculation).reduce(
+    (sum, item) => sum + item.quantity,
+    0
+  )
   const [desiredDeliveryTime, setDesiredDeliveryTime] = useState<string>('')
   // Проверка адреса доставки (зона определяется по адресу, не выбором из списка).
   const [zoneCheck, setZoneCheck] = useState<null | {
@@ -212,10 +220,10 @@ export default function CheckoutPage() {
       setCartDeliveryZone(deliveryZone, zone.minOrderAmount)
       // Free delivery for orders >= 30 euros
       const FREE_DELIVERY_THRESHOLD = 30;
-      const effectiveDeliveryFee = state.subtotal >= FREE_DELIVERY_THRESHOLD ? 0 : (zone.deliveryFee || 0);
+      const effectiveDeliveryFee = merchandiseSubtotal >= FREE_DELIVERY_THRESHOLD ? 0 : (zone.deliveryFee || 0);
       setDeliveryFee(effectiveDeliveryFee)
     }
-  }, [deliveryZone, deliveryZones, setCartDeliveryZone, setDeliveryFee, state.deliveryZone, state.subtotal])
+  }, [deliveryZone, deliveryZones, setCartDeliveryZone, setDeliveryFee, state.deliveryZone, merchandiseSubtotal])
   
   // Recalculate delivery fee when subtotal changes
   useEffect(() => {
@@ -223,13 +231,13 @@ export default function CheckoutPage() {
       const zone = deliveryZones.find(z => z._id === state.deliveryZone)
       if (zone) {
         const FREE_DELIVERY_THRESHOLD = 30;
-        const effectiveDeliveryFee = state.subtotal >= FREE_DELIVERY_THRESHOLD ? 0 : (zone.deliveryFee || 0);
+        const effectiveDeliveryFee = merchandiseSubtotal >= FREE_DELIVERY_THRESHOLD ? 0 : (zone.deliveryFee || 0);
         if (state.deliveryFee !== effectiveDeliveryFee) {
           setDeliveryFee(effectiveDeliveryFee)
         }
       }
     }
-  }, [state.subtotal, deliveryType, state.deliveryFee, state.deliveryZone, deliveryZones, setDeliveryFee])
+  }, [merchandiseSubtotal, deliveryType, state.deliveryFee, state.deliveryZone, deliveryZones, setDeliveryFee])
 
   useEffect(() => {
     if (state.paymentMethod !== paymentMethod) {
@@ -359,7 +367,7 @@ export default function CheckoutPage() {
     deliveryType: deliveryType as 'delivery' | 'pickup',
     addressChecked: !!zoneCheck,
     canDeliver: zoneCheck?.canDeliver ?? false,
-    subtotal: state.subtotal,
+    subtotal: merchandiseSubtotal,
     zoneMinOrderAmount: zoneCheck?.canDeliver ? (zoneCheck.zone?.minOrderAmount ?? null) : null,
   })
 
@@ -448,7 +456,7 @@ export default function CheckoutPage() {
           notes: contactDetails.notes || undefined
         } : undefined,
         paymentMethod: paymentMethod,
-        subtotal: state.subtotal,
+        subtotal: merchandiseSubtotal,
         tax: 0,
         deliveryFee: state.deliveryFee,
         total: state.total,
@@ -563,7 +571,7 @@ export default function CheckoutPage() {
     setErrors({ submit: message })
   }, [])
 
-  const totalItems = state.items.reduce((sum, item) => sum + item.quantity, 0)
+  const totalItems = state.items.reduce((sum, item) => sum + item.quantity, 0) + bogoItemCount
   
   return (
     <div className="container mx-auto px-4 py-8">
@@ -1231,7 +1239,7 @@ export default function CheckoutPage() {
             <div className="border-b pb-4 mb-4">
               <div className="flex justify-between mb-2">
                 <span>{t('checkout.items', 'Товары')} ({totalItems})</span>
-                <span className="font-medium">{state.subtotal.toFixed(2)} €</span>
+                <span className="font-medium">{merchandiseSubtotal.toFixed(2)} €</span>
               </div>
               
               <div className="flex justify-between mb-2">
