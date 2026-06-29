@@ -12,7 +12,7 @@ export const SELLER = {
   postalCode: '97688',
   city: 'Bad Kissingen',
   country: 'Deutschland',
-  phone: '0151 141/34 094',
+  phone: '0971 72730',
   email: 'info@dumbospizza.de',
   registerCourt: 'Amtsgericht Schweinfurt', // Registergericht
   registerNumber: 'HRB 9292', // Handelsregisternummer

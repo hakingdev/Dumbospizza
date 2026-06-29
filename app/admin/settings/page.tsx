@@ -20,7 +20,7 @@ export default function SettingsPage() {
   const [settings, setSettings] = useState({
     // Store settings
     storeName: 'Dumbos Pizza',
-    phone: '+49 971 99999',
+    phone: '0971 72730',
     email: 'info@dumbospizza.de',
     address: 'Kurhausstraße 11A, 97688 Bad Kissingen',
     currency: 'EUR',
@@ -69,7 +69,7 @@ export default function SettingsPage() {
     
     // Contact settings
     contactEmail: 'info@dumbospizza.de',
-    supportPhone: '+49 971 99999',
+    supportPhone: '0971 72730',
     whatsapp: '+49 171 1234567',
     
     // Social media

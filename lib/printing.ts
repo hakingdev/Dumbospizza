@@ -155,7 +155,7 @@ export async function printCustomerReceipt(
     printer.println('PIZZA DELIVERY');
     printer.setTextNormal();
     printer.println('Kurhausstr. 11A, 97688 Bad Kissingen');
-    printer.println('Tel: +49 163 2165979');
+    printer.println('Tel: 0971 72730');
     printer.println('info@dumbospizza.de');
     printer.drawLine();
     

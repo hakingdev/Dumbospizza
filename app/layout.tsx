@@ -146,7 +146,7 @@ export default function RootLayout({
               image: 'https://dumbospizza.de/images/logo.png',
               '@id': 'https://dumbospizza.de',
               url: 'https://dumbospizza.de',
-              telephone: '+49 971 99999',
+              telephone: '+49 971 72730',
               address: {
                 '@type': 'PostalAddress',
                 streetAddress: 'Kurhausstraße 11A',

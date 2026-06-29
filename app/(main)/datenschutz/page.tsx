@@ -34,7 +34,7 @@ export default function DatenschutzPage() {
         <p className="text-gray-700">
           Hinweis zur verantwortlichen Stelle Die verantwortliche Stelle für die Datenverarbeitung auf dieser Website ist:
           Dumbo Slice Pizza / Dumbos Pizza Mykhailo Barkhan Kurhausstr. 11A, 97688 Bad Kissingen E-Mail: info@dumbospizza.de
-          Telefon: +4997172730
+          Telefon: 0971 72730
         </p>
       </section>
 

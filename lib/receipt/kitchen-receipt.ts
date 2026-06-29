@@ -98,7 +98,7 @@ export function buildKitchenReceiptOps(order: ReceiptOrder): ReceiptOp[] {
   ops.push({ type: 'align', value: 'center' });
   ops.push({ type: 'text', text: 'DUMBO SLICE PIZZA', bold: true });
   ops.push({ type: 'text', text: 'Kurhausstr. 11A - Bad Kissingen' });
-  ops.push({ type: 'text', text: 'Tel: +49 163 2165979' });
+  ops.push({ type: 'text', text: 'Tel: 0971 72730' });
   ops.push({ type: 'line' });
 
   // Номер заказа + дата

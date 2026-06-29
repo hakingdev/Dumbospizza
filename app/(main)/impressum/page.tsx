@@ -29,7 +29,7 @@ export default function ImpressumPage() {
       <section className="mb-8">
         <h2 className="text-2xl font-semibold mb-3">Kontakt</h2>
         <p className="text-gray-700">
-          Telefon: 0151 141/34 094<br />
+          Telefon: 0971 72730<br />
           E-Mail: info@dumbospizza.de
         </p>
       </section>
