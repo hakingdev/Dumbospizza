@@ -23,14 +23,14 @@ export default function ImpressumPage() {
 
       <section className="mb-8">
         <h2 className="text-2xl font-semibold mb-3">Vertreten durch</h2>
-        <p className="text-gray-700">Andrii Samsonov (Geschäftsführer)</p>
+        <p className="text-gray-700">Mykhailo Barkhan (Geschäftsführer)</p>
       </section>
 
       <section className="mb-8">
         <h2 className="text-2xl font-semibold mb-3">Kontakt</h2>
         <p className="text-gray-700">
           Telefon: 0151 141/34 094<br />
-          E-Mail: infi@dumbospizza.de
+          E-Mail: info@dumbospizza.de
         </p>
       </section>
 

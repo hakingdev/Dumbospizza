@@ -20,7 +20,8 @@ import {
   Layers,
   ListPlus,
   Bell,
-  Star
+  Star,
+  MessageSquare
 } from 'lucide-react';
 
 export default function AdminSidebar() {
@@ -92,6 +93,11 @@ export default function AdminSidebar() {
       name: 'Бонусы',
       href: '/admin/loyalty',
       icon: Star
+    },
+    {
+      name: 'SMS-Empfänger',
+      href: '/admin/sms-empfaenger',
+      icon: MessageSquare
     },
     {
       name: 'Settings',

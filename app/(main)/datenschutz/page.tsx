@@ -81,8 +81,51 @@ export default function DatenschutzPage() {
         </p>
       </section>
 
+      <section className="mb-8">
+        <h2 className="text-2xl font-semibold mb-3">5. E-Mail-Werbung an Bestandskunden</h2>
+        <p className="text-gray-700 mb-4">
+          Wenn Sie bei uns eine Bestellung aufgeben und dabei Ihre E-Mail-Adresse angeben, behalten
+          wir uns vor, Ihnen per E-Mail Informationen und Angebote zu eigenen, ähnlichen Waren und
+          Dienstleistungen (z. B. Pizza-Aktionen) zuzusenden. Rechtsgrundlage hierfür ist § 7 Abs. 3
+          UWG in Verbindung mit unserem berechtigten Interesse an Direktwerbung gemäß Art. 6 Abs. 1
+          lit. f DSGVO. Soweit Sie uns eine ausdrückliche Einwilligung erteilt haben, erfolgt der
+          Versand auf Grundlage von Art. 6 Abs. 1 lit. a DSGVO.
+        </p>
+        <p className="text-gray-700 mb-4">
+          Sie können dieser Verwendung Ihrer E-Mail-Adresse jederzeit widersprechen, ohne dass
+          hierfür andere als die Übermittlungskosten nach den Basistarifen entstehen. Hierzu genügt
+          der Abmelde-Link am Ende jeder Werbe-E-Mail oder eine Nachricht an info@dumbospizza.de.
+          Nach Ihrem Widerspruch wird Ihre E-Mail-Adresse für Werbezwecke gesperrt und Sie erhalten
+          keine weiteren Werbe-E-Mails mehr.
+        </p>
+        <p className="text-gray-700">
+          Für den Versand unserer E-Mails nutzen wir den Dienstleister Brevo (Sendinblue GmbH,
+          Köpenicker Straße 126, 10179 Berlin) als Auftragsverarbeiter gemäß Art. 28 DSGVO. Ihre
+          Daten werden ausschließlich innerhalb der EU verarbeitet. Eine Speicherung erfolgt bis zu
+          Ihrem Widerspruch.
+        </p>
+      </section>
+
+      <section className="mb-8">
+        <h2 className="text-2xl font-semibold mb-3">6. SMS-Werbung</h2>
+        <p className="text-gray-700 mb-4">
+          Sofern Sie hierzu Ihre ausdrückliche Einwilligung erteilt haben (z. B. durch Setzen des
+          entsprechenden Häkchens während der Bestellung), verwenden wir Ihre Telefonnummer, um Ihnen
+          Angebote und Aktionen von Dumbos Pizza per SMS zuzusenden. Rechtsgrundlage ist Ihre
+          Einwilligung gemäß Art. 6 Abs. 1 lit. a DSGVO sowie § 7 Abs. 2 UWG. Wir dokumentieren Ihre
+          Einwilligung einschließlich Zeitpunkt und Einwilligungstext.
+        </p>
+        <p className="text-gray-700">
+          Sie können Ihre Einwilligung jederzeit mit Wirkung für die Zukunft widerrufen, ohne dass
+          hierfür andere als die Übermittlungskosten nach den Basistarifen entstehen. Den Widerruf
+          richten Sie bitte an info@dumbospizza.de. Die Rechtmäßigkeit der bis zum Widerruf erfolgten
+          Verarbeitung bleibt unberührt. Für den Versand nutzen wir den Dienstleister Brevo
+          (Sendinblue GmbH) als Auftragsverarbeiter.
+        </p>
+      </section>
+
       <section>
-        <h2 className="text-2xl font-semibold mb-3">5. Ihre Rechte: Auskunft, Löschung, Sperrung</h2>
+        <h2 className="text-2xl font-semibold mb-3">7. Ihre Rechte: Auskunft, Löschung, Sperrung</h2>
         <p className="text-gray-700">
           Sie haben im Rahmen der geltenden gesetzlichen Bestimmungen jederzeit das Recht auf unentgeltliche Auskunft über Ihre
           gespeicherten personenbezogenen Daten, deren Herkunft und Empfänger und den Zweck der Datenverarbeitung und ggf. ein

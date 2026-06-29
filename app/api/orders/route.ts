@@ -361,10 +361,19 @@ export async function POST(request: NextRequest) {
 
     const calculatedTotal = Math.max(amountBeforePoints - loyaltyPointsDiscount, 0);
 
+    // SMS-Marketing-Einwilligung: текст согласия фиксируем на сервере (не доверяем
+    // клиенту), чтобы хранить именно то, под чем подписался клиент.
+    const smsConsentGiven = orderData.smsMarketingConsent === true;
+    const SMS_CONSENT_TEXT =
+      'Ja, ich möchte Angebote und Aktionen von Dumbos Pizza per SMS erhalten. Abmeldung jederzeit möglich.';
+
     const orderPayload = {
       customerName: orderData.customerName,
       phoneNumber: orderData.phoneNumber,
       email: orderData.email,
+      smsMarketingConsent: smsConsentGiven,
+      smsConsentAt: smsConsentGiven ? new Date() : undefined,
+      smsConsentText: smsConsentGiven ? SMS_CONSENT_TEXT : undefined,
       // Привязка к аккаунту, если клиент авторизован (для кабинета/лояльности).
       user: customerSession?.userId,
       items: orderItems,

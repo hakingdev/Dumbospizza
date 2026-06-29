@@ -8,6 +8,8 @@ export interface SendEmailOptions {
   subject: string;
   html: string;
   text?: string;
+  /** Доп. SMTP-заголовки, напр. List-Unsubscribe для one-click отписки. */
+  headers?: Record<string, string>;
 }
 
 export function isEmailConfigured(): boolean {
@@ -41,5 +43,6 @@ export async function sendEmail(options: SendEmailOptions): Promise<void> {
     subject: options.subject,
     html: options.html,
     text: options.text || options.html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim(),
+    headers: options.headers,
   });
 }

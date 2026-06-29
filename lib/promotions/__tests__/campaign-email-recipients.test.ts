@@ -41,6 +41,12 @@ vi.mock('../../push-notifications', () => ({
   sendFcmToTokens: vi.fn(),
 }));
 
+// Suppression-Liste (Abmeldungen) hängt an der DB — im Test neutralisieren:
+// nichts ist abgemeldet, also Liste unverändert.
+vi.mock('../../email/suppression', () => ({
+  filterUnsubscribed: vi.fn(async (emails: string[]) => emails),
+}));
+
 import { sendPromotionEmailCampaign } from '../campaign';
 
 const promo = {
@@ -69,16 +75,19 @@ describe('sendPromotionEmailCampaign manual recipients', () => {
 
     expect(orderMock.distinct).not.toHaveBeenCalled();
     expect(sendEmailMock).toHaveBeenCalledTimes(2);
-    expect(sendEmailMock).toHaveBeenNthCalledWith(1, {
-      to: 'first@example.com',
-      subject: 'Heute sparen',
-      html: '<p>Pizza wartet.</p>',
-    });
-    expect(sendEmailMock).toHaveBeenNthCalledWith(2, {
-      to: 'second@example.com',
-      subject: 'Heute sparen',
-      html: '<p>Pizza wartet.</p>',
-    });
+    // HTML enthält jetzt zusätzlich die Abmelde-Fußzeile + List-Unsubscribe-Header.
+    expect(sendEmailMock).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ to: 'first@example.com', subject: 'Heute sparen' })
+    );
+    expect(sendEmailMock).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ to: 'second@example.com', subject: 'Heute sparen' })
+    );
+    const firstCall = sendEmailMock.mock.calls[0][0];
+    expect(firstCall.html).toContain('<p>Pizza wartet.</p>');
+    expect(firstCall.html).toContain('abmelden');
+    expect(firstCall.headers['List-Unsubscribe']).toContain('/api/email/unsubscribe?token=');
     expect(result).toEqual({
       recipientCount: 2,
       successCount: 1,
@@ -154,11 +163,9 @@ describe('sendPromotionEmailCampaign manual recipients', () => {
       failureCount: 0,
       failures: [],
     });
-    expect(sendEmailMock).toHaveBeenCalledWith({
-      to: 'test@example.com',
-      subject: 'Heute sparen',
-      html: '<p>Pizza wartet.</p>',
-    });
+    expect(sendEmailMock).toHaveBeenCalledWith(
+      expect.objectContaining({ to: 'test@example.com', subject: 'Heute sparen' })
+    );
     expect(promotionMock.findByIdAndUpdate).not.toHaveBeenCalled();
     expect(campaignLogMock.create).toHaveBeenCalledWith(
       expect.objectContaining({

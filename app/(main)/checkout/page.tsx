@@ -85,6 +85,8 @@ export default function CheckoutPage() {
   const [deliveryZone, setDeliveryZone] = useState(state.deliveryZone || '')
   const [paymentMethod, setPaymentMethod] = useState(state.paymentMethod || 'card')
   const [termsAccepted, setTermsAccepted] = useState(false)
+  // SMS-Marketing-Einwilligung — отдельная, необязательная, по умолчанию НЕ отмечена.
+  const [smsConsent, setSmsConsent] = useState(false)
   // Онлайн-оплата SumUp: данные созданного checkout для монтирования виджета.
   const [sumup, setSumup] = useState<{ orderId: string; checkoutId: string; amount: number } | null>(null)
   const [contactDetails, setContactDetails] = useState({
@@ -447,6 +449,7 @@ export default function CheckoutPage() {
         phoneNumber: contactDetails.phone,
         email: contactDetails.email || undefined,
         deliveryType: deliveryType,
+        smsMarketingConsent: smsConsent,
         deliveryAddress: deliveryType === 'delivery' ? {
           street: contactDetails.street,
           houseNumber: contactDetails.houseNumber,
@@ -758,6 +761,15 @@ export default function CheckoutPage() {
                   onChange={handleContactDetailChange}
                 />
                 <p className="text-xs text-gray-500 mt-1">{t('checkout.email_hint', 'На этот адрес будет отправлен чек')}</p>
+                <p className="text-xs text-gray-400 mt-1">
+                  {t(
+                    'checkout.email_marketing_notice',
+                    'Wir können Ihre E-Mail-Adresse nutzen, um Sie über eigene ähnliche Angebote zu informieren (§ 7 Abs. 3 UWG). Sie können dem jederzeit über den Abmelde-Link in jeder E-Mail oder per Nachricht an info@dumbospizza.de widersprechen.'
+                  )}{' '}
+                  <Link href="/datenschutz" className="underline hover:text-gray-600" target="_blank" rel="noreferrer">
+                    {t('checkout.email_marketing_more', 'Mehr im Datenschutz')}
+                  </Link>
+                </p>
               </div>
               
               {deliveryType === 'delivery' && (
@@ -1054,7 +1066,28 @@ export default function CheckoutPage() {
                   <p className="text-red-600 text-sm mt-2">{errors.terms}</p>
                 )}
               </div>
-              
+
+              {/* SMS-Marketing-Einwilligung — separat, optional, nicht vorausgewählt (UWG §7) */}
+              <div className="mb-6">
+                <label className="flex items-start">
+                  <input
+                    type="checkbox"
+                    checked={smsConsent}
+                    onChange={(e) => setSmsConsent(e.target.checked)}
+                    className="h-4 w-4 mt-1 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                  />
+                  <span className="ml-2 text-gray-700 text-sm">
+                    {t(
+                      'checkout.sms_consent',
+                      'Ja, ich möchte Angebote und Aktionen von Dumbos Pizza per SMS erhalten. Abmeldung jederzeit möglich.'
+                    )}
+                  </span>
+                </label>
+                <p className="ml-6 mt-1 text-xs text-gray-400">
+                  {t('checkout.sms_consent_hint', 'Freiwillig — die Bestellung ist auch ohne diese Zustimmung möglich.')}
+                </p>
+              </div>
+
               {errors.submit && (
                 <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
                   <p className="text-red-600 text-sm">{errors.submit}</p>

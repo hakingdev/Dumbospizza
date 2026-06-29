@@ -47,6 +47,10 @@ export interface IOrder {
   customerName: string;
   phoneNumber: string;
   email?: string;
+  /** SMS-Marketing-Einwilligung (opt-in на checkout). */
+  smsMarketingConsent?: boolean;
+  smsConsentAt?: Date;
+  smsConsentText?: string;
   items: IOrderItem[];
   deliveryAddress?: IDeliveryAddress;
   deliveryZone?: {

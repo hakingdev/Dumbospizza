@@ -7,6 +7,9 @@ import { sendEmail, isEmailConfigured } from '../email';
 import { sendFcmToTokens, isPushConfigured } from '../push-notifications';
 import { formatHappyHourLabel } from './schedule';
 import { parseEmailRecipients } from './email-recipients';
+import { filterUnsubscribed } from '../email/suppression';
+import { buildUnsubscribeUrl } from '../email/unsubscribe';
+import { SELLER } from '../company';
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXTAUTH_URL || 'https://dumbospizza.de';
 
@@ -53,7 +56,33 @@ async function getPromotionEmailRecipients(): Promise<string[]> {
   const rows = await Order.distinct('email', {
     email: { $exists: true, $nin: [null, ''] },
   });
-  return parseEmailRecipients(rows.map((e) => String(e))).recipients;
+  const parsed = parseEmailRecipients(rows.map((e) => String(e))).recipients;
+  // Abgemeldete Adressen (Widerspruch) automatisch ausschließen.
+  return filterUnsubscribed(parsed);
+}
+
+/**
+ * Rechtlicher E-Mail-Footer (Impressum + Abmeldung) — in Markenfarben, Pflicht
+ * in jeder Werbe-Mail (§ 5 TMG / § 7 Abs. 3 Nr. 4 UWG). Per-Empfänger Abmelde-Link.
+ */
+function unsubscribeFooterHtml(unsubscribeUrl: string): string {
+  const link = (href: string, label: string) =>
+    `<a href="${href}" style="color:#b45309;text-decoration:none">${label}</a>`;
+  return `<div style="margin-top:32px;border-top:2px solid #b45309;padding-top:16px;font-family:Arial,Helvetica,sans-serif;color:#9b8a78;font-size:12px;line-height:1.6">
+    <div style="font-weight:700;color:#b45309;font-size:14px;margin-bottom:4px">${SELLER.marketingName}</div>
+    <div>${SELLER.legalName} &middot; ${SELLER.street} &middot; ${SELLER.postalCode} ${SELLER.city}</div>
+    <div>Tel.: ${SELLER.phone} &middot; E-Mail: ${link(`mailto:${SELLER.email}`, SELLER.email)}</div>
+    <div>Geschäftsführer: ${SELLER.managingDirector} &middot; ${SELLER.registerCourt} ${SELLER.registerNumber} &middot; USt-ID: ${SELLER.vatId}</div>
+    <div style="margin-top:10px">
+      ${link(`${SITE_URL}/impressum`, 'Impressum')} &nbsp;|&nbsp;
+      ${link(`${SITE_URL}/datenschutz`, 'Datenschutz')} &nbsp;|&nbsp;
+      ${link(unsubscribeUrl, 'Vom Newsletter abmelden')}
+    </div>
+    <div style="margin-top:8px;color:#b8a896">
+      Sie erhalten diese E-Mail, weil Sie bei ${SELLER.marketingName} bestellt haben (§ 7 Abs. 3 UWG).
+      Eine Abmeldung ist jederzeit kostenlos möglich.
+    </div>
+  </div>`;
 }
 
 function buildEmailHtml(promo: PromotionDocument): string {
@@ -106,7 +135,8 @@ export async function sendPromotionEmailCampaign(
   const recipients = options.testEmail
     ? parseEmailRecipients([options.testEmail]).recipients
     : options.recipients
-      ? parseEmailRecipients(options.recipients).recipients
+      ? // Hochgeladene Listen: Abgemeldete automatisch entfernen.
+        await filterUnsubscribed(parseEmailRecipients(options.recipients).recipients)
       : await getPromotionEmailRecipients();
 
   if (recipients.length === 0 && (options.testEmail || options.recipients)) {
@@ -121,7 +151,19 @@ export async function sendPromotionEmailCampaign(
   for (let start = 0; start < recipients.length; start += EMAIL_BATCH_SIZE) {
     const batch = recipients.slice(start, start + EMAIL_BATCH_SIZE);
     const results = await Promise.allSettled(
-      batch.map((to) => sendEmail({ to, subject, html }))
+      batch.map((to) => {
+        // Per-Empfänger signierter Abmelde-Link + List-Unsubscribe-Header (one-click).
+        const unsubscribeUrl = buildUnsubscribeUrl(SITE_URL, to);
+        return sendEmail({
+          to,
+          subject,
+          html: html + unsubscribeFooterHtml(unsubscribeUrl),
+          headers: {
+            'List-Unsubscribe': `<${unsubscribeUrl}>`,
+            'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+          },
+        });
+      })
     );
 
     results.forEach((result, index) => {

@@ -143,6 +143,11 @@ export const orders = pgTable(
     customerName: text('customer_name').notNull(),
     phoneNumber: text('phone_number').notNull(),
     email: text('email'),
+    // SMS-Marketing-Einwilligung (UWG §7 / DSGVO Art. 6 Abs. 1 lit. a) — отдельный
+    // opt-in на checkout. Храним факт + дату + текст согласия (для доказательства).
+    smsMarketingConsent: boolean('sms_marketing_consent').notNull().default(false),
+    smsConsentAt: timestamp('sms_consent_at', { withTimezone: true, mode: 'date' }),
+    smsConsentText: text('sms_consent_text'),
     items: jsonb('items').$type<OrderItem[]>().notNull().default([]),
     deliveryAddress: jsonb('delivery_address').$type<{
       street: string;
@@ -206,6 +211,7 @@ export const orders = pgTable(
     statusIdx: index('orders_status_idx').on(t.status),
     createdIdx: index('orders_created_idx').on(t.createdAt),
     mewsOrderIdx: index('orders_mews_order_idx').on(t.mewsOrderId),
+    smsConsentIdx: index('orders_sms_consent_idx').on(t.smsMarketingConsent),
   })
 );
 
@@ -620,6 +626,23 @@ export const preOrders = pgTable('pre_orders', {
   updatedAt: updatedAt(),
 });
 
+// =====================================================================
+// Email-Abmeldungen (Widerspruch gegen Werbung, § 7 Abs. 3 Nr. 4 UWG).
+// Suppression-Liste: эти адреса автоматически исключаются из рассылок.
+// =====================================================================
+export const emailUnsubscribes = pgTable(
+  'email_unsubscribes',
+  {
+    id: id(),
+    email: text('email').notNull(),
+    source: text('source'), // 'campaign-link' | 'one-click' | 'manual'
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    emailUq: uniqueIndex('email_unsubscribes_email_uq').on(t.email),
+  })
+);
+
 // ---- выводимые типы (select/insert) ----
 export type Category = typeof categories.$inferSelect;
 export type Product = typeof products.$inferSelect;
@@ -639,3 +662,4 @@ export type Setting = typeof settings.$inferSelect;
 export type SizeVariation = typeof sizeVariations.$inferSelect;
 export type WhatsAppQueueRow = typeof whatsappQueue.$inferSelect;
 export type PreOrder = typeof preOrders.$inferSelect;
+export type EmailUnsubscribe = typeof emailUnsubscribes.$inferSelect;

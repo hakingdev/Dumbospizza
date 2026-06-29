@@ -5,13 +5,17 @@
  */
 export const SELLER = {
   legalName: 'Weisses Haus GmbH',
-  brand: 'Dumbo Pizza',
+  brand: 'Dumbo Slice Pizza', // Handelsname auf Beleg/Rechnung
+  marketingName: 'Dumbos Pizza', // Marke auf Website/Newsletter
+  managingDirector: 'Mykhailo Barkhan', // Geschäftsführer
   street: 'Kurhausstr. 11-A',
   postalCode: '97688',
   city: 'Bad Kissingen',
   country: 'Deutschland',
   phone: '0151 141/34 094',
-  email: 'infi@dumbospizza.de',
+  email: 'info@dumbospizza.de',
+  registerCourt: 'Amtsgericht Schweinfurt', // Registergericht
+  registerNumber: 'HRB 9292', // Handelsregisternummer
   vatId: 'DE365866180', // USt-IdNr. § 27a UStG
   taxNumber: '205/142/20396', // Steuernummer
 } as const;
