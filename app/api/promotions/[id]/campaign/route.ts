@@ -7,6 +7,7 @@ import {
   getCampaignPreview,
   sendPromotionEmailCampaign,
   sendPromotionPushCampaign,
+  buildCampaignEmail,
 } from '../../../../../lib/promotions/campaign';
 import { parseEmailRecipients } from '../../../../../lib/promotions/email-recipients';
 import { isEmailConfigured } from '../../../../../lib/email';
@@ -27,7 +28,13 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
     }
     const preview = await getCampaignPreview(params.id);
-    return NextResponse.json({ success: true, preview, promotion: { name: promo.name } });
+    // Exact subject + HTML that would be sent — drives the editable preview in the UI.
+    const email = buildCampaignEmail(promo);
+    return NextResponse.json({
+      success: true,
+      preview: { ...preview, email },
+      promotion: { name: promo.name },
+    });
   } catch (error) {
     console.error('GET /api/promotions/[id]/campaign', error);
     const message = error instanceof Error ? error.message : 'Failed to load campaign';
@@ -51,6 +58,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const body = await request.json();
     const channel = body.channel as 'email' | 'push' | 'both';
     const testEmail = typeof body.testEmail === 'string' ? body.testEmail.trim() : undefined;
+    const subjectOverride = typeof body.subject === 'string' ? body.subject : undefined;
+    const htmlOverride = typeof body.html === 'string' ? body.html : undefined;
     const hasManualRecipients = !testEmail && Object.prototype.hasOwnProperty.call(body, 'recipients');
     let manualRecipients: ReturnType<typeof parseEmailRecipients> | undefined;
 
@@ -82,6 +91,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       const emailResult = await sendPromotionEmailCampaign(promo, {
         testEmail,
         recipients: manualRecipients?.recipients,
+        subject: subjectOverride,
+        html: htmlOverride,
       });
       const { failures, ...emailSummary } = emailResult;
       results.email = {

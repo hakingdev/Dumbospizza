@@ -70,17 +70,39 @@ function buildEmailHtml(promo: PromotionDocument): string {
   `;
 }
 
+/**
+ * Resolve the actual subject + HTML that will be sent.
+ * Priority: per-send override → saved promotion fields → auto-generated template.
+ */
+export function buildCampaignEmail(
+  promo: PromotionDocument,
+  overrides?: { subject?: string; html?: string }
+): { subject: string; html: string } {
+  const subject =
+    overrides?.subject?.trim() || promo.emailSubject?.trim() || `🍕 ${promo.name} — Dumbos Pizza`;
+  const html = overrides?.html?.trim() || promo.emailBodyHtml?.trim() || buildEmailHtml(promo);
+  return { subject, html };
+}
+
 export async function sendPromotionEmailCampaign(
   promo: PromotionDocument,
-  options: { testEmail?: string; recipients?: string[]; triggeredBy?: 'manual' | 'cron' } = {}
+  options: {
+    testEmail?: string;
+    recipients?: string[];
+    triggeredBy?: 'manual' | 'cron';
+    subject?: string;
+    html?: string;
+  } = {}
 ): Promise<{
   recipientCount: number;
   successCount: number;
   failureCount: number;
   failures: CampaignEmailFailure[];
 }> {
-  const subject = promo.emailSubject?.trim() || `🍕 ${promo.name} — Dumbos Pizza`;
-  const html = promo.emailBodyHtml?.trim() || buildEmailHtml(promo);
+  const { subject, html } = buildCampaignEmail(promo, {
+    subject: options.subject,
+    html: options.html,
+  });
   const recipients = options.testEmail
     ? parseEmailRecipients([options.testEmail]).recipients
     : options.recipients

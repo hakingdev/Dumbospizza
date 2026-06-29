@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Clock, Mail, Bell, Send, Loader2, Upload, XCircle } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Clock, Mail, Bell, Send, Loader2, Upload, XCircle, Eye, RotateCcw } from 'lucide-react';
 import {
   getPromotionCampaignPreview,
   sendPromotionCampaign,
@@ -260,29 +260,50 @@ export function PromotionCampaignActions({ promotionId }: { promotionId: string 
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [failures, setFailures] = useState<Array<{ email: string; error: string }>>([]);
+  const [subject, setSubject] = useState('');
+  const [bodyHtml, setBodyHtml] = useState('');
+  const [showPreview, setShowPreview] = useState(true);
+  const seededRef = useRef(false);
 
   const parsedRecipients = useMemo(() => parseEmailRecipients(recipientText), [recipientText]);
   const hasManualRecipients = recipientText.trim().length > 0 || Boolean(recipientFileName);
   const emailRecipientCount = hasManualRecipients
     ? parsedRecipients.recipients.length
     : preview?.emailRecipients ?? 0;
+  const messageIncomplete = !subject.trim() || !bodyHtml.trim();
   const emailSendDisabled =
     !!sending ||
     !preview?.emailConfigured ||
     emailRecipientCount === 0 ||
-    (hasManualRecipients && parsedRecipients.recipients.length === 0);
+    (hasManualRecipients && parsedRecipients.recipients.length === 0) ||
+    messageIncomplete;
 
   const load = useCallback(() => {
     setLoading(true);
     setError(null);
     getPromotionCampaignPreview(promotionId)
       .then((res) => {
-        if (res.success) setPreview(res.preview);
-        else setError(res.error || 'Kampagne konnte nicht geladen werden');
+        if (res.success) {
+          setPreview(res.preview);
+          // Seed the editable message once from the rendered backend email; later
+          // reloads (after sends) must not clobber the admin's edits.
+          if (!seededRef.current && res.preview?.email) {
+            setSubject(res.preview.email.subject || '');
+            setBodyHtml(res.preview.email.html || '');
+            seededRef.current = true;
+          }
+        } else setError(res.error || 'Kampagne konnte nicht geladen werden');
       })
       .catch(() => setError('Kampagne konnte nicht geladen werden (MongoDB / Login)'))
       .finally(() => setLoading(false));
   }, [promotionId]);
+
+  const resetMessage = () => {
+    if (preview?.email) {
+      setSubject(preview.email.subject || '');
+      setBodyHtml(preview.email.html || '');
+    }
+  };
 
   useEffect(() => {
     load();
@@ -333,11 +354,13 @@ export function PromotionCampaignActions({ promotionId }: { promotionId: string 
     setMessage(null);
     setFailures([]);
     try {
+      const involvesEmail = channel === 'email' || channel === 'both';
       const res = await sendPromotionCampaign(
         promotionId,
         channel,
         opts?.testEmail,
-        massEmail && hasManualRecipients ? parsedRecipients.recipients : undefined
+        massEmail && hasManualRecipients ? parsedRecipients.recipients : undefined,
+        involvesEmail ? { subject, html: bodyHtml } : undefined
       );
       if (res.success) {
         const emailResult = res.results?.email;
@@ -404,6 +427,75 @@ export function PromotionCampaignActions({ promotionId }: { promotionId: string 
           ))}
         </div>
       )}
+      <div className="space-y-2 border rounded-lg p-3 bg-gray-50/60">
+        <div className="flex items-center justify-between">
+          <div className="font-medium text-sm flex items-center gap-1">
+            <Mail className="h-4 w-4" />
+            Nachricht & Vorschau
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={resetMessage}
+              className="text-xs flex items-center gap-1 text-gray-600 hover:text-gray-900"
+              title="Auf gespeicherte Vorlage zurücksetzen"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              Zurücksetzen
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowPreview((v) => !v)}
+              className="text-xs flex items-center gap-1 text-gray-600 hover:text-gray-900"
+            >
+              <Eye className="h-3.5 w-3.5" />
+              {showPreview ? 'Vorschau ausblenden' : 'Vorschau anzeigen'}
+            </button>
+          </div>
+        </div>
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">Betreff</label>
+          <input
+            value={subject}
+            onChange={(e) => setSubject(e.target.value)}
+            placeholder="Betreff der E-Mail"
+            className="w-full border rounded px-2 py-2 text-sm"
+          />
+        </div>
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">Nachricht (HTML)</label>
+          <textarea
+            rows={6}
+            value={bodyHtml}
+            onChange={(e) => setBodyHtml(e.target.value)}
+            placeholder="<p>Inhalt der E-Mail …</p>"
+            className="w-full border rounded px-2 py-2 text-sm font-mono"
+          />
+        </div>
+        {messageIncomplete && (
+          <div className="text-xs text-amber-600">
+            Betreff und Nachricht dürfen nicht leer sein.
+          </div>
+        )}
+        {showPreview && (
+          <div>
+            <div className="text-xs text-gray-500 mb-1">
+              So sieht die E-Mail beim Empfänger aus:
+            </div>
+            <div className="rounded border bg-white overflow-hidden">
+              <div className="border-b bg-gray-100 px-3 py-1.5 text-xs text-gray-700">
+                <span className="text-gray-400">Betreff:</span> {subject || '—'}
+              </div>
+              <iframe
+                title="E-Mail-Vorschau"
+                srcDoc={bodyHtml}
+                sandbox=""
+                className="w-full h-72 bg-white"
+              />
+            </div>
+          </div>
+        )}
+      </div>
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
@@ -480,12 +572,17 @@ export function PromotionCampaignActions({ promotionId }: { promotionId: string 
           {parsedRecipients.truncated && ' · Limit 5000 erreicht'}
         </div>
         {parsedRecipients.recipients.length > 0 && (
-          <div className="flex flex-wrap gap-1 text-xs">
-            {parsedRecipients.recipients.slice(0, 12).map((email) => (
-              <span key={email} className="rounded border bg-gray-50 px-2 py-1">
-                {email}
-              </span>
-            ))}
+          <div>
+            <div className="text-xs text-gray-500 mb-1">
+              Alle {parsedRecipients.recipients.length} Empfänger (scrollbar):
+            </div>
+            <div className="flex flex-wrap gap-1 text-xs max-h-40 overflow-y-auto rounded border bg-gray-50/50 p-2">
+              {parsedRecipients.recipients.map((email) => (
+                <span key={email} className="rounded border bg-white px-2 py-1">
+                  {email}
+                </span>
+              ))}
+            </div>
           </div>
         )}
         {parsedRecipients.invalidEntries.length > 0 && (
@@ -506,7 +603,7 @@ export function PromotionCampaignActions({ promotionId }: { promotionId: string 
         </div>
         <button
           type="button"
-          disabled={!!sending || !preview?.emailConfigured || !testEmail.trim()}
+          disabled={!!sending || !preview?.emailConfigured || !testEmail.trim() || messageIncomplete}
           onClick={() => send('email', { testEmail: testEmail.trim() })}
           className="px-3 py-1 border rounded text-sm"
         >

@@ -172,12 +172,15 @@ export const sendPromotionCampaign = async (
   promotionId: string,
   channel: 'email' | 'push' | 'both',
   testEmail?: string,
-  recipients?: string[]
+  recipients?: string[],
+  overrides?: { subject?: string; html?: string }
 ) => {
   const response = await apiClient.post(`/api/promotions/${promotionId}/campaign`, {
     channel,
     testEmail,
     ...(recipients ? { recipients } : {}),
+    ...(overrides?.subject !== undefined ? { subject: overrides.subject } : {}),
+    ...(overrides?.html !== undefined ? { html: overrides.html } : {}),
   });
   return response.data;
 };
