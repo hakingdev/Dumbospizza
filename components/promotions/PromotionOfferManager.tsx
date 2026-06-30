@@ -53,7 +53,22 @@ export default function PromotionOfferManager() {
     dismissed.current.clear();
   }
 
-  const pendingBogo = bogoOffers.filter((o) => !dismissed.current.has(o.promotionId));
+  // Сколько наград по акции уже ОТРАЖЕНО (resolved) в текущем расчёте.
+  const bogoReflectedCount = (promotionId: string) =>
+    (state.promotionCalculation?.bogoSecondItems || [])
+      .filter((it) => it.promotionId === promotionId)
+      .reduce((sum, it) => sum + (it.quantity || 1), 0);
+
+  const pendingBogo = bogoOffers.filter((o) => {
+    if (dismissed.current.has(o.promotionId)) return false;
+    // Симметрично gift-пути (selectedFreeGifts): если пользователь уже выбрал
+    // награды, которые ещё НЕ отражены в этом (возможно устаревшем) расчёте,
+    // попап НЕ переоткрываем — ждём свежий пересчёт. Иначе после выбора модалка
+    // мигает на ~1 с: устаревший расчёт ещё содержит оффер, хотя слот уже заполнен.
+    const chosen = state.selectedBogoSecond[o.promotionId]?.length || 0;
+    if (chosen > bogoReflectedCount(o.promotionId)) return false;
+    return true;
+  });
   // Подарок (Gratis-Artikel) — это ОДНО применение на акцию: ровно одна бесплатная
   // позиция при выполненном условии (в отличие от BOGO, где слотов = числу пар).
   // Поэтому, как только пользователь уже выбрал подарок (selectedFreeGifts), оффер

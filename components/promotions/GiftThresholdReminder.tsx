@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Gift, X } from 'lucide-react';
 import { useCart } from '../../lib/contexts/CartContext';
+import { NoTranslate } from '../NoTranslate';
 
 /**
  * Напоминание: до бесплатного подарка (gratis при заказе от N €) осталось немного.
@@ -82,10 +83,10 @@ export default function GiftThresholdReminder() {
         <h2 className="text-xl font-bold mb-2">Fast geschafft! 🎁</h2>
         <p className="text-gray-600 mb-1">
           Nur noch{' '}
-          <span className="font-bold text-emerald-700">{active.remaining.toFixed(2)} €</span>
+          <NoTranslate className="font-bold text-emerald-700">{active.remaining.toFixed(2)} €</NoTranslate>
         </p>
         <p className="text-gray-600 mb-6">
-          und Sie erhalten <span className="font-semibold">{active.giftName}</span> gratis dazu.
+          und Sie erhalten <NoTranslate className="font-semibold">{active.giftName}</NoTranslate> gratis dazu.
         </p>
         <div className="flex flex-col gap-2">
           <Link

@@ -3,6 +3,7 @@
 import type { PromotionFreeGiftOffer } from '../../lib/promotions/types';
 import { Gift } from 'lucide-react';
 import { SafeImage } from '../SafeImage';
+import { NoTranslate } from '../NoTranslate';
 
 interface GratisGiftPickerModalProps {
   offers: PromotionFreeGiftOffer[];
@@ -54,7 +55,7 @@ export default function GratisGiftPickerModal({
         <div className="p-6 space-y-6">
           {offers.map((offer) => (
             <div key={offer.promotionId}>
-              <h3 className="font-semibold text-gray-900 mb-1">{offer.promotionName}</h3>
+              <h3 className="font-semibold text-gray-900 mb-1"><NoTranslate>{offer.promotionName}</NoTranslate></h3>
               <p className="text-sm text-gray-500 mb-3">{offer.label}</p>
               <div className="space-y-2">
                 {offer.options.map((option) => {
@@ -83,8 +84,8 @@ export default function GratisGiftPickerModal({
                           className="w-12 h-12 rounded object-cover shrink-0"
                         />
                       )}
-                      <span className="font-medium text-gray-900">{option.name}</span>
-                      <span className="ml-auto text-sm font-semibold text-emerald-600">0,00 €</span>
+                      <NoTranslate className="font-medium text-gray-900">{option.name}</NoTranslate>
+                      <NoTranslate className="ml-auto text-sm font-semibold text-emerald-600">0,00 €</NoTranslate>
                     </label>
                   );
                 })}

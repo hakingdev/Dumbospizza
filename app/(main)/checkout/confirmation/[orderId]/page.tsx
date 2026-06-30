@@ -9,6 +9,7 @@ import { useLanguage } from '../../../../../lib/contexts/LanguageContext';
 import { loadTranslation } from '../../../../../lib/i18n';
 import OrderVatReceipt from '../../../../../components/checkout/OrderVatReceipt';
 import OrderVatReceiptModal from '../../../../../components/checkout/OrderVatReceiptModal';
+import { NoTranslate } from '../../../../../components/NoTranslate';
 
 interface OrderConfirmationProps {
   params: {
@@ -136,7 +137,7 @@ export default function OrderConfirmationPage({ params }: OrderConfirmationProps
           
           <h1 className="text-3xl font-bold mb-2">{t('confirmation.thank_you', 'Vielen Dank für Ihre Bestellung!')}</h1>
           <p className="text-lg mb-6">
-            {t('confirmation.order_success', 'Ihre Bestellung')} #{order.orderNumber} {t('confirmation.order_success_suffix', 'wurde erfolgreich aufgegeben.')}
+            {t('confirmation.order_success', 'Ihre Bestellung')} <NoTranslate>#{order.orderNumber}</NoTranslate> {t('confirmation.order_success_suffix', 'wurde erfolgreich aufgegeben.')}
             {order.deliveryType === 'delivery' 
               ? ` ${t('confirmation.delivery_info', 'Wir liefern sie so schnell wie möglich.')}` 
               : ` ${t('confirmation.pickup_info', 'Sie können sie in unserem Restaurant abholen.')}`}
@@ -144,7 +145,7 @@ export default function OrderConfirmationPage({ params }: OrderConfirmationProps
           
           <div className="border-t border-b border-gray-200 py-4 my-4">
             <p className="mb-1">{t('confirmation.confirmation_sent', 'Wir haben eine Bestätigung an Ihre Telefonnummer gesendet:')}</p>
-            <p className="font-semibold text-lg">{order.phoneNumber}</p>
+            <NoTranslate className="block font-semibold text-lg">{order.phoneNumber}</NoTranslate>
           </div>
           
           <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
@@ -164,7 +165,7 @@ export default function OrderConfirmationPage({ params }: OrderConfirmationProps
         {/* Order details */}
         <div className="bg-white rounded-lg shadow-lg overflow-hidden">
           <div className="p-6 border-b border-gray-200">
-            <h2 className="text-xl font-semibold mb-2">{t('confirmation.order_details', 'Bestelldetails')} #{order.orderNumber}</h2>
+            <h2 className="text-xl font-semibold mb-2">{t('confirmation.order_details', 'Bestelldetails')} <NoTranslate>#{order.orderNumber}</NoTranslate></h2>
             <p className="text-gray-600">
               {t('confirmation.order_date', 'Bestelldatum')}: {new Date(order.createdAt).toLocaleDateString('de-DE', {
                 day: 'numeric',
@@ -182,8 +183,8 @@ export default function OrderConfirmationPage({ params }: OrderConfirmationProps
               {order.items.map((item: any, i: number) => (
                 <li key={i} className="py-3 flex justify-between">
                   <div>
-                    <p className="font-medium">{item.name}</p>
-                    {item.size && <span className="text-gray-500">{item.size.name}</span>}
+                    <p className="font-medium"><NoTranslate>{item.name}</NoTranslate></p>
+                    {item.size && <NoTranslate className="text-gray-500">{item.size.name}</NoTranslate>}
 
                     {/* Display customizations if any */}
                     {(item.extras?.toppings?.length > 0 ||
@@ -191,15 +192,15 @@ export default function OrderConfirmationPage({ params }: OrderConfirmationProps
                       item.extras?.sides?.length > 0) && (
                       <ul className="text-sm text-gray-500 mt-1 ml-4">
                         {item.extras?.toppings?.map((topping: any, i: number) => (
-                          <li key={`topping-${i}`}>+ {topping.name}</li>
+                          <li key={`topping-${i}`}>+ <NoTranslate>{topping.name}</NoTranslate></li>
                         ))}
                         
                         {item.extras?.sauces?.map((sauce: any, i: number) => (
-                          <li key={`sauce-${i}`}>+ {sauce.name}</li>
+                          <li key={`sauce-${i}`}>+ <NoTranslate>{sauce.name}</NoTranslate></li>
                         ))}
                         
                         {item.extras?.sides?.map((side: any, i: number) => (
-                          <li key={`side-${i}`}>+ {side.name}</li>
+                          <li key={`side-${i}`}>+ <NoTranslate>{side.name}</NoTranslate></li>
                         ))}
                       </ul>
                     )}
@@ -207,7 +208,7 @@ export default function OrderConfirmationPage({ params }: OrderConfirmationProps
                   
                   <div className="flex items-start">
                     <span className="text-gray-600 mr-2">{item.quantity}×</span>
-                    <span>{(item.price * item.quantity).toFixed(2)} €</span>
+                    <NoTranslate>{(item.price * item.quantity).toFixed(2)} €</NoTranslate>
                   </div>
                 </li>
               ))}
@@ -216,26 +217,26 @@ export default function OrderConfirmationPage({ params }: OrderConfirmationProps
             <div className="border-t pt-4">
               <div className="flex justify-between py-1">
                 <span className="text-gray-600">{t('cart.subtotal', 'Zwischensumme')}:</span>
-                <span>{order.subtotal.toFixed(2)} €</span>
+                <NoTranslate>{order.subtotal.toFixed(2)} €</NoTranslate>
               </div>
               
               {order.deliveryFee > 0 && (
                 <div className="flex justify-between py-1">
                   <span className="text-gray-600">{t('cart.delivery_fee', 'Lieferung')}:</span>
-                  <span>{order.deliveryFee.toFixed(2)} €</span>
+                  <NoTranslate>{order.deliveryFee.toFixed(2)} €</NoTranslate>
                 </div>
               )}
               
               {order.loyaltyPointsUsed > 0 && (
                 <div className="flex justify-between py-1">
                   <span className="text-gray-600">{t('checkout.discount_points', 'Rabatt (Punkte)')}:</span>
-                  <span>-{(order.loyaltyPointsUsed / 100).toFixed(2)} €</span>
+                  <NoTranslate>-{(order.loyaltyPointsUsed / 100).toFixed(2)} €</NoTranslate>
                 </div>
               )}
               
               <div className="flex justify-between py-2 font-bold text-lg border-t mt-2">
                 <span>{t('cart.total', 'Gesamt')}:</span>
-                <span>{order.total.toFixed(2)} €</span>
+                <NoTranslate>{order.total.toFixed(2)} €</NoTranslate>
               </div>
             </div>
             
@@ -253,9 +254,9 @@ export default function OrderConfirmationPage({ params }: OrderConfirmationProps
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <h3 className="font-medium mb-2">{t('confirmation.contact_info', 'Kontaktinformationen')}</h3>
-                <p>{order.customerName}</p>
-                <p>{order.phoneNumber}</p>
-                {order.email && <p>{order.email}</p>}
+                <NoTranslate className="block">{order.customerName}</NoTranslate>
+                <NoTranslate className="block">{order.phoneNumber}</NoTranslate>
+                {order.email && <NoTranslate className="block">{order.email}</NoTranslate>}
               </div>
               
               <div>
@@ -265,12 +266,12 @@ export default function OrderConfirmationPage({ params }: OrderConfirmationProps
                 {order.deliveryType === 'delivery' ? (
                   <>
                     <p>
-                      {order.deliveryAddress.street} {order.deliveryAddress.houseNumber}
-                      {order.deliveryAddress.floor && `, ${t('checkout.floor', 'Etage / Wohnung')} ${order.deliveryAddress.floor}`}
+                      <NoTranslate>{order.deliveryAddress.street} {order.deliveryAddress.houseNumber}</NoTranslate>
+                      {order.deliveryAddress.floor && <>, {t('checkout.floor', 'Etage / Wohnung')} <NoTranslate>{order.deliveryAddress.floor}</NoTranslate></>}
                     </p>
-                    <p>{order.deliveryAddress.postalCode} {order.deliveryAddress.city}</p>
+                    <p><NoTranslate>{order.deliveryAddress.postalCode} {order.deliveryAddress.city}</NoTranslate></p>
                     {order.deliveryAddress.notes && (
-                      <p className="text-gray-500">{order.deliveryAddress.notes}</p>
+                      <NoTranslate className="block text-gray-500">{order.deliveryAddress.notes}</NoTranslate>
                     )}
                   </>
                 ) : (
@@ -278,8 +279,8 @@ export default function OrderConfirmationPage({ params }: OrderConfirmationProps
                 )}
                 {order.deliveryType === 'delivery' && order.desiredDeliveryTime && (
                   <p className="mt-2">
-                    <span className="text-gray-600">{t('checkout.desired_delivery_time', 'Желаемое время доставки')}:</span>{' '}
-                    {order.desiredDeliveryTime}
+                    <span className="text-gray-600">{t('checkout.desired_delivery_time', 'Gewünschte Lieferzeit')}:</span>{' '}
+                    <NoTranslate>{order.desiredDeliveryTime}</NoTranslate>
                   </p>
                 )}
               </div>

@@ -5,6 +5,7 @@ import { Dialog, Transition } from '@headlessui/react';
 import { MapPin, X, AlertCircle, Check } from 'lucide-react';
 import { useLanguage } from '../lib/contexts/LanguageContext';
 import { loadTranslation } from '../lib/i18n';
+import { NoTranslate } from './NoTranslate';
 
 export default function DeliveryZoneCheck() {
   const [isOpen, setIsOpen] = useState(false);
@@ -38,7 +39,7 @@ export default function DeliveryZoneCheck() {
 
   const checkDeliveryZone = async () => {
     if (!address.trim()) {
-      alert(t('delivery_check.alert_address', 'Введите адрес'));
+      alert(t('delivery_check.alert_address', 'Bitte geben Sie eine Adresse ein'));
       return;
     }
 
@@ -66,7 +67,7 @@ export default function DeliveryZoneCheck() {
       console.error('Error:', error);
       setResult({
         success: false,
-        error: t('delivery_check.error', 'Ошибка проверки адреса')
+        error: t('delivery_check.error', 'Fehler bei der Adressprüfung')
       });
     } finally {
       setChecking(false);
@@ -122,17 +123,17 @@ export default function DeliveryZoneCheck() {
                     </div>
 
                     <Dialog.Title className="text-2xl font-bold text-center mb-2">
-                      {t('delivery_check.title', 'Проверьте зону доставки')}
+                      {t('delivery_check.title', 'Liefergebiet prüfen')}
                     </Dialog.Title>
 
                     <p className="text-center text-gray-600 mb-6">
-                      {t('delivery_check.subtitle', 'Введите ваш адрес, чтобы узнать, доставляем ли мы к вам')}
+                      {t('delivery_check.subtitle', 'Geben Sie Ihre Adresse ein, um zu prüfen, ob wir zu Ihnen liefern')}
                     </p>
 
                     <div className="space-y-4">
                       <div>
                         <label className="block text-sm font-medium mb-2">
-                          {t('delivery_check.address_label', 'Ваш адрес')}
+                          {t('delivery_check.address_label', 'Ihre Adresse')}
                         </label>
                         <input
                           type="text"
@@ -149,7 +150,7 @@ export default function DeliveryZoneCheck() {
                         disabled={checking}
                         className="inline-flex min-h-[48px] w-full items-center justify-center rounded-lg bg-primary-600 px-4 py-3 text-center font-medium leading-tight text-white transition-colors hover:bg-primary-700 disabled:cursor-not-allowed disabled:bg-gray-300"
                       >
-                        {checking ? t('delivery_check.checking', 'Проверка...') : t('delivery_check.check', 'Проверить адрес')}
+                        {checking ? t('delivery_check.checking', 'Wird geprüft...') : t('delivery_check.check', 'Adresse prüfen')}
                       </button>
 
                       {result && (
@@ -171,8 +172,8 @@ export default function DeliveryZoneCheck() {
                                 result.canDeliver ? 'text-green-900' : 'text-red-900'
                               }`}>
                                 {result.canDeliver 
-                                  ? t('delivery_check.available', '✓ Доставка доступна!') 
-                                  : t('delivery_check.unavailable', '✗ Доставка недоступна')}
+                                  ? t('delivery_check.available', '✓ Lieferung verfügbar!')
+                                  : t('delivery_check.unavailable', '✗ Lieferung nicht verfügbar')}
                               </h3>
                               <div className={`mt-2 text-sm ${
                                 result.canDeliver ? 'text-green-700' : 'text-red-700'
@@ -180,29 +181,29 @@ export default function DeliveryZoneCheck() {
                                 {result.canDeliver ? (
                                   <>
                                     <p className="mb-2">
-                                      <strong>{t('delivery_check.zone', 'Зона')}:</strong> {result.zone?.name}
+                                      <strong>{t('delivery_check.zone', 'Zone')}:</strong> <NoTranslate>{result.zone?.name}</NoTranslate>
                                     </p>
                                     <p className="mb-2">
-                                      <strong>{t('delivery_check.distance', 'Расстояние')}:</strong> {result.distance?.toFixed(1)} {t('delivery_check.km', 'км')}
+                                      <strong>{t('delivery_check.distance', 'Entfernung')}:</strong> <NoTranslate>{result.distance?.toFixed(1)} {t('delivery_check.km', 'km')}</NoTranslate>
                                     </p>
                                     <p className="mb-2">
-                                      <strong>{t('delivery_check.fee', 'Стоимость доставки')}:</strong> {result.zone?.deliveryFee?.toFixed(2)} €
+                                      <strong>{t('delivery_check.fee', 'Liefergebühr')}:</strong> <NoTranslate>{result.zone?.deliveryFee?.toFixed(2)} €</NoTranslate>
                                     </p>
                                     <p>
-                                      <strong>{t('delivery_check.min_order', 'Минимальный заказ')}:</strong> {result.zone?.minOrderAmount?.toFixed(2)} €
+                                      <strong>{t('delivery_check.min_order', 'Mindestbestellwert')}:</strong> <NoTranslate>{result.zone?.minOrderAmount?.toFixed(2)} €</NoTranslate>
                                     </p>
                                   </>
                                 ) : (
                                   <>
                                     <p className="mb-2">
-                                      {t('delivery_check.outside', 'К сожалению, ваш адрес находится вне зоны нашей доставки')} 
-                                      {result.distance && ` (${result.distance.toFixed(1)} ${t('delivery_check.km', 'км')})`}.
+                                      {t('delivery_check.outside', 'Leider liegt Ihre Adresse außerhalb unseres Liefergebiets')}
+                                      {result.distance && <> (<NoTranslate>{result.distance.toFixed(1)} {t('delivery_check.km', 'km')}</NoTranslate>)</>}.
                                     </p>
                                     <p className="font-semibold">
-                                      {t('delivery_check.pickup', 'Вы можете заказать пиццу на самовывоз!')}
+                                      {t('delivery_check.pickup', 'Sie können Ihre Pizza auch zur Abholung bestellen!')}
                                     </p>
                                     <p className="mt-2 text-xs">
-                                      {t('delivery_check.our_address', 'Наш адрес')}: Kurhausstraße 11A, 97688 Bad Kissingen
+                                      {t('delivery_check.our_address', 'Unsere Adresse')}: <NoTranslate>Kurhausstraße 11A, 97688 Bad Kissingen</NoTranslate>
                                     </p>
                                   </>
                                 )}
@@ -213,7 +214,7 @@ export default function DeliveryZoneCheck() {
                                   onClick={handleClose}
                                   className="mt-4 w-full bg-green-600 text-white py-2 px-4 rounded-lg hover:bg-green-700 transition-colors font-medium"
                                 >
-                                  {t('delivery_check.continue', 'Отлично, продолжить покупки!')}
+                                  {t('delivery_check.continue', 'Prima, weiter einkaufen!')}
                                 </button>
                               )}
                             </div>
@@ -223,7 +224,7 @@ export default function DeliveryZoneCheck() {
 
                       {!hasChecked && (
                         <p className="text-xs text-center text-gray-500">
-                          {t('delivery_check.max_distance', 'Максимальное расстояние доставки: 15 км')}
+                          {t('delivery_check.max_distance', 'Maximale Lieferentfernung: 15 km')}
                         </p>
                       )}
                     </div>
@@ -237,4 +238,3 @@ export default function DeliveryZoneCheck() {
     </Transition>
   );
 }
-

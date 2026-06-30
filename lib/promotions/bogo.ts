@@ -77,13 +77,15 @@ export function enrichBogoOptionsWithCartPrices(
   mode: BogoMode | undefined
 ): BogoSecondOption[] {
   return options.map((opt) => {
-    // приоритет цене из корзины при совпадении товара И размера
-    const cartLine =
-      items.find(
-        (line) =>
-          String(line.productId) === opt.productId &&
-          (opt.sizeName ? (line.sizeName || '') === opt.sizeName : true)
-      ) || items.find((line) => String(line.productId) === opt.productId);
+    // Для размерных опций нельзя фолбэчиться на "любой размер" того же товара:
+    // иначе все размеры в BOGO-пикере наследуют цену выбранной в корзине пиццы.
+    const cartLine = opt.sizeName
+      ? items.find(
+          (line) =>
+            String(line.productId) === opt.productId &&
+            (line.sizeName || '').trim() === opt.sizeName
+        )
+      : items.find((line) => String(line.productId) === opt.productId);
     const unitPrice = cartLine?.unitPrice ?? opt.unitPrice;
     return {
       ...opt,

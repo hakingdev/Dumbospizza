@@ -76,7 +76,7 @@ export default function CategoryPage() {
     return (
       <div className="container mx-auto px-4 py-20 text-center">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto"></div>
-        <p className="mt-4 text-gray-600">{t('common.loading', 'Загрузка...')}</p>
+        <p className="mt-4 text-gray-600">{t('common.loading', 'Wird geladen...')}</p>
       </div>
     );
   }
@@ -85,14 +85,14 @@ export default function CategoryPage() {
     <div className="container mx-auto px-4 py-12">
       <Link href="/" className="mb-6 inline-flex max-w-full items-center gap-1 leading-tight text-primary-600 hover:text-primary-700">
         <ChevronLeft className="h-5 w-5 shrink-0" />
-        {t('common.back', 'Назад')}
+        {t('common.back', 'Zurück')}
       </Link>
       
       <h1 className="mb-8 break-words text-4xl font-bold leading-tight">{categoryTitle}</h1>
       
       {products.length === 0 ? (
         <div className="text-center py-20">
-          <p className="text-xl text-gray-600">{t('category.empty', 'В этой категории пока нет товаров')}</p>
+          <p className="text-xl text-gray-600">{t('category.empty', 'In dieser Kategorie gibt es noch keine Produkte')}</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">

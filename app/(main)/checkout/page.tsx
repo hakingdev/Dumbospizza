@@ -20,6 +20,7 @@ import {
   parseOrdersTimeToMinutes,
 } from '../../../lib/order-acceptance-hours'
 import { evaluateDeliveryGate } from '../../../lib/delivery/checkout-gate'
+import { NoTranslate } from '../../../components/NoTranslate'
 
 // SumUp-виджет — только на клиенте (использует window + внешний SDK).
 const SumUpPaymentWidget = dynamic(
@@ -174,9 +175,9 @@ export default function CheckoutPage() {
       const endMinutes = parseOrdersTimeToMinutes(settings.ordersEndHour, 22)
       const timeZone = settings.ordersTimeZone || 'Europe/Berlin'
       const blockedUntil = settings.ordersBlockedUntil ? new Date(settings.ordersBlockedUntil) : null
-      const blockReason = settings.ordersBlockedReason || 'Кухня переполнена. Попробуйте позже.'
-      const beforeOpenTemplate = settings.ordersClosedMessageBeforeOpen || 'Мы откроем в {time}'
-      const afterCloseMessage = settings.ordersClosedMessageAfterClose || 'Мы закрыты, вернемся к вам завтра.'
+      const blockReason = settings.ordersBlockedReason || 'Die Küche ist gerade ausgelastet. Bitte versuchen Sie es später.'
+      const beforeOpenTemplate = settings.ordersClosedMessageBeforeOpen || 'Wir öffnen um {time}'
+      const afterCloseMessage = settings.ordersClosedMessageAfterClose || 'Wir sind geschlossen und morgen wieder für Sie da.'
 
       const now = new Date()
       const nowMinutes = getNowMinutesInTimeZone(timeZone, now)
@@ -286,33 +287,33 @@ export default function CheckoutPage() {
     
     // Validate required contact fields
     if (!contactDetails.name.trim()) {
-      newErrors.name = t('checkout.errors.name_required', 'Имя обязательно для заполнения')
+      newErrors.name = t('checkout.errors.name_required', 'Name ist erforderlich')
     }
     
     if (!contactDetails.phone.trim()) {
-      newErrors.phone = t('checkout.errors.phone_required', 'Телефон обязателен для заполнения')
+      newErrors.phone = t('checkout.errors.phone_required', 'Telefonnummer ist erforderlich')
     } else if (!/^[\d\s\-\+\(\)]+$/.test(contactDetails.phone.trim())) {
-      newErrors.phone = t('checkout.errors.phone_invalid', 'Введите корректный номер телефона')
+      newErrors.phone = t('checkout.errors.phone_invalid', 'Bitte geben Sie eine gültige Telefonnummer ein')
     }
     
     // Validate delivery address if delivery is selected
     if (deliveryType === 'delivery') {
       if (!contactDetails.street.trim()) {
-        newErrors.street = t('checkout.errors.street_required', 'Улица обязательна для заполнения')
+        newErrors.street = t('checkout.errors.street_required', 'Straße ist erforderlich')
       }
       
       if (!contactDetails.houseNumber.trim()) {
-        newErrors.houseNumber = t('checkout.errors.house_required', 'Номер дома обязателен для заполнения')
+        newErrors.houseNumber = t('checkout.errors.house_required', 'Hausnummer ist erforderlich')
       }
       
       if (!contactDetails.postalCode.trim()) {
-        newErrors.postalCode = t('checkout.errors.postal_required', 'Почтовый индекс обязателен для заполнения')
+        newErrors.postalCode = t('checkout.errors.postal_required', 'Postleitzahl ist erforderlich')
       } else if (!/^\d{5}$/.test(contactDetails.postalCode.trim())) {
-        newErrors.postalCode = t('checkout.errors.postal_invalid', 'Почтовый индекс должен содержать 5 цифр')
+        newErrors.postalCode = t('checkout.errors.postal_invalid', 'Die Postleitzahl muss 5 Ziffern enthalten')
       }
       
       if (!contactDetails.city.trim()) {
-        newErrors.city = t('checkout.errors.city_required', 'Город обязателен для заполнения')
+        newErrors.city = t('checkout.errors.city_required', 'Ort ist erforderlich')
       }
     }
     
@@ -323,10 +324,10 @@ export default function CheckoutPage() {
   const validateStep2 = (): boolean => {
     const newErrors: Record<string, string> = {}
     if (!paymentMethod) {
-      newErrors.paymentMethod = t('checkout.errors.payment_required', 'Выберите способ оплаты')
+      newErrors.paymentMethod = t('checkout.errors.payment_required', 'Bitte wählen Sie eine Zahlungsmethode')
     }
     if (!termsAccepted) {
-      newErrors.terms = t('checkout.errors.terms_required', 'Подтвердите согласие с AGB и Widerrufsbelehrung')
+      newErrors.terms = t('checkout.errors.terms_required', 'Bitte bestätigen Sie AGB und Widerrufsbelehrung')
     }
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
@@ -424,17 +425,17 @@ export default function CheckoutPage() {
     e.preventDefault()
     
     if (state.items.length === 0) {
-      setErrors({ submit: t('checkout.errors.cart_empty', 'Корзина пуста. Добавьте товары перед оформлением заказа.') })
+      setErrors({ submit: t('checkout.errors.cart_empty', 'Ihr Warenkorb ist leer. Bitte legen Sie zuerst Artikel in den Warenkorb.') })
       return
     }
 
     if (orderBlocked) {
-      setErrors({ submit: orderBlockMessage || t('checkout.errors.closed', 'Сейчас заказы не принимаются.') })
+      setErrors({ submit: orderBlockMessage || t('checkout.errors.closed', 'Derzeit nehmen wir keine Bestellungen an.') })
       return
     }
 
     if (!termsAccepted) {
-      setErrors({ terms: t('checkout.errors.terms_required', 'Подтвердите согласие с AGB и Widerrufsbelehrung') })
+      setErrors({ terms: t('checkout.errors.terms_required', 'Bitte bestätigen Sie AGB und Widerrufsbelehrung') })
       return
     }
     
@@ -475,7 +476,12 @@ export default function CheckoutPage() {
         // выбор акций — чтобы заказ применил скидку и добавил BOGO/подарок (идёт в чек и Telegram)
         promotionPromoCode: state.promotionPromoCode || undefined,
         selectedBogoSecond: Object.entries(state.selectedBogoSecond || {}).flatMap(
-          ([promotionId, ids]) => (Array.isArray(ids) ? ids : [ids]).map((productId) => ({ promotionId, productId }))
+          ([promotionId, sels]) =>
+            (Array.isArray(sels) ? sels : [sels]).map((s: any) => ({
+              promotionId,
+              // новый формат: {itemId, productId}; страховка для старого (строка)
+              productId: typeof s === 'string' ? s : s?.productId,
+            }))
         ),
         selectedFreeGifts: Object.entries(state.selectedFreeGifts || {}).map(
           ([promotionId, productId]) => ({ promotionId, productId })
@@ -499,14 +505,14 @@ export default function CheckoutPage() {
       console.log('Order response:', data)
       
       if (!response.ok || !data.success) {
-        const errorMessage = data.error || t('checkout.errors.order_failed', 'Не удалось создать заказ')
+        const errorMessage = data.error || t('checkout.errors.order_failed', 'Bestellung konnte nicht erstellt werden')
         console.error('Order creation failed:', errorMessage)
         throw new Error(errorMessage)
       }
       
       if (!data.order || !data.order.id) {
         console.error('Invalid order response:', data)
-        throw new Error(t('checkout.errors.server_response', 'Неверный ответ от сервера'))
+        throw new Error(t('checkout.errors.server_response', 'Ungültige Antwort vom Server'))
       }
       
       sessionStorage.setItem(`order:${data.order.id}:phone`, contactDetails.phone)
@@ -541,7 +547,7 @@ export default function CheckoutPage() {
       window.location.href = `/checkout/confirmation/${data.order.id}`
     } catch (error: any) {
       console.error('Error submitting order:', error)
-      setErrors({ submit: error.message || t('checkout.errors.submit_generic', 'Произошла ошибка при оформлении заказа. Попробуйте еще раз.') })
+      setErrors({ submit: error.message || t('checkout.errors.submit_generic', 'Beim Abschließen der Bestellung ist ein Fehler aufgetreten. Bitte versuchen Sie es erneut.') })
       setIsSubmitting(false)
     }
   }
@@ -580,10 +586,10 @@ export default function CheckoutPage() {
     <div className="container mx-auto px-4 py-8">
       <Link href="/cart" className="flex items-center text-primary-600 mb-6">
         <ChevronLeft className="w-5 h-5 mr-1" />
-        {t('checkout.back_to_cart', 'Вернуться в корзину')}
+        {t('checkout.back_to_cart', 'Zurück zum Warenkorb')}
       </Link>
       
-      <h1 className="text-3xl font-bold mb-8">{t('checkout.title', 'Оформление заказа')}</h1>
+      <h1 className="text-3xl font-bold mb-8">{t('checkout.title', 'Bestellung abschließen')}</h1>
       
       {/* Steps Progress */}
       <div className="flex mb-10">
@@ -595,7 +601,7 @@ export default function CheckoutPage() {
             }`}>
               1
             </span>
-            <p className="mt-1 text-sm">{t('checkout.steps.address', 'Адрес')}</p>
+            <p className="mt-1 text-sm">{t('checkout.steps.address', 'Adresse')}</p>
           </div>
         </div>
         
@@ -607,7 +613,7 @@ export default function CheckoutPage() {
             }`}>
               2
             </span>
-            <p className="mt-1 text-sm">{t('checkout.steps.payment', 'Оплата')}</p>
+            <p className="mt-1 text-sm">{t('checkout.steps.payment', 'Zahlung')}</p>
           </div>
         </div>
         
@@ -619,7 +625,7 @@ export default function CheckoutPage() {
             }`}>
               3
             </span>
-            <p className="mt-1 text-sm">{t('checkout.steps.confirmation', 'Подтверждение')}</p>
+            <p className="mt-1 text-sm">{t('checkout.steps.confirmation', 'Bestätigung')}</p>
           </div>
         </div>
       </div>
@@ -629,10 +635,10 @@ export default function CheckoutPage() {
           {/* Step 1: Delivery Info */}
           {step === 1 && (
             <div className="bg-white rounded-lg shadow-md p-6">
-              <h2 className="text-xl font-semibold mb-4">{t('checkout.delivery_info', 'Информация о доставке')}</h2>
+              <h2 className="text-xl font-semibold mb-4">{t('checkout.delivery_info', 'Lieferinformationen')}</h2>
               
               <div className="mb-6">
-                <label className="block text-gray-700 font-medium mb-2">{t('checkout.delivery_type_label', 'Выберите способ получения:')}</label>
+                <label className="block text-gray-700 font-medium mb-2">{t('checkout.delivery_type_label', 'Wählen Sie die Art der Übergabe:')}</label>
                 <div className="flex flex-col md:flex-row gap-4">
                   <label className={`flex items-center p-4 border rounded-lg cursor-pointer ${
                     deliveryType === 'delivery' 
@@ -649,8 +655,8 @@ export default function CheckoutPage() {
                     />
                     <Truck className="h-6 w-6 mr-3 text-primary-600" />
                     <div>
-                      <p className="font-medium">{t('checkout.delivery', 'Доставка')}</p>
-                      <p className="text-sm text-gray-500">{t('checkout.delivery_time', '30-60 минут, в пиковое время до 90 минут')}</p>
+                      <p className="font-medium">{t('checkout.delivery', 'Lieferung')}</p>
+                      <p className="text-sm text-gray-500">{t('checkout.delivery_time', '30-60 Minuten, zu Stoßzeiten bis 90 Minuten')}</p>
                     </div>
                     {deliveryType === 'delivery' && (
                       <Check className="h-5 w-5 ml-auto text-primary-600" />
@@ -676,8 +682,8 @@ export default function CheckoutPage() {
                       </svg>
                     </div>
                     <div>
-                      <p className="font-medium">{t('checkout.pickup', 'Самовывоз')}</p>
-                      <p className="text-sm text-gray-500">{t('checkout.pickup_time', '15-20 минут')}</p>
+                      <p className="font-medium">{t('checkout.pickup', 'Abholung')}</p>
+                      <p className="text-sm text-gray-500">{t('checkout.pickup_time', '15-20 Minuten')}</p>
                     </div>
                     {deliveryType === 'pickup' && (
                       <Check className="h-5 w-5 ml-auto text-primary-600" />
@@ -701,13 +707,13 @@ export default function CheckoutPage() {
                     const visibleSlots = filterSlotsByCurrentTime(slots, timeZone)
                     return (
                       <div className="mt-4">
-                        <label className="block text-gray-700 font-medium mb-2">{t('checkout.desired_delivery_time', 'Желаемое время доставки')}</label>
+                        <label className="block text-gray-700 font-medium mb-2">{t('checkout.desired_delivery_time', 'Gewünschte Lieferzeit')}</label>
                         <select
                           className="input"
                           value={visibleSlots.includes(desiredDeliveryTime) ? desiredDeliveryTime : ''}
                           onChange={(e) => setDesiredDeliveryTime(e.target.value)}
                         >
-                          <option value="">{t('checkout.as_soon_as_possible', 'Как можно раньше')}</option>
+                          <option value="">{t('checkout.as_soon_as_possible', 'So schnell wie möglich')}</option>
                           {visibleSlots.map((slot) => (
                             <option key={slot} value={slot}>{slot}</option>
                           ))}
@@ -718,11 +724,11 @@ export default function CheckoutPage() {
                 </div>
               )}
               
-              <h3 className="text-lg font-medium mb-4">{t('checkout.contact_info', 'Контактная информация')}</h3>
+              <h3 className="text-lg font-medium mb-4">{t('checkout.contact_info', 'Kontaktinformationen')}</h3>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                 <div>
-                  <label htmlFor="name" className="block text-gray-700 text-sm font-medium mb-1">{t('checkout.name', 'Имя')} *</label>
+                  <label htmlFor="name" className="block text-gray-700 text-sm font-medium mb-1">{t('checkout.name', 'Name')} *</label>
                   <input
                     id="name"
                     name="name"
@@ -736,7 +742,7 @@ export default function CheckoutPage() {
                 </div>
                 
                 <div>
-                  <label htmlFor="phone" className="block text-gray-700 text-sm font-medium mb-1">{t('checkout.phone', 'Телефон')} *</label>
+                  <label htmlFor="phone" className="block text-gray-700 text-sm font-medium mb-1">{t('checkout.phone', 'Telefon')} *</label>
                   <input
                     id="phone"
                     name="phone"
@@ -760,7 +766,7 @@ export default function CheckoutPage() {
                   value={contactDetails.email}
                   onChange={handleContactDetailChange}
                 />
-                <p className="text-xs text-gray-500 mt-1">{t('checkout.email_hint', 'На этот адрес будет отправлен чек')}</p>
+                <p className="text-xs text-gray-500 mt-1">{t('checkout.email_hint', 'An diese Adresse wird der Beleg gesendet')}</p>
                 <p className="text-xs text-gray-400 mt-1">
                   {t(
                     'checkout.email_marketing_notice',
@@ -774,11 +780,11 @@ export default function CheckoutPage() {
               
               {deliveryType === 'delivery' && (
                 <>
-                  <h3 className="text-lg font-medium mb-4">{t('checkout.address_title', 'Адрес доставки')}</h3>
+                  <h3 className="text-lg font-medium mb-4">{t('checkout.address_title', 'Lieferadresse')}</h3>
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                     <div>
-                      <label htmlFor="street" className="block text-gray-700 text-sm font-medium mb-1">{t('checkout.street', 'Улица')} *</label>
+                      <label htmlFor="street" className="block text-gray-700 text-sm font-medium mb-1">{t('checkout.street', 'Straße')} *</label>
                       <input
                         id="street"
                         name="street"
@@ -792,7 +798,7 @@ export default function CheckoutPage() {
                     </div>
                     
                     <div>
-                      <label htmlFor="houseNumber" className="block text-gray-700 text-sm font-medium mb-1">{t('checkout.house_number', 'Номер дома')} *</label>
+                      <label htmlFor="houseNumber" className="block text-gray-700 text-sm font-medium mb-1">{t('checkout.house_number', 'Hausnummer')} *</label>
                       <input
                         id="houseNumber"
                         name="houseNumber"
@@ -808,7 +814,7 @@ export default function CheckoutPage() {
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                     <div>
-                      <label htmlFor="postalCode" className="block text-gray-700 text-sm font-medium mb-1">{t('checkout.postal_code', 'Почтовый индекс')} *</label>
+                      <label htmlFor="postalCode" className="block text-gray-700 text-sm font-medium mb-1">{t('checkout.postal_code', 'Postleitzahl')} *</label>
                       <input
                         id="postalCode"
                         name="postalCode"
@@ -823,7 +829,7 @@ export default function CheckoutPage() {
                     </div>
                     
                     <div>
-                      <label htmlFor="city" className="block text-gray-700 text-sm font-medium mb-1">{t('checkout.city', 'Город')} *</label>
+                      <label htmlFor="city" className="block text-gray-700 text-sm font-medium mb-1">{t('checkout.city', 'Ort')} *</label>
                       <input
                         id="city"
                         name="city"
@@ -838,7 +844,7 @@ export default function CheckoutPage() {
                   </div>
                   
                   <div className="mb-4">
-                    <label htmlFor="floor" className="block text-gray-700 text-sm font-medium mb-1">{t('checkout.floor', 'Этаж / Квартира')}</label>
+                    <label htmlFor="floor" className="block text-gray-700 text-sm font-medium mb-1">{t('checkout.floor', 'Etage / Wohnung')}</label>
                     <input
                       id="floor"
                       name="floor"
@@ -882,13 +888,13 @@ export default function CheckoutPage() {
               )}
               
               <div className="mb-6">
-                <label htmlFor="notes" className="block text-gray-700 text-sm font-medium mb-1">{t('checkout.notes', 'Примечания к заказу')}</label>
+                <label htmlFor="notes" className="block text-gray-700 text-sm font-medium mb-1">{t('checkout.notes', 'Hinweise zur Bestellung')}</label>
                 <textarea
                   id="notes"
                   name="notes"
                   rows={3}
                   className="input resize-none"
-                  placeholder={t('checkout.notes_placeholder', 'Особые пожелания или инструкции')}
+                  placeholder={t('checkout.notes_placeholder', 'Besondere Wünsche oder Hinweise')}
                   value={contactDetails.notes}
                   onChange={handleContactDetailChange}
                 ></textarea>
@@ -903,7 +909,7 @@ export default function CheckoutPage() {
                     onChange={handleContactDetailChange}
                     className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
                   />
-                  <span className="ml-2 text-gray-700">{t('checkout.save_info', 'Сохранить информацию для следующих заказов')}</span>
+                  <span className="ml-2 text-gray-700">{t('checkout.save_info', 'Informationen für nächste Bestellungen speichern')}</span>
                 </label>
               </div>
               
@@ -914,7 +920,7 @@ export default function CheckoutPage() {
                   onClick={handleNextStep}
                   disabled={deliveryType === 'delivery' && !deliveryGate.allowed}
                 >
-                  {t('common.next', 'Далее')}
+                  {t('common.next', 'Weiter')}
                 </button>
               </div>
             </div>
@@ -923,7 +929,7 @@ export default function CheckoutPage() {
           {/* Step 2: Payment Method */}
           {step === 2 && (
             <div className="bg-white rounded-lg shadow-md p-6">
-              <h2 className="text-xl font-semibold mb-4">{t('checkout.payment_method', 'Способ оплаты')}</h2>
+              <h2 className="text-xl font-semibold mb-4">{t('checkout.payment_method', 'Zahlungsmethode')}</h2>
               
               {errors.paymentMethod && (
                 <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
@@ -961,7 +967,7 @@ export default function CheckoutPage() {
                       </svg>
                     </div>
                     <div>
-                      <p className="font-medium">{t('checkout.payments.cash', 'Наличными при получении')}</p>
+                      <p className="font-medium">{t('checkout.payments.cash', 'Bar bei Lieferung')}</p>
                     </div>
                     {paymentMethod === 'cash' && (
                       <Check className="h-5 w-5 ml-auto text-primary-600" />
@@ -992,7 +998,7 @@ export default function CheckoutPage() {
                     />
                     <CreditCard className="h-6 w-6 mr-3 text-primary-600" />
                     <div>
-                      <p className="font-medium">{t('checkout.payments.card', 'Картой при получении')}</p>
+                      <p className="font-medium">{t('checkout.payments.card', 'Karte bei Lieferung')}</p>
                     </div>
                     {paymentMethod === 'card' && (
                       <Check className="h-5 w-5 ml-auto text-primary-600" />
@@ -1107,7 +1113,7 @@ export default function CheckoutPage() {
                   onClick={handlePreviousStep}
                   disabled={isSubmitting}
                 >
-                  {t('common.back', 'Назад')}
+                  {t('common.back', 'Zurück')}
                 </button>
                 
                 <button 
@@ -1119,10 +1125,10 @@ export default function CheckoutPage() {
                   {isSubmitting ? (
                     <>
                       <Loader2 className="w-5 h-5 animate-spin" />
-                      {t('checkout.submitting', 'Оформление...')}
+                      {t('checkout.submitting', 'Wird gesendet...')}
                     </>
                   ) : (
-                    t('checkout.place_order', 'Оформить заказ')
+                    t('checkout.place_order', 'Bestellung abschicken')
                   )}
                 </button>
               </div>
@@ -1134,7 +1140,7 @@ export default function CheckoutPage() {
         {/* Order Summary */}
         <div className="lg:col-span-1">
           <div className="bg-white rounded-lg shadow-md p-6 sticky top-24">
-            <h2 className="text-xl font-bold mb-4">{t('checkout.summary_title', 'Ваш заказ')}</h2>
+            <h2 className="text-xl font-bold mb-4">{t('checkout.summary_title', 'Ihre Bestellung')}</h2>
             
             {/* Cart Items List */}
             {state.items.length > 0 ? (
@@ -1151,7 +1157,7 @@ export default function CheckoutPage() {
                       <div className="flex justify-between items-start">
                         <div className="flex-1">
                           <div className="flex items-center gap-2 mb-1">
-                            <h4 className="font-semibold text-gray-900">{item.name}</h4>
+                            <h4 className="font-semibold text-gray-900"><NoTranslate>{item.name}</NoTranslate></h4>
                             <span className="text-xs text-gray-500 bg-white px-2 py-0.5 rounded">
                               ×{item.quantity}
                             </span>
@@ -1159,13 +1165,13 @@ export default function CheckoutPage() {
                           
                           {item.size && item.size.name && (
                             <p className="text-sm text-gray-700 mb-1">
-                              <span className="font-medium">{t('product.size', 'Размер')}:</span> {item.size.name}
+                              <span className="font-medium">{t('product.size', 'Größe')}:</span> <NoTranslate>{item.size.name}</NoTranslate>
                             </p>
                           )}
 
                           {item.options && item.options.length > 0 && (
                             <p className="text-sm text-gray-700 mb-1">
-                              {item.options.map(o => o.name).join(', ')}
+                              <NoTranslate>{item.options.map(o => o.name).join(', ')}</NoTranslate>
                             </p>
                           )}
 
@@ -1173,10 +1179,10 @@ export default function CheckoutPage() {
                             <div className="text-xs text-gray-600 mt-2 space-y-1">
                               {item.extras?.toppings && item.extras.toppings.length > 0 && (
                                 <div>
-                                  <span className="font-medium">{t('product.toppings', 'Топпинги')}:</span>{' '}
+                                  <span className="font-medium">{t('product.toppings', 'Beläge')}:</span>{' '}
                                   {item.extras.toppings.map((t, i) => (
                                     <span key={i}>
-                                      {t.name}
+                                      <NoTranslate>{t.name}</NoTranslate>
                                       {i < item.extras!.toppings!.length - 1 && ', '}
                                     </span>
                                   ))}
@@ -1184,10 +1190,10 @@ export default function CheckoutPage() {
                               )}
                               {item.extras?.sauces && item.extras.sauces.length > 0 && (
                                 <div>
-                                  <span className="font-medium">{t('product.sauces', 'Соусы')}:</span>{' '}
+                                  <span className="font-medium">{t('product.sauces', 'Saucen')}:</span>{' '}
                                   {item.extras.sauces.map((s, i) => (
                                     <span key={i}>
-                                      {s.name}
+                                      <NoTranslate>{s.name}</NoTranslate>
                                       {i < item.extras!.sauces!.length - 1 && ', '}
                                     </span>
                                   ))}
@@ -1195,10 +1201,10 @@ export default function CheckoutPage() {
                               )}
                               {item.extras?.sides && item.extras.sides.length > 0 && (
                                 <div>
-                                  <span className="font-medium">{t('product.sides', 'Дополнения')}:</span>{' '}
+                                  <span className="font-medium">{t('product.sides', 'Beilagen')}:</span>{' '}
                                   {item.extras.sides.map((s, i) => (
                                     <span key={i}>
-                                      {s.name}
+                                      <NoTranslate>{s.name}</NoTranslate>
                                       {i < item.extras!.sides!.length - 1 && ', '}
                                     </span>
                                   ))}
@@ -1210,11 +1216,11 @@ export default function CheckoutPage() {
                         
                         <div className="ml-4 text-right">
                           <p className="font-semibold text-gray-900">
-                            {(item.price * item.quantity).toFixed(2)} €
+                            <NoTranslate>{(item.price * item.quantity).toFixed(2)} €</NoTranslate>
                           </p>
                           {item.quantity > 1 && (
                             <p className="text-xs text-gray-500">
-                              {item.price.toFixed(2)} € × {item.quantity}
+                              <NoTranslate>{item.price.toFixed(2)} € × {item.quantity}</NoTranslate>
                             </p>
                           )}
                         </div>
@@ -1225,7 +1231,7 @@ export default function CheckoutPage() {
               </div>
             ) : (
               <div className="border-b pb-4 mb-4 text-center py-8 text-gray-500">
-                <p>{t('cart.empty', 'Корзина пуста')}</p>
+                <p>{t('cart.empty', 'Ihr Warenkorb ist leer')}</p>
               </div>
             )}
 
@@ -1271,33 +1277,33 @@ export default function CheckoutPage() {
 
             <div className="border-b pb-4 mb-4">
               <div className="flex justify-between mb-2">
-                <span>{t('checkout.items', 'Товары')} ({totalItems})</span>
-                <span className="font-medium">{merchandiseSubtotal.toFixed(2)} €</span>
+                <span>{t('checkout.items', 'Artikel')} ({totalItems})</span>
+                <NoTranslate className="font-medium">{merchandiseSubtotal.toFixed(2)} €</NoTranslate>
               </div>
               
               <div className="flex justify-between mb-2">
-                <span>{t('checkout.delivery', 'Доставка')}</span>
-                <span>{state.deliveryFee === 0 ? t('cart.free_delivery', 'Бесплатно') : `${state.deliveryFee.toFixed(2)} €`}</span>
+                <span>{t('checkout.delivery', 'Lieferung')}</span>
+                <span>{state.deliveryFee === 0 ? t('cart.free_delivery', 'Kostenlos') : <NoTranslate>{state.deliveryFee.toFixed(2)} €</NoTranslate>}</span>
               </div>
               
               {state.couponDiscount > 0 && (
                 <div className="flex justify-between text-green-600 text-sm mb-2">
-                  <span>{t('checkout.discount_coupon', 'Скидка по промокоду')} {state.couponCode}</span>
-                  <span>-{state.couponDiscount.toFixed(2)} €</span>
+                  <span>{t('checkout.discount_coupon', 'Rabatt mit Gutscheincode')} <NoTranslate>{state.couponCode}</NoTranslate></span>
+                  <NoTranslate>-{state.couponDiscount.toFixed(2)} €</NoTranslate>
                 </div>
               )}
               
               {state.loyaltyPointsDiscount > 0 && (
                 <div className="flex justify-between text-green-600 text-sm mb-2">
-                  <span>{t('checkout.discount_points', 'Скидка (баллы)')}</span>
-                  <span>-{state.loyaltyPointsDiscount.toFixed(2)} €</span>
+                  <span>{t('checkout.discount_points', 'Rabatt (Punkte)')}</span>
+                  <NoTranslate>-{state.loyaltyPointsDiscount.toFixed(2)} €</NoTranslate>
                 </div>
               )}
             </div>
             
             <div className="flex justify-between font-bold">
-              <span>{t('cart.total', 'Итого')}</span>
-              <span>{state.total.toFixed(2)} €</span>
+              <span>{t('cart.total', 'Gesamt')}</span>
+              <NoTranslate>{state.total.toFixed(2)} €</NoTranslate>
             </div>
           </div>
         </div>
@@ -1310,7 +1316,7 @@ export default function CheckoutPage() {
               {t('checkout.payments.online', 'Online bezahlen')}
             </h3>
             <p className="mb-4 text-sm text-gray-500">
-              {t('checkout.payments.online_amount', 'Zu zahlen')}: {sumup.amount.toFixed(2)} €
+              {t('checkout.payments.online_amount', 'Zu zahlen')}: <NoTranslate>{sumup.amount.toFixed(2)} €</NoTranslate>
             </p>
 
             <SumUpPaymentWidget

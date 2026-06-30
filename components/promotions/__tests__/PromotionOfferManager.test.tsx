@@ -57,7 +57,10 @@ const makeCalc = (bogoOffers: any[], giftOffers: any[] = []) =>
 const setCart = (
   promotionCalculation: any,
   items?: any[],
-  extra: { selectedFreeGifts?: Record<string, string> } = {}
+  extra: {
+    selectedFreeGifts?: Record<string, string>;
+    selectedBogoSecond?: Record<string, string[]>;
+  } = {}
 ) => {
   h.cart = {
     state: {
@@ -66,7 +69,7 @@ const setCart = (
       ],
       promotionCalculation,
       couponCode: undefined,
-      selectedBogoSecond: {},
+      selectedBogoSecond: extra.selectedBogoSecond || {},
       selectedFreeGifts: extra.selectedFreeGifts || {},
       declinedFreeGifts: {},
     },
@@ -133,6 +136,30 @@ describe('PromotionOfferManager — BOGO popup (multi-slot)', () => {
 
     // Свежий пересчёт без оффера (все слоты заполнены) — попапа нет.
     setCart(makeCalc([]));
+    rerender(<PromotionOfferManager />);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('устаревший пересчёт (оффер ещё есть, выбор НЕ отражён) НЕ переоткрывает попап — нет мигания', async () => {
+    const user = userEvent.setup();
+    // Одна подходящая пицца = один слот. Выбираем награду и подтверждаем.
+    const oneItem = [
+      { id: 'p1', productId: 'p1', name: 'Bayern', size: { name: '' }, quantity: 1, price: 10 },
+    ];
+    setCart(makeCalc([makeBogoOffer()]), oneItem);
+    const { rerender } = render(<PromotionOfferManager />);
+    await screen.findByRole('dialog');
+    await user.click(screen.getAllByRole('radio')[0]);
+    await user.click(screen.getByRole('button', { name: 'Auswahl übernehmen' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    // Устаревший пересчёт (НОВАЯ ссылка): запрос ушёл ДО отправки выбора, поэтому
+    // оффер ещё присутствует, а bogoSecondItems пуст. Но selectedBogoSecond уже
+    // содержит выбор (1 слот заполнен). Попап НЕ должен открыться (иначе мигание).
+    setCart(makeCalc([makeBogoOffer()]), oneItem, {
+      selectedBogoSecond: { promo1: ['p1'] },
+    });
     rerender(<PromotionOfferManager />);
     await new Promise((r) => setTimeout(r, 0));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();

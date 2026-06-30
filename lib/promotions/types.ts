@@ -97,6 +97,13 @@ export interface BogoSecondOffer {
   options: BogoSecondOption[];
   /** Сколько ещё бесплатных/половинных позиций можно выбрать (незаполненные слоты). */
   remaining?: number;
+  /**
+   * Подходящие (квалифицирующие) строки корзины, давшие слоты этой акции — по ним
+   * клиент привязывает выбранную награду к конкретной пицце. Удаление такой пиццы
+   * убирает её награду (а не «случайную»). productId+sizeName совпадают с тем, что
+   * корзина отправляет в расчёт (item.productId||item.id, item.size?.name||'').
+   */
+  qualifyingItems?: { productId: string; sizeName?: string }[];
 }
 
 /** Gewählter 2. Artikel — eigene Bestellzeile. */

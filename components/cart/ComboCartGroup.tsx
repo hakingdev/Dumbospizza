@@ -3,6 +3,7 @@
 import { Trash2 } from 'lucide-react';
 import type { CartItem } from '../../lib/contexts/CartContext';
 import { type ComboGroup, isComboDiscountLine } from '../../lib/cart/combo';
+import { NoTranslate } from '../NoTranslate';
 
 const euro = (n: number) => `${n.toFixed(2)} €`;
 
@@ -27,7 +28,9 @@ export function ComboCartGroup({
           <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-red-100 text-2xl">
             🍕
           </div>
-          <h3 className="min-w-0 break-words font-bold leading-tight text-red-700">{group.label}</h3>
+          <h3 className="min-w-0 break-words font-bold leading-tight text-red-700">
+            <NoTranslate>{group.label}</NoTranslate>
+          </h3>
         </div>
         <button
           type="button"
@@ -54,19 +57,19 @@ export function ComboCartGroup({
               <span className="flex min-w-0 items-start gap-1.5">
                 <span className="mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full bg-red-400" />
                 <span className="min-w-0">
-                  {it.name}
+                  <NoTranslate>{it.name}</NoTranslate>
                   {it.comboRole === 'pizza' && sizeLabel ? (
-                    <span className="text-red-500"> ({sizeLabel})</span>
+                    <NoTranslate className="text-red-500"> ({sizeLabel})</NoTranslate>
                   ) : null}
                 </span>
               </span>
-              <span className="shrink-0 whitespace-nowrap">
+              <NoTranslate className="shrink-0 whitespace-nowrap">
                 {discount
                   ? `−${euro(Math.abs(it.price) * it.quantity)}`
                   : isFree
                     ? freeLabel
                     : euro(it.price * it.quantity)}
-              </span>
+              </NoTranslate>
             </li>
           );
         })}
@@ -74,7 +77,7 @@ export function ComboCartGroup({
 
       <div className="mt-3 flex items-center justify-between border-t border-red-200 pt-3">
         <span className="font-extrabold text-red-700">Gesamt</span>
-        <span className="text-lg font-extrabold text-red-600">{euro(group.total)}</span>
+        <NoTranslate className="text-lg font-extrabold text-red-600">{euro(group.total)}</NoTranslate>
       </div>
     </div>
   );

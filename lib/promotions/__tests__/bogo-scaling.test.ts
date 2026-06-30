@@ -94,3 +94,70 @@ describe('BOGO per-slot choice (idempotent slots from cart, manual reward choice
     expect(c.bogoSecondOffers).toHaveLength(0); // слот заполнен
   });
 });
+
+describe('BOGO half-price picker keeps size-specific prices', () => {
+  const halfPricePromo = {
+    ...promo,
+    bogoMode: 'half_price',
+    targetItems: [{ productId: 'bbq' }],
+  } as any;
+  const bbqCatalog = {
+    bogo1: [
+      {
+        id: 'bbq|small',
+        productId: 'bbq',
+        sizeName: 'small',
+        name: 'BBQ — Small',
+        unitPrice: 15.8,
+        effectivePrice: 7.9,
+      },
+      {
+        id: 'bbq|medium',
+        productId: 'bbq',
+        sizeName: 'medium',
+        name: 'BBQ — Medium',
+        unitPrice: 20.8,
+        effectivePrice: 10.4,
+      },
+      {
+        id: 'bbq|large',
+        productId: 'bbq',
+        sizeName: 'large',
+        name: 'BBQ — Large',
+        unitPrice: 30.8,
+        effectivePrice: 15.4,
+      },
+    ],
+  };
+
+  it('не копирует цену выбранного размера на остальные размеры того же товара', () => {
+    const c = calculatePromotions(
+      [{ productId: 'bbq', name: 'BBQ', quantity: 1, unitPrice: 15.8, sizeName: 'small' }],
+      [halfPricePromo],
+      { bogoCatalog: bbqCatalog }
+    );
+
+    const offer = c.bogoSecondOffers[0];
+    expect(offer.options.map((o) => [o.id, o.effectivePrice])).toEqual([
+      ['bbq|small', 7.9],
+      ['bbq|medium', 10.4],
+      ['bbq|large', 15.4],
+    ]);
+  });
+
+  it('использует цену из корзины только для точно совпавшего размера', () => {
+    const c = calculatePromotions(
+      // 16.8 имитирует тот же size + выбранный extra; другие размеры берутся из каталога.
+      [{ productId: 'bbq', name: 'BBQ', quantity: 1, unitPrice: 16.8, sizeName: 'small' }],
+      [halfPricePromo],
+      { bogoCatalog: bbqCatalog }
+    );
+
+    const prices = Object.fromEntries(
+      c.bogoSecondOffers[0].options.map((o) => [o.id, o.effectivePrice])
+    );
+    expect(prices['bbq|small']).toBe(8.4);
+    expect(prices['bbq|medium']).toBe(10.4);
+    expect(prices['bbq|large']).toBe(15.4);
+  });
+});

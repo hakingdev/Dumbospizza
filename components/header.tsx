@@ -75,7 +75,7 @@ export function Header() {
                   <Phone className="mr-1 h-4 w-4 shrink-0" />
                   <span className="font-medium" translate="no">{storeInfo.phone}</span>
                 </a>
-                <span className="min-w-0 leading-tight">{t('header.hours', 'с 17:00 до 21:30 каждый день')}</span>
+                <span className="min-w-0 leading-tight">{t('header.hours', 'täglich 17:00 - 21:30')}</span>
               </div>
             </div>
           </div>
@@ -95,16 +95,16 @@ export function Header() {
             {/* Desktop Navigation */}
             <nav className="hidden lg:flex items-center space-x-8">
               <Link href="/menu" className="text-gray-700 hover:text-primary-600 font-medium transition-colors">
-                {t('nav.menu', 'Меню')}
+                {t('nav.menu', 'Speisekarte')}
               </Link>
               <Link href="/delivery" className="text-gray-700 hover:text-primary-600 font-medium transition-colors">
-                {t('nav.delivery', 'Доставка')}
+                {t('nav.delivery', 'Liefergebiete')}
               </Link>
               <Link href="/about" className="text-gray-700 hover:text-primary-600 font-medium transition-colors">
-                {t('nav.about', 'О нас')}
+                {t('nav.about', 'Über uns')}
               </Link>
               <Link href="/track" className="text-gray-700 hover:text-primary-600 font-medium transition-colors">
-                {t('nav.track', 'Отследить заказ')}
+                {t('nav.track', 'Bestellung verfolgen')}
               </Link>
             </nav>
             
@@ -121,7 +121,7 @@ export function Header() {
               <button 
                 onClick={() => setIsCartModalOpen(true)}
                 className="relative flex items-center justify-center bg-primary-600 text-white rounded-full w-12 h-12 hover:bg-primary-700 transition-colors shadow-md"
-                title={t('nav.cart', 'Корзина')}
+                title={t('nav.cart', 'Warenkorb')}
               >
                 <ShoppingCart className="h-6 w-6" />
                 {cartItemsCount > 0 && (
@@ -151,16 +151,16 @@ export function Header() {
           <div id="mobile-menu" className="lg:hidden border-t bg-white">
             <nav className="container mx-auto px-4 py-4 flex flex-col space-y-3">
               <Link href="/menu" className="text-gray-700 hover:text-primary-600 py-2 font-medium" onClick={() => setIsMenuOpen(false)}>
-                {t('nav.menu', 'Меню')}
+                {t('nav.menu', 'Speisekarte')}
               </Link>
               <Link href="/delivery" className="text-gray-700 hover:text-primary-600 py-2 font-medium" onClick={() => setIsMenuOpen(false)}>
-                {t('nav.delivery', 'Доставка')}
+                {t('nav.delivery', 'Liefergebiete')}
               </Link>
               <Link href="/about" className="text-gray-700 hover:text-primary-600 py-2 font-medium" onClick={() => setIsMenuOpen(false)}>
-                {t('nav.about', 'О нас')}
+                {t('nav.about', 'Über uns')}
               </Link>
               <Link href="/track" className="text-gray-700 hover:text-primary-600 py-2 font-medium" onClick={() => setIsMenuOpen(false)}>
-                {t('nav.track', 'Отследить заказ')}
+                {t('nav.track', 'Bestellung verfolgen')}
               </Link>
               <Link
                 href="/account"

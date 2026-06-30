@@ -11,6 +11,7 @@ import {
   getOfferParticipationFallback,
   loadParticipatingProducts,
 } from '../../../../lib/promotions/angebote-page-data';
+import { NoTranslate } from '../../../../components/NoTranslate';
 
 // ISR: страница акции кэшируется и ревалидируется (товары/акция меняются редко).
 // Раньше был force-dynamic → каждый заход = 3 запроса к удалённой БД, отсюда долгая загрузка.
@@ -96,8 +97,8 @@ export default async function AngebotDetailPage({ params }: Props) {
                   </div>
                 )}
                 <div>
-                  <div className="font-semibold">{prod.name}</div>
-                  <div className="text-primary-600 font-bold mt-1">ab {prod.basePrice.toFixed(2)} €</div>
+                  <div className="font-semibold"><NoTranslate>{prod.name}</NoTranslate></div>
+                  <div className="text-primary-600 font-bold mt-1">Preis ab <NoTranslate>{prod.basePrice.toFixed(2)} €</NoTranslate></div>
                 </div>
               </Link>
             ))}

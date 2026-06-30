@@ -10,6 +10,7 @@ import { normalizeObjectId } from '../lib/normalize-id';
 import { getSizePrice } from '../lib/product-pricing';
 import { ProductPromotionsBanner } from './promotions/PromotionBadges';
 import { SafeImage } from './SafeImage';
+import { NoTranslate } from './NoTranslate';
 
 interface Extra {
   name: string;
@@ -179,7 +180,7 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
       const count = (selectedOptions[g._id] || []).length;
       const min = Math.max(g.minSelect || 0, g.required ? 1 : 0);
       if (count < min) {
-        return `Выберите ${min > 1 ? `минимум ${min} в группе` : 'опцию в группе'} «${g.name}»`;
+        return `Bitte wählen Sie ${min > 1 ? `mindestens ${min} Optionen in der Gruppe` : 'eine Option in der Gruppe'} "${g.name}"`;
       }
     }
     return '';
@@ -299,7 +300,7 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
                 {loading ? (
                   <div className="p-12 text-center">
                     <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto"></div>
-                    <p className="mt-4 text-gray-600">{t('common.loading', 'Загрузка...')}</p>
+                    <p className="mt-4 text-gray-600">{t('common.loading', 'Wird geladen...')}</p>
                   </div>
                 ) : product ? (
                   <>
@@ -325,7 +326,7 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
                           <div className="bg-gradient-to-br from-gray-100 to-gray-200 rounded-xl aspect-[4/3] flex items-center justify-center">
                             <div className="text-center">
                               <div className="text-7xl mb-2">🍕</div>
-                              <p className="text-gray-600 font-semibold">{product.name}</p>
+                              <NoTranslate className="text-gray-600 font-semibold">{product.name}</NoTranslate>
                             </div>
                           </div>
                         )}
@@ -333,7 +334,9 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
 
                       {/* Конфигурация — слева на десктопе */}
                       <div className="order-2 lg:order-1 min-w-0">
-                      <h2 className="text-2xl sm:text-3xl font-bold mb-2">{product.name}</h2>
+                      <h2 className="text-2xl sm:text-3xl font-bold mb-2">
+                        <NoTranslate>{product.name}</NoTranslate>
+                      </h2>
                       <p className="text-gray-600 mb-4">{product.description}</p>
 
                       <div className="mb-6">
@@ -343,7 +346,7 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
                       {/* Sizes — вертикальный список (Lieferando-стиль) */}
                       {product.sizes && product.sizes.length > 0 && (
                         <div className="mb-6">
-                          <h3 className="text-lg sm:text-xl font-bold mb-3">{t('product_modal.size_title', 'Выберите размер:')}</h3>
+                          <h3 className="text-lg sm:text-xl font-bold mb-3">{t('product_modal.size_title', 'Größe wählen:')}</h3>
                           <div className="space-y-2">
                             {product.sizes.map((size) => {
                               const sel = selectedSize?.id === size.id;
@@ -357,12 +360,12 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
                                   }`}
                                 >
                                   <div className="min-w-0">
-                                    <div className="font-bold">{size.name}</div>
-                                    {sub && <div className="text-sm text-gray-600 truncate">{sub}</div>}
+                                    <NoTranslate className="block font-bold">{size.name}</NoTranslate>
+                                    {sub && <NoTranslate className="block text-sm text-gray-600 truncate">{sub}</NoTranslate>}
                                   </div>
                                   <div className="flex items-center gap-3 flex-shrink-0">
                                     <span className="text-primary-600 font-semibold whitespace-nowrap">
-                                      {getSizePrice(product, size).toFixed(2)}€
+                                      <NoTranslate>{getSizePrice(product, size).toFixed(2)}€</NoTranslate>
                                     </span>
                                     <span className={`h-5 w-5 rounded-full border-2 flex items-center justify-center ${sel ? 'border-primary-600' : 'border-gray-300'}`}>
                                       {sel && <span className="h-2.5 w-2.5 rounded-full bg-primary-600" />}
@@ -384,12 +387,12 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
                             <div className="flex items-baseline gap-2 mb-3">
                               <h3 className="text-lg sm:text-xl font-bold">{group.name}</h3>
                               {min > 0 ? (
-                                <span className="text-xs font-semibold text-red-600 uppercase">обязательно</span>
+                                <span className="text-xs font-semibold text-red-600 uppercase">erforderlich</span>
                               ) : (
-                                <span className="text-xs text-gray-400">необязательно</span>
+                                <span className="text-xs text-gray-400">optional</span>
                               )}
                               {group.maxSelect > 0 && !single && (
-                                <span className="text-xs text-gray-400">до {group.maxSelect}</span>
+                                <span className="text-xs text-gray-400">bis {group.maxSelect}</span>
                               )}
                             </div>
                             <div className="space-y-2">
@@ -404,10 +407,10 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
                                       isSelected ? 'border-primary-600 bg-primary-50' : 'border-gray-200 hover:border-primary-300'
                                     }`}
                                   >
-                                    <span className="font-medium min-w-0 truncate">{option.name}</span>
+                                    <NoTranslate className="font-medium min-w-0 truncate">{option.name}</NoTranslate>
                                     <div className="flex items-center gap-3 flex-shrink-0">
                                       {option.price > 0 && (
-                                        <span className="text-sm text-gray-600 whitespace-nowrap">+{option.price.toFixed(2)}€</span>
+                                        <NoTranslate className="text-sm text-gray-600 whitespace-nowrap">+{option.price.toFixed(2)}€</NoTranslate>
                                       )}
                                       {single ? (
                                         <span className={`h-5 w-5 rounded-full border-2 flex items-center justify-center ${isSelected ? 'border-primary-600' : 'border-gray-300'}`}>
@@ -431,7 +434,7 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
                       {(!product.optionGroupIds || product.optionGroupIds.length === 0) &&
                         product.extras?.toppings && product.extras.toppings.length > 0 && (
                         <div className="mb-6">
-                          <h3 className="text-xl font-bold mb-3">{t('product_modal.toppings_title', 'Дополнительные топпинги:')}</h3>
+                          <h3 className="text-xl font-bold mb-3">{t('product_modal.toppings_title', 'Zusätzliche Beläge:')}</h3>
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             {product.extras.toppings.map((topping, index) => {
                               const isSelected = selectedToppings.some(t => t.name === topping.name);
@@ -447,8 +450,8 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
                                 >
                                   <div className="flex justify-between items-center">
                                     <div>
-                                      <div className="font-semibold">{topping.name}</div>
-                                      <div className="text-sm text-gray-600">+{topping.price.toFixed(2)}€</div>
+                                      <NoTranslate className="block font-semibold">{topping.name}</NoTranslate>
+                                      <NoTranslate className="block text-sm text-gray-600">+{topping.price.toFixed(2)}€</NoTranslate>
                                     </div>
                                     {isSelected && (
                                       <div className="text-primary-600 font-bold text-xl">✓</div>
@@ -465,7 +468,7 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
                       {(!product.optionGroupIds || product.optionGroupIds.length === 0) &&
                         product.extras?.sauces && product.extras.sauces.length > 0 && (
                         <div className="mb-6">
-                          <h3 className="text-xl font-bold mb-3">{t('product_modal.sauces_title', 'Соусы:')}</h3>
+                          <h3 className="text-xl font-bold mb-3">{t('product_modal.sauces_title', 'Saucen:')}</h3>
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             {product.extras.sauces.map((sauce, index) => {
                               const isSelected = selectedSauces.some(s => s.name === sauce.name);
@@ -481,8 +484,8 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
                                 >
                                   <div className="flex justify-between items-center">
                                     <div>
-                                      <div className="font-semibold">{sauce.name}</div>
-                                      <div className="text-sm text-gray-600">+{sauce.price.toFixed(2)}€</div>
+                                      <NoTranslate className="block font-semibold">{sauce.name}</NoTranslate>
+                                      <NoTranslate className="block text-sm text-gray-600">+{sauce.price.toFixed(2)}€</NoTranslate>
                                     </div>
                                     {isSelected && (
                                       <div className="text-primary-600 font-bold text-xl">✓</div>
@@ -499,7 +502,7 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
                       {(!product.optionGroupIds || product.optionGroupIds.length === 0) &&
                         product.extras?.sides && product.extras.sides.length > 0 && (
                         <div className="mb-6">
-                          <h3 className="text-xl font-bold mb-3">{t('product_modal.sides_title', 'Напитки и закуски:')}</h3>
+                          <h3 className="text-xl font-bold mb-3">{t('product_modal.sides_title', 'Getränke und Beilagen:')}</h3>
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             {product.extras.sides.map((side, index) => {
                               const isSelected = selectedSides.some(s => s.name === side.name);
@@ -515,8 +518,8 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
                                 >
                                   <div className="flex justify-between items-center">
                                     <div>
-                                      <div className="font-semibold">{side.name}</div>
-                                      <div className="text-sm text-gray-600">+{side.price.toFixed(2)}€</div>
+                                      <NoTranslate className="block font-semibold">{side.name}</NoTranslate>
+                                      <NoTranslate className="block text-sm text-gray-600">+{side.price.toFixed(2)}€</NoTranslate>
                                     </div>
                                     {isSelected && (
                                       <div className="text-primary-600 font-bold text-xl">✓</div>
@@ -531,7 +534,7 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
 
                       {/* Quantity */}
                       <div className="mb-6">
-                        <h3 className="text-xl font-bold mb-3">{t('product_modal.quantity', 'Количество:')}</h3>
+                        <h3 className="text-xl font-bold mb-3">{t('product_modal.quantity', 'Menge:')}</h3>
                         <div className="flex items-center gap-4">
                           <button
                             onClick={() => setQuantity(Math.max(1, quantity - 1))}
@@ -563,13 +566,13 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
                         className="flex min-h-[56px] w-full items-center justify-center gap-3 rounded-xl bg-primary-600 px-6 py-4 text-center text-lg font-bold leading-tight text-white shadow-lg transition-all hover:bg-primary-700 hover:shadow-xl"
                       >
                         <ShoppingCart className="h-6 w-6 shrink-0" />
-                        <span className="min-w-0">{t('product.add_to_cart', 'Добавить в корзину')} — {calculateTotal().toFixed(2)}€</span>
+                        <span className="min-w-0">{t('product.add_to_cart', 'In den Warenkorb')} — <NoTranslate>{calculateTotal().toFixed(2)}€</NoTranslate></span>
                       </button>
                     </div>
                   </>
                 ) : (
                   <div className="p-12 text-center">
-                    <p className="text-gray-600">{t('product_modal.not_found', 'Продукт не найден')}</p>
+                    <p className="text-gray-600">{t('product_modal.not_found', 'Produkt nicht gefunden')}</p>
                   </div>
                 )}
               </Dialog.Panel>

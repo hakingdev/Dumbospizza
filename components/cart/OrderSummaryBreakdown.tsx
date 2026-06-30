@@ -3,6 +3,7 @@
 import type { PromotionCalculationResult } from '../../lib/promotions/types';
 import { getBogoPickerMerchandise } from '../../lib/promotions/discount-total';
 import PromotionCartSummary from '../promotions/PromotionCartSummary';
+import { NoTranslate } from '../NoTranslate';
 
 /**
  * Единый разбор итоговой суммы (subtotal → скидки → Gesamtsumme) для CartModal,
@@ -50,14 +51,14 @@ export default function OrderSummaryBreakdown({
     <div data-testid="order-summary-breakdown" className={`space-y-2 ${className}`}>
       <div className="flex justify-between text-gray-600">
         <span>{t('cart.subtotal', 'Zwischensumme')}</span>
-        <span className="whitespace-nowrap">{eur(merchandiseSubtotal)}</span>
+        <NoTranslate className="whitespace-nowrap">{eur(merchandiseSubtotal)}</NoTranslate>
       </div>
 
       {showDelivery && (
         <div className="flex justify-between text-gray-600">
           <span>{t('cart.delivery_fee', 'Liefergebühr')}</span>
           <span className="whitespace-nowrap">
-            {deliveryFee === 0 ? t('cart.free_delivery', 'Kostenlos') : eur(deliveryFee)}
+            {deliveryFee === 0 ? t('cart.free_delivery', 'Kostenlos') : <NoTranslate>{eur(deliveryFee)}</NoTranslate>}
           </span>
         </div>
       )}
@@ -67,9 +68,9 @@ export default function OrderSummaryBreakdown({
         <div data-testid="coupon-discount-line" className="flex justify-between gap-3 text-green-600">
           <span className="min-w-0">
             {t('cart.coupon_discount_with_code', 'Rabatt mit Gutscheincode')}
-            {couponCode ? ` ${couponCode}` : ''}
+            {couponCode ? <> <NoTranslate>{couponCode}</NoTranslate></> : ''}
           </span>
-          <span className="whitespace-nowrap">-{eur(couponDiscount)}</span>
+          <NoTranslate className="whitespace-nowrap">-{eur(couponDiscount)}</NoTranslate>
         </div>
       )}
 
@@ -77,7 +78,7 @@ export default function OrderSummaryBreakdown({
       {loyaltyPointsDiscount > 0 && (
         <div className="flex justify-between gap-3 text-green-600">
           <span className="min-w-0">{t('cart.loyalty_discount', 'Treuepunkte')}</span>
-          <span className="whitespace-nowrap">-{eur(loyaltyPointsDiscount)}</span>
+          <NoTranslate className="whitespace-nowrap">-{eur(loyaltyPointsDiscount)}</NoTranslate>
         </div>
       )}
 
@@ -91,9 +92,9 @@ export default function OrderSummaryBreakdown({
 
       <div className="border-t pt-2 flex justify-between font-bold text-lg">
         <span>{t('cart.total', 'Gesamtsumme')}</span>
-        <span className="text-primary-600 whitespace-nowrap">
+        <NoTranslate className="text-primary-600 whitespace-nowrap">
           {eur(showDelivery ? total : total - deliveryFee)}
-        </span>
+        </NoTranslate>
       </div>
     </div>
   );

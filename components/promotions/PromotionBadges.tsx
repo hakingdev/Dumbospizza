@@ -66,7 +66,7 @@ export function ProductCardPrice({
   productId,
   categoryId,
   basePrice,
-  fromLabel = 'ab',
+  fromLabel = 'Preis ab',
 }: {
   productId: string;
   categoryId?: string;

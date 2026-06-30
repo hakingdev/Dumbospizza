@@ -67,8 +67,14 @@ export interface CartState {
   selectedFreeGifts: Record<string, string>;
   /** promotionId → true, wenn Kunde den optionalen Gratis-Artikel abgelehnt hat */
   declinedFreeGifts: Record<string, boolean>;
-  /** promotionId → productId для BOGO 2. zum halben Preis */
-  selectedBogoSecond: Record<string, string[]>;
+  /**
+   * promotionId → выбранные BOGO-награды. Каждая награда привязана к КОНКРЕТНОЙ
+   * квалифицирующей строке корзины (`itemId` = CartItem.id той пиццы, после которой
+   * выпало Angebot). Удаление этой пиццы убирает именно её награду, а не «случайную».
+   * `productId` — id выбранной опции награды (option.id). itemId='' = не привязана
+   * (легаси/корзина из localStorage старого формата).
+   */
+  selectedBogoSecond: Record<string, Array<{ itemId: string; productId: string }>>;
   contactInfo: {
     name: string;
     phoneNumber: string;
@@ -181,6 +187,131 @@ const calculateTotals = (state: CartState): Partial<CartState> => {
   };
 };
 
+/**
+ * Сравнивает два «record»-выбора (значения — строка/булево или массив строк).
+ * Нужен, чтобы SET_PROMOTION_CALCULATION НЕ создавал новую ссылку выбора при
+ * неизменном содержимом. Иначе ссылки selectedBogoSecond/selectedFreeGifts/
+ * declinedFreeGifts меняются на КАЖДЫЙ пересчёт → deps `recalculatePromotions`
+ * меняются → бесконечный цикл пересчёта (постоянный polling API) и «мигание»
+ * попапа акции на ~1 с сразу после выбора награды (устаревший запрос ещё в пути).
+ */
+function recordsEqual(
+  a: Record<string, string | boolean | string[]>,
+  b: Record<string, string | boolean | string[]>
+): boolean {
+  const aKeys = Object.keys(a);
+  if (aKeys.length !== Object.keys(b).length) return false;
+  for (const k of aKeys) {
+    if (!Object.prototype.hasOwnProperty.call(b, k)) return false;
+    const av = a[k];
+    const bv = b[k];
+    if (Array.isArray(av) || Array.isArray(bv)) {
+      if (!Array.isArray(av) || !Array.isArray(bv) || av.length !== bv.length) return false;
+      for (let i = 0; i < av.length; i++) if (av[i] !== bv[i]) return false;
+    } else if (av !== bv) {
+      return false;
+    }
+  }
+  return true;
+}
+
+type BogoSelection = { itemId: string; productId: string };
+
+/**
+ * Контентное сравнение selectedBogoSecond (с привязкой itemId), чтобы
+ * SET_PROMOTION_CALCULATION не создавал новую ссылку при неизменном выборе и не
+ * зацикливал пересчёт (deps recalculatePromotions). Аналог recordsEqual для нового
+ * формата (массивы объектов {itemId, productId}).
+ */
+function bogoSelectionsEqual(
+  a: Record<string, BogoSelection[]>,
+  b: Record<string, BogoSelection[]>
+): boolean {
+  const aKeys = Object.keys(a);
+  if (aKeys.length !== Object.keys(b).length) return false;
+  for (const k of aKeys) {
+    const av = a[k];
+    const bv = b[k];
+    if (!bv || av.length !== bv.length) return false;
+    for (let i = 0; i < av.length; i++) {
+      if (av[i].itemId !== bv[i].itemId || av[i].productId !== bv[i].productId) return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Какую квалифицирующую строку корзины привязать к новой BOGO-награде: САМУЮ ПОЗДНЮЮ
+ * (последнюю добавленную) подходящую пиццу, у которой ещё есть свободный слот
+ * (привязанных наград < quantity). Это и есть «та пицца, после которой выпало
+ * Angebot». Если квалифицирующие строки неизвестны (нет оффера в расчёте) — '' (без
+ * привязки), движок всё равно ограничит число наград.
+ */
+function findBogoQualifyingItemId(state: CartState, promotionId: string): string {
+  const offer = state.promotionCalculation?.bogoSecondOffers?.find(
+    (o) => o.promotionId === promotionId
+  );
+  const qualifying = offer?.qualifyingItems || [];
+  if (qualifying.length === 0) return '';
+  const matches = (item: CartItem) =>
+    qualifying.some((q) => {
+      if (String(q.productId) !== String(item.productId || item.id)) return false;
+      const qSize = (q.sizeName || '').trim();
+      return qSize === '' || qSize === (item.size?.name || '');
+    });
+  const prev = state.selectedBogoSecond[promotionId] || [];
+  const boundCount = (id: string) => prev.filter((s) => s.itemId === id).length;
+  for (let i = state.items.length - 1; i >= 0; i--) {
+    const item = state.items[i];
+    if (item.comboId) continue; // combo не участвует в акциях
+    if (!matches(item)) continue;
+    if (boundCount(item.id) < item.quantity) return item.id;
+  }
+  return '';
+}
+
+/** Убрать BOGO-награды, привязанные к удалённой строке корзины (по itemId). */
+function dropBogoSelectionsForItem(
+  selected: Record<string, BogoSelection[]>,
+  itemId: string
+): Record<string, BogoSelection[]> {
+  let changed = false;
+  const next: Record<string, BogoSelection[]> = {};
+  for (const [promo, sels] of Object.entries(selected)) {
+    const kept = sels.filter((s) => s.itemId !== itemId);
+    if (kept.length !== sels.length) changed = true;
+    if (kept.length > 0) next[promo] = kept;
+  }
+  return changed ? next : selected;
+}
+
+/**
+ * При уменьшении количества строки — обрезать её BOGO-награды до нового числа слотов
+ * (лишние, привязанные к исчезнувшим единицам, убираем).
+ */
+function trimBogoSelectionsForItem(
+  selected: Record<string, BogoSelection[]>,
+  itemId: string,
+  maxForItem: number
+): Record<string, BogoSelection[]> {
+  let changed = false;
+  const next: Record<string, BogoSelection[]> = {};
+  for (const [promo, sels] of Object.entries(selected)) {
+    let count = 0;
+    const kept = sels.filter((s) => {
+      if (s.itemId !== itemId) return true;
+      if (count < maxForItem) {
+        count++;
+        return true;
+      }
+      changed = true;
+      return false;
+    });
+    if (kept.length > 0) next[promo] = kept;
+  }
+  return changed ? next : selected;
+}
+
 // Cart reducer
 export function cartReducer(state: CartState, action: CartAction): CartState {
   switch (action.type) {
@@ -228,17 +359,32 @@ export function cartReducer(state: CartState, action: CartAction): CartState {
       const newItems = state.items.map(item =>
         item.id === action.payload.id ? { ...item, ...action.payload.updates } : item
       );
-      
-      const newState = { ...state, items: newItems, declinedFreeGifts: {} };
+
+      // При уменьшении количества обрезаем «лишние» BOGO-награды этой строки, чтобы
+      // они не висели за исчезнувшие единицы.
+      const newQty = action.payload.updates.quantity;
+      const selectedBogoSecond =
+        typeof newQty === 'number'
+          ? trimBogoSelectionsForItem(state.selectedBogoSecond, action.payload.id, newQty)
+          : state.selectedBogoSecond;
+
+      const newState = { ...state, items: newItems, selectedBogoSecond, declinedFreeGifts: {} };
       return {
         ...newState,
         ...calculateTotals(newState),
       };
     }
-    
+
     case 'REMOVE_ITEM': {
       const newItems = state.items.filter(item => item.id !== action.payload);
-      const newState = { ...state, items: newItems, declinedFreeGifts: {} };
+      // Удаляем BOGO-награды, привязанные к удалённой пицце — а не «случайную»
+      // (раньше движок при сжатии слотов отбрасывал последнюю по порядку награду,
+      // т.е. награду ОСТАВШЕЙСЯ пиццы).
+      const selectedBogoSecond = dropBogoSelectionsForItem(
+        state.selectedBogoSecond,
+        action.payload
+      );
+      const newState = { ...state, items: newItems, selectedBogoSecond, declinedFreeGifts: {} };
       return {
         ...newState,
         ...calculateTotals(newState),
@@ -367,7 +513,7 @@ export function cartReducer(state: CartState, action: CartAction): CartState {
       const payload = action.payload;
       let selectedFreeGifts: Record<string, string> = {};
       let declinedFreeGifts: Record<string, boolean> = {};
-      let selectedBogoSecond: Record<string, string[]> = {};
+      let selectedBogoSecond: Record<string, BogoSelection[]> = {};
       if (payload) {
         // Ключ выбранного подарка — id опции (productId|sizeName), чтобы различать размеры.
         const fromResolvedGifts = Object.fromEntries(
@@ -398,44 +544,79 @@ export function cartReducer(state: CartState, action: CartAction): CartState {
 
         if (state.couponCode) {
           // Купон подавляет денежные акции (BOGO) → bogoSecondItems приходит пустым.
-          // НЕ затираем выбор второго товара, чтобы он вернулся после удаления купона.
+          // НЕ затираем выбор второго товара (вместе с привязкой к пицце), чтобы он
+          // вернулся после удаления купона.
           selectedBogoSecond = state.selectedBogoSecond;
         } else {
-          // Несколько наград на акцию: группируем выбранные позиции по promotionId.
-          // Движок — источник истины (резолвит выбор в bogoSecondItems с учётом лимита пар).
-          const grouped: Record<string, string[]> = {};
+          // Сверяем выбор клиента с движком (источник истины), СОХРАНЯЯ привязку каждой
+          // награды к конкретной пицце (itemId). Идём по существующим выборам в их
+          // порядке: принятые движком (есть в bogoSecondItems) и валидные ещё открытые
+          // (есть в опциях оффера) — оставляем с их itemId; остальные отбрасываем.
+          const grouped: Record<string, BogoSelection[]> = {};
+
+          // Принятые движком награды по акции (option.id, с учётом quantity-агрегации).
+          const acceptedByPromo: Record<string, string[]> = {};
           for (const item of payload.bogoSecondItems || []) {
             const key = item.id || item.productId;
-            // Награды агрегированы по товару (quantity > 1 при нескольких слотах одного
-            // товара) — восстанавливаем по одному выбору на КАЖДЫЙ слот, иначе при
-            // следующем пересчёте число выбранных позиций «схлопнется» и движок снова
-            // предложит уже заполненные слоты.
-            const list = (grouped[item.promotionId] = grouped[item.promotionId] || []);
+            const list = (acceptedByPromo[item.promotionId] =
+              acceptedByPromo[item.promotionId] || []);
             for (let i = 0; i < (item.quantity || 1); i++) list.push(key);
           }
-          // Symmetrisch zu freeGifts: noch nicht aufgelöste, aber gültige BOGO-Auswahl
-          // beibehalten, solange das Angebot offen ist. Sonst entfernt eine
-          // Zwischen-Neuberechnung (z. B. nach Auswahl des Gratis-Geschenks) die
-          // bereits gewählte 2. Gratis-Pizza wieder aus dem Warenkorb.
+          // Валидные опции открытых офферов (ещё не заполненные слоты).
+          const validByPromo: Record<string, Set<string>> = {};
           for (const offer of payload.bogoSecondOffers || []) {
-            const prev = state.selectedBogoSecond[offer.promotionId] || [];
-            if (prev.length === 0) continue;
-            const validIds = new Set(offer.options.map((o) => o.id));
-            const already = new Set(grouped[offer.promotionId] || []);
-            const keptPending = prev.filter((id) => validIds.has(id) && !already.has(id));
-            if (keptPending.length > 0) {
-              grouped[offer.promotionId] = [...(grouped[offer.promotionId] || []), ...keptPending];
+            validByPromo[offer.promotionId] = new Set(offer.options.map((o) => o.id));
+          }
+
+          const promoIds = Array.from(
+            new Set<string>([
+              ...Object.keys(state.selectedBogoSecond),
+              ...Object.keys(acceptedByPromo),
+            ])
+          );
+          for (const promo of promoIds) {
+            const prev = state.selectedBogoSecond[promo] || [];
+            const accepted = [...(acceptedByPromo[promo] || [])];
+            const valid = validByPromo[promo];
+            const kept: BogoSelection[] = [];
+            for (const sel of prev) {
+              const ai = accepted.indexOf(sel.productId);
+              if (ai >= 0) {
+                // Награда принята движком — сохраняем вместе с привязкой к пицце.
+                accepted.splice(ai, 1);
+                kept.push(sel);
+              } else if (valid && valid.has(sel.productId)) {
+                // Ещё не отражена, но валидна и оффер открыт — сохраняем (с привязкой).
+                kept.push(sel);
+              }
+              // иначе: невалидна / лимит слотов исчерпан → отбрасываем.
             }
+            // Принятые движком награды без соответствующего выбора (страховка от потери
+            // выбора, напр. после миграции localStorage) — добавляем без привязки.
+            for (const leftover of accepted) {
+              kept.push({ itemId: '', productId: leftover });
+            }
+            if (kept.length > 0) grouped[promo] = kept;
           }
           selectedBogoSecond = grouped;
         }
       }
+      // Сохраняем ПРЕЖНИЕ ссылки выбора при неизменном содержимом, чтобы не
+      // зацикливать пересчёт (deps recalculatePromotions) и не плодить
+      // устаревшие запросы, из-за которых попап акции мигал после выбора.
+      const prevDeclined = state.declinedFreeGifts || {};
       const newState = {
         ...state,
         promotionCalculation: payload,
-        selectedFreeGifts,
-        declinedFreeGifts,
-        selectedBogoSecond,
+        selectedFreeGifts: recordsEqual(state.selectedFreeGifts, selectedFreeGifts)
+          ? state.selectedFreeGifts
+          : selectedFreeGifts,
+        declinedFreeGifts: recordsEqual(prevDeclined, declinedFreeGifts)
+          ? prevDeclined
+          : declinedFreeGifts,
+        selectedBogoSecond: bogoSelectionsEqual(state.selectedBogoSecond, selectedBogoSecond)
+          ? state.selectedBogoSecond
+          : selectedBogoSecond,
       };
       return { ...newState, ...calculateTotals(newState) };
     }
@@ -475,13 +656,19 @@ export function cartReducer(state: CartState, action: CartAction): CartState {
       return { ...state, selectedFreeGifts: {} };
 
     case 'SET_SELECTED_BOGO_SECOND': {
-      // Добавляем ещё одну награду к акции (несколько за несколько пар).
+      // Добавляем ещё одну награду к акции (несколько за несколько пар) и привязываем
+      // её к конкретной квалифицирующей пицце (той, после которой выпал оффер), чтобы
+      // удаление этой пиццы убирало именно её награду.
       const prev = state.selectedBogoSecond[action.payload.promotionId] || [];
+      const itemId = findBogoQualifyingItemId(state, action.payload.promotionId);
       const newState = {
         ...state,
         selectedBogoSecond: {
           ...state.selectedBogoSecond,
-          [action.payload.promotionId]: [...prev, action.payload.productId],
+          [action.payload.promotionId]: [
+            ...prev,
+            { itemId, productId: action.payload.productId },
+          ],
         },
       };
       return newState;
@@ -571,11 +758,16 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
             ...parsed,
             selectedFreeGifts: parsed.selectedFreeGifts || {},
             declinedFreeGifts: parsed.declinedFreeGifts || {},
-            // нормализуем к массивам (старый формат мог хранить одну строку)
+            // нормализуем к массивам объектов {itemId, productId}. Старые форматы:
+            // строка, массив строк, либо уже объекты — мигрируем без привязки (itemId='').
             selectedBogoSecond: Object.fromEntries(
               Object.entries(parsed.selectedBogoSecond || {}).map(([k, v]) => [
                 k,
-                Array.isArray(v) ? v : v ? [v] : [],
+                (Array.isArray(v) ? v : v ? [v] : []).map((entry: any) =>
+                  typeof entry === 'string'
+                    ? { itemId: '', productId: entry }
+                    : { itemId: entry?.itemId || '', productId: entry?.productId }
+                ),
               ])
             ),
             items: Array.isArray(parsed.items)
@@ -632,7 +824,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       const phone = state.contactInfo.phoneNumber?.trim();
       const res = await fetchPromotionCalculation(items, 'web', state.promotionPromoCode, phone || undefined, {
         selectedBogoSecond: Object.entries(state.selectedBogoSecond).flatMap(
-          ([promotionId, ids]) => (ids || []).map((productId) => ({ promotionId, productId }))
+          ([promotionId, sels]) => (sels || []).map((s) => ({ promotionId, productId: s.productId }))
         ),
         selectedFreeGifts: Object.entries(state.selectedFreeGifts).map(
           ([promotionId, productId]) => ({ promotionId, productId })

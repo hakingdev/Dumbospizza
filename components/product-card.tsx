@@ -8,6 +8,7 @@ import { useLanguage } from '../lib/contexts/LanguageContext'
 import { loadTranslation } from '../lib/i18n'
 import { PromotionBadges, ProductCardPrice } from './promotions/PromotionBadges'
 import { SafeImage } from './SafeImage'
+import { NoTranslate } from './NoTranslate'
 
 interface Product {
   id: string;
@@ -68,7 +69,7 @@ export function ProductCard({ product }: ProductCardProps) {
           <div className="absolute inset-0 bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center text-gray-400">
             <div className="text-center">
               <div className="text-6xl mb-2">🍕</div>
-              <span className="text-sm">{product.name}</span>
+              <NoTranslate className="text-sm">{product.name}</NoTranslate>
             </div>
           </div>
         )}
@@ -85,7 +86,7 @@ export function ProductCard({ product }: ProductCardProps) {
       <div className={`flex flex-1 flex-col px-2 ${product.valentinePromo ? 'pb-2' : ''}`}>
         <div className="mb-2 flex min-h-[3.25rem] items-start justify-between gap-3">
           <h3 className="flex min-w-0 flex-1 items-start gap-1 text-lg font-bold leading-tight text-gray-900">
-            <span className="min-w-0 break-words hyphens-auto">{product.name}</span>
+            <NoTranslate className="min-w-0 break-words hyphens-auto">{product.name}</NoTranslate>
             {product.valentinePromo && (
               <span className="shrink-0 text-rose-500" title="Valentinstag Special">❤️</span>
             )}
@@ -94,7 +95,7 @@ export function ProductCard({ product }: ProductCardProps) {
             productId={product.id}
             categoryId={product.categoryId || product.category}
             basePrice={product.price}
-            fromLabel={t('product_card.from', 'от')}
+            fromLabel={t('product_card.from', 'Preis ab')}
           />
         </div>
         
@@ -105,7 +106,7 @@ export function ProductCard({ product }: ProductCardProps) {
           className="mt-auto flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg bg-primary-600 px-4 py-3 text-center font-medium leading-tight text-white shadow-md transition-all hover:bg-primary-700 hover:shadow-lg"
         >
           <ShoppingCart className="h-5 w-5 shrink-0" />
-          <span className="min-w-0">{t('product_card.choose_options', 'Выбрать опции')}</span>
+          <span className="min-w-0">{t('product_card.choose_options', 'Optionen wählen')}</span>
         </button>
       </div>
       

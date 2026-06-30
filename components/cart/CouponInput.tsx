@@ -4,6 +4,7 @@ import { loadTranslation } from '../../lib/i18n';
 import { validateCoupon, validatePromotionCode } from '../../lib/api-client';
 import { Loader2, CheckCircle, XCircle } from 'lucide-react';
 import PromoConflictDialog from './PromoConflictDialog';
+import { NoTranslate } from '../NoTranslate';
 
 interface CouponInputProps {
   orderAmount: number;
@@ -194,8 +195,8 @@ export default function CouponInput({
           <div className="flex items-start min-w-0">
             <CheckCircle className="w-5 h-5 text-green-600 mr-2 shrink-0" />
             <div className="min-w-0">
-              <p className="font-medium text-sm break-words">{displayCode}</p>
-              {subtitle && <p className="text-xs text-gray-600">{subtitle}</p>}
+              <p className="font-medium text-sm break-words"><NoTranslate>{displayCode}</NoTranslate></p>
+              {subtitle && <p className="text-xs text-gray-600"><NoTranslate>{subtitle}</NoTranslate></p>}
             </div>
           </div>
           <button

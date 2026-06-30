@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Star, TrendingUp, Clock, Gift, Loader2 } from 'lucide-react';
+import { NoTranslate } from '../NoTranslate';
 
 const TIER_LABEL: Record<string, string> = {
   bronze: 'Bronze',
@@ -70,10 +71,10 @@ export default function PointsTab() {
           <div className="min-w-0">
             <p className="text-sm opacity-90">Verfügbare Punkte</p>
             <p className="mt-1 truncate text-3xl font-bold leading-tight sm:text-4xl">
-              {loyalty.balance.toFixed(2)}
+              <NoTranslate>{loyalty.balance.toFixed(2)}</NoTranslate>
             </p>
             <p className="mt-1 text-sm opacity-90">
-              <span className="whitespace-nowrap">1 Punkt = 1 €</span> Rabatt
+              <NoTranslate className="whitespace-nowrap">1 Punkt = 1 €</NoTranslate> Rabatt
             </p>
           </div>
           <span
@@ -85,7 +86,7 @@ export default function PointsTab() {
         {loyalty.nextTier && loyalty.nextTier.ordersNeeded > 0 && (
           <p className="mt-4 flex min-w-0 items-start text-pretty text-sm leading-6 opacity-90">
             <TrendingUp className="mr-1 mt-1 h-4 w-4 shrink-0" />
-            Noch {loyalty.nextTier.ordersNeeded} Bestellung(en) bis{' '}
+            Noch <NoTranslate>{loyalty.nextTier.ordersNeeded}</NoTranslate> Bestellung(en) bis{' '}
             {TIER_LABEL[loyalty.nextTier.tier]}
           </p>
         )}
@@ -97,7 +98,7 @@ export default function PointsTab() {
             Insgesamt gesammelt
           </p>
           <p className="mt-1 truncate text-xl font-semibold text-gray-900">
-            {loyalty.totalEarned.toFixed(2)}
+            <NoTranslate>{loyalty.totalEarned.toFixed(2)}</NoTranslate>
           </p>
         </div>
         <div className="rounded-lg bg-white p-4 text-center shadow">
@@ -105,7 +106,7 @@ export default function PointsTab() {
             Insgesamt eingelöst
           </p>
           <p className="mt-1 truncate text-xl font-semibold text-gray-900">
-            {loyalty.totalRedeemed.toFixed(2)}
+            <NoTranslate>{loyalty.totalRedeemed.toFixed(2)}</NoTranslate>
           </p>
         </div>
       </div>
@@ -118,23 +119,23 @@ export default function PointsTab() {
         </h3>
         <ul className="list-disc space-y-2 pl-5 text-pretty text-sm leading-6 text-gray-600">
           <li>
-            Sie erhalten <strong>{earnPercent}%</strong> des bezahlten Betrags
+            Sie erhalten <strong><NoTranslate>{earnPercent}%</NoTranslate></strong> des bezahlten Betrags
             als Punkte zurück (nach Abschluss der Bestellung).
           </li>
           <li>
             Mit Punkten zahlen Sie bis zu{' '}
-            <strong>{Math.round(rules.redeemMaxShare * 100)}%</strong> Ihrer
-            nächsten Bestellung (ab {rules.minOrderToRedeem} €).
+            <strong><NoTranslate>{Math.round(rules.redeemMaxShare * 100)}%</NoTranslate></strong> Ihrer
+            nächsten Bestellung (ab <NoTranslate>{rules.minOrderToRedeem} €</NoTranslate>).
           </li>
           <li>
-            Punkte verfallen nach <strong>{rules.expiryMonths} Monaten</strong>.
+            Punkte verfallen nach <strong><NoTranslate>{rules.expiryMonths}</NoTranslate> Monaten</strong>.
           </li>
           <li>
-            Stufen: Bronze {Math.round(rules.earnPercentByTier.bronze * 100)}% ·
-            Silber {Math.round(rules.earnPercentByTier.silver * 100)}% (ab{' '}
-            {rules.tierThresholds.silver} Bestellungen) · Gold{' '}
-            {Math.round(rules.earnPercentByTier.gold * 100)}% (ab{' '}
-            {rules.tierThresholds.gold}).
+            Stufen: Bronze <NoTranslate>{Math.round(rules.earnPercentByTier.bronze * 100)}%</NoTranslate> ·
+            Silber <NoTranslate>{Math.round(rules.earnPercentByTier.silver * 100)}%</NoTranslate> (ab{' '}
+            <NoTranslate>{rules.tierThresholds.silver}</NoTranslate> Bestellungen) · Gold{' '}
+            <NoTranslate>{Math.round(rules.earnPercentByTier.gold * 100)}%</NoTranslate> (ab{' '}
+            <NoTranslate>{rules.tierThresholds.gold}</NoTranslate>).
           </li>
         </ul>
       </div>
@@ -173,7 +174,7 @@ export default function PointsTab() {
                   }`}
                 >
                   {t.delta >= 0 ? '+' : ''}
-                  {Number(t.delta).toFixed(2)}
+                  <NoTranslate>{Number(t.delta).toFixed(2)}</NoTranslate>
                 </span>
               </li>
             ))}

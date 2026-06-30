@@ -411,7 +411,17 @@ export function calculatePromotions(
     const remaining = allowed - chosenOptions.length;
     if (remaining > 0) {
       const offer = buildBogoSecondOffer(promo, bogoCatalog[id] || [], items);
-      if (offer) bogoSecondOffers.push({ ...offer, remaining });
+      if (offer) {
+        // Квалифицирующие строки корзины — чтобы клиент привязал награду к конкретной
+        // пицце (удаление пиццы убирает её награду, а не «случайную»).
+        const qualifyingItems = items
+          .filter((line) => lineMatchesPromo(line, promo))
+          .map((line) => ({
+            productId: String(line.productId),
+            sizeName: (line.sizeName || '').trim() || undefined,
+          }));
+        bogoSecondOffers.push({ ...offer, remaining, qualifyingItems });
+      }
     }
   }
 

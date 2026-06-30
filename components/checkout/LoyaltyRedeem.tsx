@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Star, Loader2 } from 'lucide-react';
+import { NoTranslate } from '../NoTranslate';
 
 interface LoyaltyRules {
   redeemMaxShare: number;
@@ -92,15 +93,15 @@ export default function LoyaltyRedeem({
           {t('checkout.loyalty_title', 'Treuepunkte einlösen')}
         </span>
         <span className="text-sm text-gray-600">
-          {balance.toFixed(2)} {t('checkout.loyalty_points', 'Punkte')}
+          <NoTranslate>{balance.toFixed(2)}</NoTranslate> {t('checkout.loyalty_points', 'Punkte')}
         </span>
       </div>
 
       {appliedPoints > 0 ? (
         <div className="flex items-center justify-between rounded-md bg-white px-3 py-2 text-sm">
           <span className="text-green-700">
-            −{appliedPoints.toFixed(2)} {t('checkout.loyalty_points', 'Punkte')} (
-            {(appliedPoints * rules.pointValueEuro).toFixed(2)} €)
+            <NoTranslate>−{appliedPoints.toFixed(2)}</NoTranslate> {t('checkout.loyalty_points', 'Punkte')} (
+            <NoTranslate>{(appliedPoints * rules.pointValueEuro).toFixed(2)} €</NoTranslate>)
           </span>
           <button
             type="button"
@@ -112,7 +113,7 @@ export default function LoyaltyRedeem({
         </div>
       ) : minNotReached ? (
         <p className="text-xs text-gray-500">
-          {t('checkout.loyalty_min_order', 'Punkte einlösbar ab')} {rules.minOrderToRedeem} €.
+          {t('checkout.loyalty_min_order', 'Punkte einlösbar ab')} <NoTranslate>{rules.minOrderToRedeem} €</NoTranslate>.
         </p>
       ) : max <= 0 ? (
         <p className="text-xs text-gray-500">
@@ -149,7 +150,7 @@ export default function LoyaltyRedeem({
         </div>
       )}
       <p className="mt-1.5 text-xs text-gray-400">
-        {t('checkout.loyalty_hint', 'Bis zu')} {Math.round(rules.redeemMaxShare * 100)}%{' '}
+        {t('checkout.loyalty_hint', 'Bis zu')} <NoTranslate>{Math.round(rules.redeemMaxShare * 100)}%</NoTranslate>{' '}
         {t('checkout.loyalty_hint_2', 'des Bestellwerts · 1 Punkt = 1 €')}
       </p>
     </div>

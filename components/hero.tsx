@@ -108,14 +108,14 @@ export function Hero() {
                   <h3 className="mb-2 text-xl font-extrabold text-gray-900">
                     {isDe
                       ? 'Hol dir das Stadiongefühl nach Hause'
-                      : t('hero.story_title', 'Почувствуй атмосферу стадиона дома')}
+                      : t('hero.story_title', 'Hol dir das Stadiongefühl nach Hause')}
                   </h3>
                   <p className="text-[14.5px] leading-relaxed text-gray-600">
                     {isDe
                       ? 'Die größte WM aller Zeiten kommt nach Nordamerika — und jedes Spiel schmeckt besser mit frischer Pizza und kaltem Bier vom Lieblings-Italiener in Bad Kissingen. Freunde einladen, Kombi bestellen, anfeuern. ⚽🍕'
                       : t(
                           'hero.story_text',
-                          'Самый большой чемпионат мира приходит в Северную Америку — и каждый матч вкуснее со свежей пиццей и холодным пивом. ⚽🍕'
+                          'Die größte WM kommt nach Nordamerika — und jedes Spiel schmeckt besser mit frischer Pizza und kaltem Bier. ⚽🍕'
                         )}
                   </p>
                   <div className="mt-3 text-[22px] tracking-[2px]">🇺🇸 🇨🇦 🇲🇽</div>
@@ -132,10 +132,10 @@ export function Hero() {
             >
               <span className="mb-5 inline-flex max-w-full items-center gap-2 self-start whitespace-nowrap rounded-full bg-yellow-400 px-3 py-2 text-xs font-bold tracking-[.02em] text-yellow-900 shadow-md sm:px-4 sm:text-sm">
                 <span className="sm:hidden">
-                  ⚽ {isDe ? 'WM 2026 · Aktion' : t('hero.kicker_short', 'ЧМ 2026 · Акция')}
+                  ⚽ {isDe ? 'WM 2026 · Aktion' : t('hero.kicker_short', 'WM 2026 · Aktion')}
                 </span>
                 <span className="hidden sm:inline">
-                  ⚽ {isDe ? 'Fußball-WM 2026 · Anpfiff-Aktion' : t('hero.kicker', 'ЧМ 2026 · Акция')}
+                  ⚽ {isDe ? 'Fußball-WM 2026 · Anpfiff-Aktion' : t('hero.kicker', 'Fußball-WM 2026 · Anpfiff-Aktion')}
                 </span>
               </span>
 
@@ -149,7 +149,7 @@ export function Hero() {
                     </span>
                   </>
                 ) : (
-                  t('hero.title', 'Комбо на матч для всей команды')
+                  t('hero.title', 'Matchday-Kombi für die ganze Mannschaft')
                 )}
               </h1>
 
@@ -158,7 +158,7 @@ export function Hero() {
                   ? 'Stell dir deine Kombi zusammen: zwei Pizzen 30 × 40 cm nach Wahl, dazu Getränke gratis — und beim Anpfiff seid ihr startklar. Frisch geliefert, pünktlich zum Spiel.'
                   : t(
                       'hero.lede',
-                      'Собери своё комбо: две пиццы 30 × 40 см на выбор, напитки бесплатно — и вы готовы к матчу.'
+                      'Stell dir deine Kombi zusammen: zwei Pizzen 30 × 40 cm nach Wahl, dazu Getränke gratis.'
                     )}
               </p>
 
@@ -171,7 +171,7 @@ export function Hero() {
                   href="/menu"
                   className="inline-flex min-h-[56px] w-full items-center justify-center gap-2 whitespace-nowrap rounded-xl border-2 border-white bg-white/10 px-6 py-3.5 text-base font-bold text-white transition-all hover:bg-white/20 sm:w-auto"
                 >
-                  {isDe ? 'Ganzes Menü ansehen' : t('hero.cta_menu', 'Всё меню')}
+                  {isDe ? 'Ganzes Menü ansehen' : t('hero.cta_menu', 'Ganzes Menü ansehen')}
                   <ArrowRight className="h-[18px] w-[18px] shrink-0" />
                 </Link>
               </div>
@@ -179,13 +179,13 @@ export function Hero() {
               {/* trust */}
               <div className="mt-6 flex flex-wrap gap-x-[22px] gap-y-3.5 text-sm text-white/85">
                 <span className="inline-flex items-center gap-[7px]">
-                  <Clock className="h-4 w-4" /> {isDe ? '30–60 Min. Lieferung' : t('hero.trust_time', '30–60 мин доставка')}
+                  <Clock className="h-4 w-4" /> {isDe ? '30–60 Min. Lieferung' : t('hero.trust_time', '30–60 Min. Lieferung')}
                 </span>
                 <span className="inline-flex items-center gap-[7px]">
-                  <Truck className="h-4 w-4" /> {isDe ? 'Gratis ab 30 €' : t('hero.trust_free', 'Бесплатно от 30 €')}
+                  <Truck className="h-4 w-4" /> {isDe ? 'Gratis ab 30 €' : t('hero.trust_free', 'Gratis ab 30 €')}
                 </span>
                 <span className="inline-flex items-center gap-[7px]">
-                  <Star className="h-4 w-4" /> {isDe ? '4,8 Bewertung' : t('hero.trust_rating', '4,8 рейтинг')}
+                  <Star className="h-4 w-4" /> {isDe ? '4,8 Bewertung' : t('hero.trust_rating', '4,8 Bewertung')}
                 </span>
               </div>
             </motion.div>

@@ -10,6 +10,7 @@ import OrderSummaryBreakdown from './OrderSummaryBreakdown';
 import BogoRewardLines from '../promotions/BogoRewardLines';
 import { groupCartRows } from '../../lib/cart/combo';
 import { ComboCartGroup } from './ComboCartGroup';
+import { NoTranslate } from '../NoTranslate';
 
 interface CartModalProps {
   isOpen: boolean;
@@ -44,7 +45,7 @@ export function CartModal({ isOpen, onClose }: CartModalProps) {
 
   if (!isOpen) return null;
 
-  const itemLabel = items.length === 1 ? t('cart.item_singular', 'товар') : t('cart.item_plural', 'товара');
+  const itemLabel = items.length === 1 ? t('cart.item_singular', 'Artikel') : t('cart.item_plural', 'Artikel');
 
   const handleUpdateQuantity = (itemId: string, newQuantity: number) => {
     if (newQuantity < 1) {
@@ -71,7 +72,7 @@ export function CartModal({ isOpen, onClose }: CartModalProps) {
               <ShoppingCart className="h-6 w-6 text-primary-600" />
             </div>
             <div>
-              <h2 className="text-2xl font-bold text-gray-900">{t('cart.title', 'Корзина')}</h2>
+              <h2 className="text-2xl font-bold text-gray-900">{t('cart.title', 'Warenkorb')}</h2>
               <p className="text-sm text-gray-500">{items.length} {itemLabel}</p>
             </div>
           </div>
@@ -88,13 +89,13 @@ export function CartModal({ isOpen, onClose }: CartModalProps) {
           {items.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-center py-12">
               <div className="text-6xl mb-4">🛒</div>
-              <h3 className="text-xl font-bold text-gray-900 mb-2">{t('cart.empty', 'Корзина пуста')}</h3>
-              <p className="text-gray-600 mb-6">{t('cart.empty_hint', 'Добавьте товары в корзину, чтобы оформить заказ')}</p>
+              <h3 className="text-xl font-bold text-gray-900 mb-2">{t('cart.empty', 'Ihr Warenkorb ist leer')}</h3>
+              <p className="text-gray-600 mb-6">{t('cart.empty_hint', 'Fügen Sie Produkte hinzu, um Ihre Bestellung abzuschließen.')}</p>
               <button 
                 onClick={onClose}
                 className="btn-primary"
               >
-                {t('cart.go_to_menu', 'Перейти к меню')}
+                {t('cart.go_to_menu', 'Zur Speisekarte')}
               </button>
             </div>
           ) : (
@@ -122,7 +123,9 @@ export function CartModal({ isOpen, onClose }: CartModalProps) {
                     {/* Details */}
                     <div className="flex-1 min-w-0">
                       <div className="flex justify-between items-start mb-2">
-                        <h3 className="font-bold text-gray-900">{item.name}</h3>
+                        <h3 className="font-bold text-gray-900">
+                          <NoTranslate>{item.name}</NoTranslate>
+                        </h3>
                         <button
                           onClick={() => removeItem(item.id)}
                           className="text-gray-400 hover:text-red-500 transition-colors ml-2"
@@ -133,19 +136,19 @@ export function CartModal({ isOpen, onClose }: CartModalProps) {
 
                       {item.size && (
                         <p className="text-sm text-gray-600 mb-1">
-                          {item.size.name}{(item.size.label || item.size.size) ? ` (${item.size.label || item.size.size})` : ''}
+                          <NoTranslate>{item.size.name}{(item.size.label || item.size.size) ? ` (${item.size.label || item.size.size})` : ''}</NoTranslate>
                         </p>
                       )}
 
                       {item.options && item.options.length > 0 && (
                         <p className="text-sm text-gray-600 mb-1">
-                          + {item.options.map(o => o.name).join(', ')}
+                          + <NoTranslate>{item.options.map(o => o.name).join(', ')}</NoTranslate>
                         </p>
                       )}
 
                       {item.extras?.toppings && item.extras.toppings.length > 0 && (
                         <p className="text-sm text-gray-600 mb-2">
-                          + {item.extras.toppings.map(t => t.name).join(', ')}
+                          + <NoTranslate>{item.extras.toppings.map(t => t.name).join(', ')}</NoTranslate>
                         </p>
                       )}
 
@@ -166,7 +169,7 @@ export function CartModal({ isOpen, onClose }: CartModalProps) {
                           </button>
                         </div>
                         <span className="font-bold text-lg text-primary-600">
-                          {(item.price * item.quantity).toFixed(2)} €
+                          <NoTranslate>{(item.price * item.quantity).toFixed(2)} €</NoTranslate>
                         </span>
                       </div>
                     </div>
@@ -204,14 +207,14 @@ export function CartModal({ isOpen, onClose }: CartModalProps) {
               className="btn-primary w-full flex items-center justify-center"
               onClick={onClose}
             >
-              {t('cart.proceed_to_checkout', 'Оформить заказ')}
+              {t('cart.proceed_to_checkout', 'Zur Kasse')}
             </Link>
             
             <button 
               onClick={onClose}
               className="w-full text-center text-gray-600 hover:text-gray-900 font-medium"
             >
-              {t('cart.continue_shopping', 'Продолжить покупки')}
+              {t('cart.continue_shopping', 'Weiter einkaufen')}
             </button>
           </div>
         )}

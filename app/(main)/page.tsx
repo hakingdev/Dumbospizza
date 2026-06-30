@@ -53,7 +53,7 @@ function CategorySectionWrapper({
         <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h2 className="min-w-0 text-3xl font-bold text-gray-900 md:text-4xl">{title}</h2>
           <Link href={category.href} className="inline-flex max-w-full shrink-0 items-center gap-1 self-start text-sm font-medium leading-tight text-primary-600 hover:text-primary-700 sm:text-base">
-            <span className="truncate">{t('home.view_all', 'Все')} {title.toLowerCase()}</span>
+            <span className="truncate">{t('home.view_all', 'Alle')} {title.toLowerCase()}</span>
             <svg className="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
             </svg>
@@ -203,7 +203,7 @@ export default function Home() {
                 </span>
               </h2>
               <Link href="/menu" className="inline-flex shrink-0 items-center gap-1 self-start text-sm font-medium leading-tight text-rose-600 hover:text-rose-700 sm:text-base">
-                <span>{t('home.all_menu', 'Все меню')}</span>
+                <span>{t('home.all_menu', 'Alle Speisen')}</span>
                 <svg className="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                 </svg>
@@ -230,9 +230,9 @@ export default function Home() {
       <section className="py-12">
         <div className="container mx-auto px-4">
           <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <h2 className="min-w-0 text-3xl font-bold text-gray-900 md:text-4xl">{t('home.popular', 'Популярные блюда')}</h2>
+            <h2 className="min-w-0 text-3xl font-bold text-gray-900 md:text-4xl">{t('home.popular', 'Beliebte Gerichte')}</h2>
             <Link href="/menu" className="inline-flex shrink-0 items-center gap-1 self-start text-sm font-medium leading-tight text-primary-600 hover:text-primary-700 sm:text-base">
-              <span>{t('home.all_menu', 'Все меню')}</span>
+              <span>{t('home.all_menu', 'Alle Speisen')}</span>
               <svg className="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
               </svg>
@@ -264,32 +264,32 @@ export default function Home() {
               <div className="inline-flex items-center justify-center w-16 h-16 bg-primary-100 rounded-full mb-4">
                 <Truck className="h-8 w-8 text-primary-600" />
               </div>
-              <h3 className="text-lg font-bold mb-2">{t('home.benefits.fast_title', 'Быстрая доставка')}</h3>
-              <p className="text-gray-600 text-sm">{t('home.benefits.fast_text', '30-60 минут, в пиковое время до 90 минут')}</p>
+              <h3 className="text-lg font-bold mb-2">{t('home.benefits.fast_title', 'Schnelle Lieferung')}</h3>
+              <p className="text-gray-600 text-sm">{t('home.benefits.fast_text', '30-60 Minuten, zu Stoßzeiten bis 90 Minuten')}</p>
             </div>
             
             <div className="text-center p-6 rounded-2xl bg-gradient-to-br from-secondary-50 to-white border border-secondary-100">
               <div className="inline-flex items-center justify-center w-16 h-16 bg-secondary-100 rounded-full mb-4">
                 <Award className="h-8 w-8 text-secondary-600" />
               </div>
-              <h3 className="text-lg font-bold mb-2">{t('home.benefits.quality_title', 'Лучшее качество')}</h3>
-              <p className="text-gray-600 text-sm">{t('home.benefits.quality_text', 'Только свежие ингредиенты')}</p>
+              <h3 className="text-lg font-bold mb-2">{t('home.benefits.quality_title', 'Beste Qualität')}</h3>
+              <p className="text-gray-600 text-sm">{t('home.benefits.quality_text', 'Nur frische Zutaten')}</p>
             </div>
             
             <div className="text-center p-6 rounded-2xl bg-gradient-to-br from-orange-50 to-white border border-orange-100">
               <div className="inline-flex items-center justify-center w-16 h-16 bg-orange-100 rounded-full mb-4">
                 <Clock className="h-8 w-8 text-orange-600" />
               </div>
-              <h3 className="text-lg font-bold mb-2">{t('home.benefits.hours_title', 'с 16 до 22 каждый день')}</h3>
-              <p className="text-gray-600 text-sm">{t('home.benefits.hours_text', 'Ежедневно с 17:00 до 21:30')}</p>
+              <h3 className="text-lg font-bold mb-2">{t('home.benefits.hours_title', 'Täglich geöffnet')}</h3>
+              <p className="text-gray-600 text-sm">{t('home.benefits.hours_text', 'Täglich von 17:00 bis 21:30')}</p>
             </div>
             
             <div className="text-center p-6 rounded-2xl bg-gradient-to-br from-blue-50 to-white border border-blue-100">
               <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-100 rounded-full mb-4">
                 <Shield className="h-8 w-8 text-blue-600" />
               </div>
-              <h3 className="text-lg font-bold mb-2">{t('home.benefits.safe_title', 'Безопасность')}</h3>
-              <p className="text-gray-600 text-sm">{t('home.benefits.safe_text', 'Гарантия качества и свежести')}</p>
+              <h3 className="text-lg font-bold mb-2">{t('home.benefits.safe_title', 'Sicherheit')}</h3>
+              <p className="text-gray-600 text-sm">{t('home.benefits.safe_text', 'Qualität und Frische garantiert')}</p>
             </div>
           </div>
         </div>
@@ -300,12 +300,12 @@ export default function Home() {
         <div className="container mx-auto px-4">
           <div className="max-w-4xl mx-auto text-center text-white">
             <div className="text-6xl mb-6">🎁</div>
-            <h2 className="text-3xl md:text-4xl font-bold mb-4">{t('home.loyalty.title', 'Программа лояльности')}</h2>
+            <h2 className="text-3xl md:text-4xl font-bold mb-4">{t('home.loyalty.title', 'Treueprogramm')}</h2>
             <p className="text-lg md:text-xl mb-8 text-white/90">
-              {t('home.loyalty.text', 'Накапливайте баллы за каждый заказ и получайте скидки на будущие покупки! Просто укажите свой номер телефона при оформлении заказа.')}
+              {t('home.loyalty.text', 'Sammeln Sie Punkte bei jeder Bestellung und erhalten Sie Rabatte auf zukünftige Einkäufe. Geben Sie einfach Ihre Telefonnummer beim Checkout an.')}
             </p>
             <Link href="/profile" className="inline-flex min-h-[56px] items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-white px-8 py-4 text-center text-lg font-bold leading-tight text-primary-700 shadow-xl transition-all hover:bg-gray-100 hover:shadow-2xl">
-              <span>{t('home.loyalty.cta', 'Узнать больше')}</span>
+              <span>{t('home.loyalty.cta', 'Mehr erfahren')}</span>
               <svg className="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
               </svg>
@@ -320,12 +320,12 @@ export default function Home() {
           <div className="grid md:grid-cols-2 gap-8">
             <div className="bg-white rounded-2xl p-8 shadow-lg border border-gray-100 hover:shadow-xl transition-all">
               <div className="text-5xl mb-4">🚚</div>
-              <h3 className="text-2xl font-bold mb-4 text-gray-900">{t('home.info.delivery_title', 'Зоны доставки')}</h3>
+              <h3 className="text-2xl font-bold mb-4 text-gray-900">{t('home.info.delivery_title', 'Liefergebiete')}</h3>
               <p className="text-gray-600 mb-6">
-                {t('home.info.delivery_text', 'Доставляем пиццу в любой район города. Минимальная сумма заказа зависит от района. Бесплатная доставка от 30€.')}
+                {t('home.info.delivery_text', 'Wir liefern Pizza in viele Stadtteile. Der Mindestbestellwert hängt vom Liefergebiet ab. Kostenlose Lieferung ab 30 €.')}
               </p>
               <Link href="/delivery" className="inline-flex max-w-full items-center gap-1 font-bold leading-tight text-primary-600 hover:text-primary-700">
-                <span className="truncate">{t('home.info.delivery_cta', 'Посмотреть зоны')}</span>
+                <span className="truncate">{t('home.info.delivery_cta', 'Liefergebiete ansehen')}</span>
                 <svg className="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                 </svg>
@@ -334,12 +334,12 @@ export default function Home() {
             
             <div className="bg-gradient-to-br from-primary-600 to-primary-800 text-white rounded-2xl p-8 shadow-lg hover:shadow-xl transition-all">
               <div className="text-5xl mb-4">📱</div>
-              <h3 className="text-2xl font-bold mb-4">{t('home.info.track_title', 'Отследить заказ')}</h3>
+              <h3 className="text-2xl font-bold mb-4">{t('home.info.track_title', 'Bestellung verfolgen')}</h3>
               <p className="text-white/90 mb-6">
-                {t('home.info.track_text', 'Следите за статусом вашего заказа в реальном времени. Получайте уведомления о каждом этапе приготовления и доставки.')}
+                {t('home.info.track_text', 'Verfolgen Sie den Status Ihrer Bestellung in Echtzeit und bleiben Sie über Zubereitung und Lieferung informiert.')}
               </p>
               <Link href="/track" className="inline-flex min-h-[48px] items-center justify-center gap-1 whitespace-nowrap rounded-lg bg-white px-6 py-3 text-center font-bold leading-tight text-primary-700 transition-all hover:bg-gray-100">
-                <span>{t('home.info.track_cta', 'Отследить')}</span>
+                <span>{t('home.info.track_cta', 'Verfolgen')}</span>
                 <svg className="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                 </svg>

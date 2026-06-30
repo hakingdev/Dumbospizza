@@ -15,6 +15,7 @@ import { repeatOrder } from '../../lib/api-client';
 import { useCart } from '../../lib/contexts/CartContext';
 import { isOnlinePaymentMethod } from '../../lib/orders/tax';
 import { downloadOrderInvoice } from '../../lib/orders/download-invoice';
+import { NoTranslate } from '../NoTranslate';
 
 interface OrderHistoryItemProps {
   order: any;
@@ -129,7 +130,7 @@ export default function OrderHistoryItem({
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <h3 className="mb-1 truncate text-xl font-semibold leading-tight">
-              {t('order')} #{order.orderNumber}
+              {t('order', 'Bestellung')} <NoTranslate>#{order.orderNumber}</NoTranslate>
             </h3>
             <div className="flex min-w-0 items-start text-sm leading-5 text-gray-500">
               <Clock className="mr-1 mt-0.5 h-4 w-4 shrink-0" />
@@ -141,7 +142,7 @@ export default function OrderHistoryItem({
 
           <div className="shrink-0 sm:text-right">
             <div className="whitespace-nowrap font-medium">
-              {order.total.toFixed(2)} €
+              <NoTranslate>{order.total.toFixed(2)} €</NoTranslate>
             </div>
             <div
               className={`mt-1 inline-flex max-w-full items-center rounded-full px-2.5 py-0.5 text-xs font-medium leading-5 sm:max-w-[14rem] ${getStatusClass(order.status)}`}
@@ -157,14 +158,13 @@ export default function OrderHistoryItem({
               key={index}
               className="inline-flex max-w-full items-center truncate rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium leading-5 text-gray-800"
             >
-              {item.quantity}× {item.name}
-              {item.size ? ` (${item.size.name})` : ''}
+              <NoTranslate>{item.quantity}× {item.name}{item.size ? ` (${item.size.name})` : ''}</NoTranslate>
             </span>
           ))}
 
           {order.items.length > 3 && (
             <span className="inline-flex max-w-full items-center whitespace-nowrap rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium leading-5 text-gray-800">
-              +{order.items.length - 3} {t('profile.more_items')}
+              +{order.items.length - 3} {t('profile.more_items', 'weitere Artikel')}
             </span>
           )}
         </div>
@@ -174,8 +174,12 @@ export default function OrderHistoryItem({
             <MapPin className="mr-1 mt-0.5 h-4 w-4 shrink-0" />
             <span className="min-w-0 text-pretty">
               {order.deliveryType === 'delivery'
-                ? `${order.deliveryAddress?.street} ${order.deliveryAddress?.houseNumber}, ${order.deliveryAddress?.postalCode}`
-                : t('track.pickup')}
+                ? (
+                  <NoTranslate>
+                    {order.deliveryAddress?.street} {order.deliveryAddress?.houseNumber}, {order.deliveryAddress?.postalCode}
+                  </NoTranslate>
+                )
+                : t('track.pickup', 'Abholung')}
             </span>
           </div>
         )}

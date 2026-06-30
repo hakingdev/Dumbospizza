@@ -7,7 +7,7 @@
  * уже нет на ожидаемом месте, и кидает NotFoundError → «ошибка на стороне клиента».
  * Следствие — мигание/перескоки модалок акций (Angebote) и гратиса.
  *
- * Решение (рекомендация из facebook/react#11538): делаем removeChild/insertBefore
+ * Решение (рекомендация из facebook/react#11538): делаем removeChild/insertBefore/replaceChild
  * терпимыми к «чужому» родителю — вместо исключения молча возвращаем узел.
  * Патч ставится один раз, до первой реконсиляции (импортируется в клиентском
  * Providers, код модуля выполняется при импорте на клиенте).
@@ -57,6 +57,22 @@ if (typeof window !== 'undefined' && !window.__gtCompatPatched) {
         return newNode;
       }
       return originalInsertBefore.call(this, newNode, referenceNode) as T;
+    };
+
+    const originalReplaceChild = Node.prototype.replaceChild;
+    Node.prototype.replaceChild = function <T extends Node>(
+      this: Node,
+      newChild: Node,
+      oldChild: T
+    ): T {
+      if (oldChild.parentNode !== this) {
+        if (process.env.NODE_ENV !== 'production') {
+          // eslint-disable-next-line no-console
+          console.warn('[gt-compat] replaceChild: старый узел из другого родителя — пропуск замены', oldChild);
+        }
+        return oldChild;
+      }
+      return originalReplaceChild.call(this, newChild, oldChild) as T;
     };
   }
 }

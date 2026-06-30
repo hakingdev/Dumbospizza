@@ -3,6 +3,7 @@
 import type { BogoSecondOffer } from '../../lib/promotions/types';
 import { Gift, Percent } from 'lucide-react';
 import { SafeImage } from '../SafeImage';
+import { NoTranslate } from '../NoTranslate';
 
 interface BogoSecondPickerModalProps {
   offers: BogoSecondOffer[];
@@ -63,7 +64,7 @@ export default function BogoSecondPickerModal({
         <div className="p-6 space-y-6">
           {offers.map((offer) => (
             <div key={offer.promotionId}>
-              <h3 className="font-semibold text-gray-900 mb-1">{offer.promotionName}</h3>
+              <h3 className="font-semibold text-gray-900 mb-1"><NoTranslate>{offer.promotionName}</NoTranslate></h3>
               <p className="text-sm text-gray-500 mb-1">{offer.label}</p>
               {(offer.remaining ?? 0) > 1 && (
                 <p className="text-xs font-semibold text-orange-600 mb-3">
@@ -108,16 +109,16 @@ export default function BogoSecondPickerModal({
                           className="w-12 h-12 rounded object-cover shrink-0"
                         />
                       )}
-                      <span className="font-medium text-gray-900 flex-1">{option.name}</span>
+                      <NoTranslate className="font-medium text-gray-900 flex-1">{option.name}</NoTranslate>
                       <span
                         className={`text-sm font-semibold shrink-0 ${
                           isFree ? 'text-emerald-600' : 'text-orange-600'
                         }`}
                       >
-                        {priceLabel}
+                        <NoTranslate>{priceLabel}</NoTranslate>
                         {!isFree && option.unitPrice > option.effectivePrice && (
                           <span className="block text-xs text-gray-400 line-through text-right">
-                            {option.unitPrice.toFixed(2)} €
+                            <NoTranslate>{option.unitPrice.toFixed(2)} €</NoTranslate>
                           </span>
                         )}
                       </span>

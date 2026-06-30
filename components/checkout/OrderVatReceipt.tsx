@@ -106,7 +106,7 @@ export default function OrderVatReceipt({ order }: OrderVatReceiptProps) {
       </div>
 
       {/* Печатаемая область */}
-      <div id="vat-receipt" className="p-6 text-sm text-gray-800">
+      <div id="vat-receipt" className="notranslate p-6 text-sm text-gray-800" translate="no">
         {/* Реквизиты продавца */}
         <div className="mb-4">
           <p className="text-base font-bold">{SELLER.legalName}</p>

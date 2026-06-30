@@ -11,6 +11,7 @@ import { ProductPromotionsBanner } from '../../../../components/promotions/Promo
 import { normalizeObjectId } from '../../../../lib/normalize-id';
 import { getSizePrice } from '../../../../lib/product-pricing';
 import { SafeImage } from '../../../../components/SafeImage';
+import { NoTranslate } from '../../../../components/NoTranslate';
 
 interface Extra {
   name: string;
@@ -169,7 +170,7 @@ export default function ProductPage() {
       const count = (selectedOptions[g._id] || []).length;
       const min = Math.max(g.minSelect || 0, g.required ? 1 : 0);
       if (count < min) {
-        return `Выберите ${min > 1 ? `минимум ${min} в группе` : 'опцию в группе'} «${g.name}»`;
+        return `Bitte wählen Sie ${min > 1 ? `mindestens ${min} Optionen in der Gruppe` : 'eine Option in der Gruppe'} "${g.name}"`;
       }
     }
     return '';
@@ -267,7 +268,7 @@ export default function ProductPage() {
     return (
       <div className="container mx-auto px-4 py-20 text-center">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto"></div>
-        <p className="mt-4 text-gray-600">{t('common.loading', 'Загрузка...')}</p>
+        <p className="mt-4 text-gray-600">{t('common.loading', 'Wird geladen...')}</p>
       </div>
     );
   }
@@ -275,9 +276,9 @@ export default function ProductPage() {
   if (!product || !product.available) {
     return (
       <div className="container mx-auto px-4 py-20 text-center">
-        <h1 className="text-2xl font-bold mb-4">{t('product.unavailable', 'Продукт недоступен')}</h1>
+        <h1 className="text-2xl font-bold mb-4">{t('product.unavailable', 'Produkt nicht verfügbar')}</h1>
         <Link href="/" className="btn-primary">
-          {t('common.back_home', 'Вернуться на главную')}
+          {t('common.back_home', 'Zur Startseite')}
         </Link>
       </div>
     );
@@ -291,7 +292,7 @@ export default function ProductPage() {
         {/* Back button */}
         <Link href="/" className="mb-6 inline-flex max-w-full items-center gap-1 leading-tight text-primary-600 hover:text-primary-700">
           <ChevronLeft className="h-5 w-5 shrink-0" />
-          {t('menu.back_to_menu', 'Назад к меню')}
+          {t('menu.back_to_menu', 'Zurück zur Speisekarte')}
         </Link>
         
         <div className="grid lg:grid-cols-2 gap-8">
@@ -307,7 +308,7 @@ export default function ProductPage() {
               <div className="aspect-square bg-gradient-to-br from-gray-100 to-gray-200 rounded-xl flex items-center justify-center">
                 <div className="text-center">
                   <div className="text-9xl mb-4">🍕</div>
-                  <span className="text-gray-400">{product.name}</span>
+                  <NoTranslate className="text-gray-400">{product.name}</NoTranslate>
                 </div>
               </div>
             )}
@@ -316,18 +317,20 @@ export default function ProductPage() {
           {/* Product Configuration */}
           <div className="space-y-6">
             <div className="bg-white rounded-2xl p-6 shadow-sm">
-              <h1 className="mb-2 break-words text-3xl font-bold leading-tight">{product.name}</h1>
+              <h1 className="mb-2 break-words text-3xl font-bold leading-tight">
+                <NoTranslate>{product.name}</NoTranslate>
+              </h1>
               <p className="mb-4 break-words text-gray-600">{product.description}</p>
 
               <ProductPromotionsBanner productId={product._id} categoryId={product.category} />
 
               <div className="flex items-baseline gap-2 mb-6">
                 <span className="text-4xl font-bold text-primary-600">
-                  {totalPrice.toFixed(2)} €
+                  <NoTranslate>{totalPrice.toFixed(2)} €</NoTranslate>
                 </span>
                 {totalPrice > product.basePrice && (
                   <span className="text-lg text-gray-500 line-through">
-                    {product.basePrice.toFixed(2)} €
+                    <NoTranslate>{product.basePrice.toFixed(2)} €</NoTranslate>
                   </span>
                 )}
               </div>
@@ -335,7 +338,7 @@ export default function ProductPage() {
               {/* Sizes */}
               {product.sizes && product.sizes.length > 0 && (
                 <div className="mb-6">
-                <h3 className="font-bold mb-3">{t('product_modal.size_title', 'Выберите размер:')}</h3>
+                <h3 className="font-bold mb-3">{t('product_modal.size_title', 'Größe wählen:')}</h3>
                   <div className="space-y-2">
                     {product.sizes.map((size) => {
                       const sel = selectedSize?.id === size.id;
@@ -349,12 +352,12 @@ export default function ProductPage() {
                           }`}
                         >
                           <div className="min-w-0">
-                            <div className="font-bold">{size.name}</div>
-                            {sub && <div className="text-sm text-gray-600 truncate">{sub}</div>}
+                            <NoTranslate className="block font-bold">{size.name}</NoTranslate>
+                            {sub && <NoTranslate className="block text-sm text-gray-600 truncate">{sub}</NoTranslate>}
                           </div>
                           <div className="flex items-center gap-3 flex-shrink-0">
                             <span className="text-primary-600 font-semibold whitespace-nowrap">
-                              {getSizePrice(product, size).toFixed(2)}€
+                              <NoTranslate>{getSizePrice(product, size).toFixed(2)}€</NoTranslate>
                             </span>
                             <span className={`h-5 w-5 rounded-full border-2 flex items-center justify-center ${sel ? 'border-primary-600' : 'border-gray-300'}`}>
                               {sel && <span className="h-2.5 w-2.5 rounded-full bg-primary-600" />}
@@ -376,12 +379,12 @@ export default function ProductPage() {
                     <div className="flex items-baseline gap-2 mb-3">
                       <h3 className="font-bold">{group.name}</h3>
                       {min > 0 ? (
-                        <span className="text-xs font-semibold text-red-600 uppercase">обязательно</span>
+                        <span className="text-xs font-semibold text-red-600 uppercase">erforderlich</span>
                       ) : (
-                        <span className="text-xs text-gray-400">необязательно</span>
+                        <span className="text-xs text-gray-400">optional</span>
                       )}
                       {group.maxSelect > 0 && !single && (
-                        <span className="text-xs text-gray-400">до {group.maxSelect}</span>
+                        <span className="text-xs text-gray-400">bis {group.maxSelect}</span>
                       )}
                     </div>
                     <div className="space-y-2">
@@ -398,10 +401,10 @@ export default function ProductPage() {
                                 : 'border-gray-200 hover:border-primary-300'
                             }`}
                           >
-                            <span className="font-medium min-w-0 truncate">{option.name}</span>
+                            <NoTranslate className="font-medium min-w-0 truncate">{option.name}</NoTranslate>
                             <div className="flex items-center gap-3 flex-shrink-0">
                               {option.price > 0 && (
-                                <span className="text-sm text-gray-600 whitespace-nowrap">+{option.price.toFixed(2)}€</span>
+                                <NoTranslate className="text-sm text-gray-600 whitespace-nowrap">+{option.price.toFixed(2)}€</NoTranslate>
                               )}
                               {single ? (
                                 <span className={`h-5 w-5 rounded-full border-2 flex items-center justify-center ${selected ? 'border-primary-600' : 'border-gray-300'}`}>
@@ -425,7 +428,7 @@ export default function ProductPage() {
               {(!product.optionGroupIds || product.optionGroupIds.length === 0) &&
                 product.extras?.toppings && product.extras.toppings.length > 0 && (
                 <div className="mb-6">
-                <h3 className="font-bold mb-3">{t('product_modal.toppings_title', 'Дополнительные топпинги:')}</h3>
+                <h3 className="font-bold mb-3">{t('product_modal.toppings_title', 'Zusätzliche Beläge:')}</h3>
                   <div className="space-y-2">
                     {product.extras.toppings.map((topping, index) => {
                       const isSelected = selectedToppings.find(t => t.name === topping.name);
@@ -439,9 +442,9 @@ export default function ProductPage() {
                               : 'border-gray-200 hover:border-primary-300'
                           }`}
                         >
-                            <span className="min-w-0 break-words text-left font-medium">{topping.name}</span>
+                            <NoTranslate className="min-w-0 break-words text-left font-medium">{topping.name}</NoTranslate>
                           <div className="flex shrink-0 items-center gap-2">
-                            <span className="whitespace-nowrap text-primary-600">+{topping.price.toFixed(2)}€</span>
+                            <NoTranslate className="whitespace-nowrap text-primary-600">+{topping.price.toFixed(2)}€</NoTranslate>
                             {isSelected && <Check className="h-5 w-5 text-primary-600" />}
                           </div>
                         </button>
@@ -455,7 +458,7 @@ export default function ProductPage() {
               {(!product.optionGroupIds || product.optionGroupIds.length === 0) &&
                 product.extras?.sauces && product.extras.sauces.length > 0 && (
                 <div className="mb-6">
-                <h3 className="font-bold mb-3">{t('product_modal.sauces_title', 'Соусы:')}</h3>
+                <h3 className="font-bold mb-3">{t('product_modal.sauces_title', 'Saucen:')}</h3>
                   <div className="space-y-2">
                     {product.extras.sauces.map((sauce, index) => {
                       const isSelected = selectedSauces.find(s => s.name === sauce.name);
@@ -469,10 +472,10 @@ export default function ProductPage() {
                               : 'border-gray-200 hover:border-primary-300'
                           }`}
                         >
-                          <span className="min-w-0 break-words text-left font-medium">{sauce.name}</span>
+                          <NoTranslate className="min-w-0 break-words text-left font-medium">{sauce.name}</NoTranslate>
                           <div className="flex shrink-0 items-center gap-2">
                             {sauce.price > 0 && (
-                              <span className="whitespace-nowrap text-primary-600">+{sauce.price.toFixed(2)}€</span>
+                              <NoTranslate className="whitespace-nowrap text-primary-600">+{sauce.price.toFixed(2)}€</NoTranslate>
                             )}
                             {isSelected && <Check className="h-5 w-5 text-primary-600" />}
                           </div>
@@ -487,7 +490,7 @@ export default function ProductPage() {
               {(!product.optionGroupIds || product.optionGroupIds.length === 0) &&
                 product.extras?.sides && product.extras.sides.length > 0 && (
                 <div className="mb-6">
-                <h3 className="font-bold mb-3">{t('product_modal.sides_title', 'Напитки / Закуски:')}</h3>
+                <h3 className="font-bold mb-3">{t('product_modal.sides_title', 'Getränke / Beilagen:')}</h3>
                   <div className="space-y-2">
                     {product.extras.sides.map((side, index) => {
                       const isSelected = selectedSides.find(s => s.name === side.name);
@@ -501,9 +504,9 @@ export default function ProductPage() {
                               : 'border-gray-200 hover:border-primary-300'
                           }`}
                         >
-                          <span className="min-w-0 break-words text-left font-medium">{side.name}</span>
+                          <NoTranslate className="min-w-0 break-words text-left font-medium">{side.name}</NoTranslate>
                           <div className="flex shrink-0 items-center gap-2">
-                            <span className="whitespace-nowrap text-primary-600">+{side.price.toFixed(2)}€</span>
+                            <NoTranslate className="whitespace-nowrap text-primary-600">+{side.price.toFixed(2)}€</NoTranslate>
                             {isSelected && <Check className="h-5 w-5 text-primary-600" />}
                           </div>
                         </button>
@@ -515,11 +518,11 @@ export default function ProductPage() {
               
               {/* Notes */}
               <div className="mb-6">
-                <h3 className="font-bold mb-3">{t('product.notes', 'Особые пожелания:')}</h3>
+                <h3 className="font-bold mb-3">{t('product.notes', 'Besondere Wünsche:')}</h3>
                 <textarea
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  placeholder={t('product.notes_placeholder', 'Например: без лука, хорошо прожарить...')}
+                  placeholder={t('product.notes_placeholder', 'Zum Beispiel: ohne Zwiebeln, gut durchgebacken...')}
                   className="input resize-none"
                   rows={3}
                 />
@@ -527,7 +530,7 @@ export default function ProductPage() {
               
               {/* Quantity */}
               <div className="mb-6">
-                <h3 className="font-bold mb-3">{t('product_modal.quantity', 'Количество:')}</h3>
+                <h3 className="font-bold mb-3">{t('product_modal.quantity', 'Menge:')}</h3>
                 <div className="flex items-center gap-4">
                   <button
                     onClick={() => setQuantity(Math.max(1, quantity - 1))}
@@ -559,12 +562,12 @@ export default function ProductPage() {
                 {isAdding ? (
                   <>
                     <Check className="h-6 w-6" />
-                    {t('product.added', 'Добавлено!')}
+                    {t('product.added', 'Hinzugefügt!')}
                   </>
                 ) : (
                   <>
                     <ShoppingCart className="h-6 w-6" />
-                    {t('product.add_to_cart', 'Добавить в корзину')} {t('product.for_price', 'за')} {(totalPrice * quantity).toFixed(2)} €
+                    {t('product.add_to_cart', 'In den Warenkorb')} {t('product.for_price', 'für')} <NoTranslate>{(totalPrice * quantity).toFixed(2)} €</NoTranslate>
                   </>
                 )}
               </button>

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '../../../lib/contexts/LanguageContext';
 import { loadTranslation } from '../../../lib/i18n';
+import { NoTranslate } from '../../../components/NoTranslate';
 
 interface OrderStatusStep {
   status: string;
@@ -14,28 +15,28 @@ interface OrderStatusStep {
 const getOrderStatusSteps = (t: (key: string, defaultValue?: string) => string): OrderStatusStep[] => [
   {
     status: 'new',
-    label: t('track.order_status.new', 'Новый заказ'),
-    description: t('track.status_description.new', 'Мы получили ваш заказ и скоро начнем готовить.')
+    label: t('track.order_status.new', 'Neue Bestellung'),
+    description: t('track.status_description.new', 'Wir haben Ihre Bestellung erhalten und beginnen gleich mit der Zubereitung.')
   },
   {
     status: 'preparing',
-    label: t('track.order_status.preparing', 'Готовится'),
-    description: t('track.status_description.preparing', 'Наши повара готовят ваш заказ.')
+    label: t('track.order_status.preparing', 'Wird zubereitet'),
+    description: t('track.status_description.preparing', 'Unsere Küche bereitet Ihre Bestellung vor.')
   },
   {
     status: 'ready_for_delivery',
-    label: t('track.order_status.ready_for_delivery', 'Готов к доставке'),
-    description: t('track.status_description.ready_for_delivery', 'Ваш заказ готов и ожидает курьера.')
+    label: t('track.order_status.ready_for_delivery', 'Bereit zur Lieferung'),
+    description: t('track.status_description.ready_for_delivery', 'Ihre Bestellung ist fertig und wartet auf den Fahrer.')
   },
   {
     status: 'delivering',
-    label: t('track.order_status.delivering', 'В пути'),
-    description: t('track.status_description.delivering', 'Курьер уже едет к вам с вашим заказом.')
+    label: t('track.order_status.delivering', 'Unterwegs'),
+    description: t('track.status_description.delivering', 'Der Fahrer ist mit Ihrer Bestellung unterwegs.')
   },
   {
     status: 'completed',
-    label: t('track.order_status.completed', 'Доставлен'),
-    description: t('track.status_description.completed', 'Ваш заказ был доставлен. Приятного аппетита!')
+    label: t('track.order_status.completed', 'Zugestellt'),
+    description: t('track.status_description.completed', 'Ihre Bestellung wurde geliefert. Guten Appetit!')
   }
 ];
 
@@ -62,7 +63,7 @@ export default function TrackOrderPage() {
     e.preventDefault();
     
     if (!searchTerm) {
-      setError(t('track.error_missing', 'Пожалуйста, введите номер телефона или номер заказа'));
+      setError(t('track.error_missing', 'Bitte geben Sie Telefonnummer oder Bestellnummer ein.'));
       return;
     }
     
@@ -75,19 +76,19 @@ export default function TrackOrderPage() {
       );
       
       if (!response.ok) {
-        throw new Error(t('track.error_fetch', 'Не удалось найти заказы. Пожалуйста, проверьте данные и попробуйте снова.'));
+        throw new Error(t('track.error_fetch', 'Bestellungen konnten nicht gefunden werden. Bitte prüfen Sie die Angaben und versuchen Sie es erneut.'));
       }
       
       const data = await response.json();
       
       if (data.orders.length === 0) {
-        setError(t('track.error_not_found', 'Заказы не найдены. Пожалуйста, проверьте данные и попробуйте снова.'));
+        setError(t('track.error_not_found', 'Keine Bestellungen gefunden. Bitte prüfen Sie die Angaben und versuchen Sie es erneut.'));
         setOrders([]);
       } else {
         setOrders(data.orders);
       }
     } catch (err: any) {
-      setError(err.message || t('track.error_generic', 'Произошла ошибка при поиске заказа'));
+      setError(err.message || t('track.error_generic', 'Bei der Suche nach der Bestellung ist ein Fehler aufgetreten.'));
       setOrders([]);
     } finally {
       setIsLoading(false);
@@ -101,7 +102,7 @@ export default function TrackOrderPage() {
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-4xl">
-      <h1 className="text-3xl font-bold mb-6 text-center">{t('track.title', 'Отслеживание заказа')}</h1>
+      <h1 className="text-3xl font-bold mb-6 text-center">{t('track.title', 'Bestellung verfolgen')}</h1>
       
       <div className="bg-white rounded-lg shadow-lg p-6 mb-8">
         <form onSubmit={handleSearch} className="space-y-4">
@@ -116,7 +117,7 @@ export default function TrackOrderPage() {
                   onChange={() => setSearchType('phone')}
                   className="mr-2"
                 />
-                <span className="min-w-0 leading-tight">{t('track.search_by_phone', 'Номер телефона')}</span>
+                <span className="min-w-0 leading-tight">{t('track.search_by_phone', 'Telefonnummer')}</span>
               </label>
               
               <label className="flex min-w-0 items-center">
@@ -128,7 +129,7 @@ export default function TrackOrderPage() {
                   onChange={() => setSearchType('orderNumber')}
                   className="mr-2"
                 />
-                <span className="min-w-0 leading-tight">{t('track.search_by_order', 'Номер заказа')}</span>
+                <span className="min-w-0 leading-tight">{t('track.search_by_order', 'Bestellnummer')}</span>
               </label>
             </div>
             
@@ -139,8 +140,8 @@ export default function TrackOrderPage() {
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder={
                   searchType === 'phone' 
-                    ? t('track.phone_placeholder', 'Введите номер телефона (например, +49123456789)') 
-                    : t('track.order_placeholder', 'Введите номер заказа (например, 230901001)')
+                    ? t('track.phone_placeholder', 'Telefonnummer eingeben (z. B. +49123456789)')
+                    : t('track.order_placeholder', 'Bestellnummer eingeben (z. B. 230901001)')
                 }
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               />
@@ -152,7 +153,7 @@ export default function TrackOrderPage() {
             disabled={isLoading}
             className="inline-flex min-h-[48px] w-full items-center justify-center rounded-lg bg-primary-600 px-6 py-3 text-center font-semibold leading-tight text-white transition-colors hover:bg-primary-700 disabled:bg-gray-400"
           >
-            {isLoading ? t('track.searching', 'Поиск...') : t('track.find_order', 'Найти заказ')}
+            {isLoading ? t('track.searching', 'Suche...') : t('track.find_order', 'Bestellung finden')}
           </button>
         </form>
         
@@ -165,7 +166,7 @@ export default function TrackOrderPage() {
       
       {orders.length > 0 && (
         <div className="space-y-8">
-          <h2 className="text-2xl font-semibold">{t('track.found_orders', 'Найденные заказы')}</h2>
+          <h2 className="text-2xl font-semibold">{t('track.found_orders', 'Gefundene Bestellungen')}</h2>
           
           {orders.map(order => (
             <div key={order._id} className="bg-white rounded-lg shadow-lg overflow-hidden">
@@ -173,7 +174,7 @@ export default function TrackOrderPage() {
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0">
                     <h3 className="font-semibold text-xl mb-1">
-                      {t('order', 'Заказ')} #{order.orderNumber}
+                      {t('order', 'Bestellung')} <NoTranslate>#{order.orderNumber}</NoTranslate>
                     </h3>
                     <p className="text-gray-500">
                       {new Date(order.createdAt).toLocaleDateString('de-DE', {
@@ -187,10 +188,10 @@ export default function TrackOrderPage() {
                   </div>
                   <div className="shrink-0 text-left sm:text-right">
                     <span className="inline-block rounded-full px-3 py-1 text-sm font-semibold bg-blue-100 text-blue-800">
-                      {t(`track.order_status.${order.status}`, 'Статус')}
+                      {t(`track.order_status.${order.status}`, 'Status')}
                     </span>
                     <p className="mt-2 font-semibold text-xl">
-                      {order.total.toFixed(2)} €
+                      <NoTranslate>{order.total.toFixed(2)} €</NoTranslate>
                     </p>
                   </div>
                 </div>
@@ -260,8 +261,8 @@ export default function TrackOrderPage() {
                   {order.items.map((item: any, index: number) => (
                     <li key={index} className="py-2 flex justify-between">
                       <div>
-                        <span className="font-medium">{item.name}</span>
-                        {item.size && <span className="text-gray-500 ml-1">({item.size.name})</span>}
+                        <NoTranslate className="font-medium">{item.name}</NoTranslate>
+                        {item.size && <NoTranslate className="text-gray-500 ml-1">({item.size.name})</NoTranslate>}
 
                         {/* Display customizations */}
                         {(item.extras?.toppings?.length > 0 ||
@@ -269,22 +270,22 @@ export default function TrackOrderPage() {
                           item.extras?.sides?.length > 0) && (
                           <ul className="text-sm text-gray-500 mt-1 ml-4">
                             {item.extras?.toppings?.map((topping: any, i: number) => (
-                              <li key={`topping-${i}`}>+ {topping.name}</li>
+                              <li key={`topping-${i}`}>+ <NoTranslate>{topping.name}</NoTranslate></li>
                             ))}
                             
                             {item.extras?.sauces?.map((sauce: any, i: number) => (
-                              <li key={`sauce-${i}`}>+ {sauce.name}</li>
+                              <li key={`sauce-${i}`}>+ <NoTranslate>{sauce.name}</NoTranslate></li>
                             ))}
                             
                             {item.extras?.sides?.map((side: any, i: number) => (
-                              <li key={`side-${i}`}>+ {side.name}</li>
+                              <li key={`side-${i}`}>+ <NoTranslate>{side.name}</NoTranslate></li>
                             ))}
                           </ul>
                         )}
                       </div>
                       <div className="flex items-start">
                         <span className="text-gray-500 mr-2">{item.quantity} ×</span>
-                        <span>{(item.price * item.quantity).toFixed(2)} €</span>
+                        <NoTranslate>{(item.price * item.quantity).toFixed(2)} €</NoTranslate>
                       </div>
                     </li>
                   ))}
@@ -294,26 +295,26 @@ export default function TrackOrderPage() {
                 <div className="mt-4 border-t pt-4">
                   <div className="flex justify-between py-1">
                     <span className="text-gray-600">{t('cart.subtotal', 'Zwischensumme')}:</span>
-                    <span>{order.subtotal.toFixed(2)} €</span>
+                    <NoTranslate>{order.subtotal.toFixed(2)} €</NoTranslate>
                   </div>
                   
                   {order.deliveryFee > 0 && (
                     <div className="flex justify-between py-1">
                       <span className="text-gray-600">{t('cart.delivery_fee', 'Lieferung')}:</span>
-                      <span>{order.deliveryFee.toFixed(2)} €</span>
+                      <NoTranslate>{order.deliveryFee.toFixed(2)} €</NoTranslate>
                     </div>
                   )}
                   
                   {order.loyaltyPointsUsed > 0 && (
                     <div className="flex justify-between py-1">
                       <span className="text-gray-600">{t('checkout.discount_points', 'Rabatt (Punkte)')}:</span>
-                      <span>-{(order.loyaltyPointsUsed / 100).toFixed(2)} €</span>
+                      <NoTranslate>-{(order.loyaltyPointsUsed / 100).toFixed(2)} €</NoTranslate>
                     </div>
                   )}
                   
                   <div className="flex justify-between py-2 font-semibold text-lg border-t mt-2">
                     <span>{t('cart.total', 'Gesamt')}:</span>
-                    <span>{order.total.toFixed(2)} €</span>
+                    <NoTranslate>{order.total.toFixed(2)} €</NoTranslate>
                   </div>
                 </div>
               </div>
@@ -325,9 +326,9 @@ export default function TrackOrderPage() {
                     {(order.customerName || order.phoneNumber || order.email) && (
                       <div>
                         <h4 className="font-semibold mb-1">{t('confirmation.contact_info', 'Kontaktinformationen')}</h4>
-                        {order.customerName && <p>{order.customerName}</p>}
-                        {order.phoneNumber && <p>{order.phoneNumber}</p>}
-                        {order.email && <p>{order.email}</p>}
+                        {order.customerName && <NoTranslate className="block">{order.customerName}</NoTranslate>}
+                        {order.phoneNumber && <NoTranslate className="block">{order.phoneNumber}</NoTranslate>}
+                        {order.email && <NoTranslate className="block">{order.email}</NoTranslate>}
                       </div>
                     )}
 
@@ -338,12 +339,12 @@ export default function TrackOrderPage() {
                     {order.deliveryType === 'delivery' && order.deliveryAddress && (
                       <>
                         <p>
-                          {order.deliveryAddress.street} {order.deliveryAddress.houseNumber}
-                          {order.deliveryAddress.floor && `, ${t('checkout.floor', 'Etage / Wohnung')} ${order.deliveryAddress.floor}`}
+                          <NoTranslate>{order.deliveryAddress.street} {order.deliveryAddress.houseNumber}</NoTranslate>
+                          {order.deliveryAddress.floor && <>, {t('checkout.floor', 'Etage / Wohnung')} <NoTranslate>{order.deliveryAddress.floor}</NoTranslate></>}
                         </p>
-                        <p>{order.deliveryAddress.postalCode} {order.deliveryAddress.city}</p>
+                        <p><NoTranslate>{order.deliveryAddress.postalCode} {order.deliveryAddress.city}</NoTranslate></p>
                         {order.deliveryAddress.notes && (
-                          <p className="text-gray-600">{order.deliveryAddress.notes}</p>
+                          <NoTranslate className="block text-gray-600">{order.deliveryAddress.notes}</NoTranslate>
                         )}
                       </>
                     )}

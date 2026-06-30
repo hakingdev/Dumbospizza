@@ -27,7 +27,7 @@ export default function TranslationProvider({ children }: TranslationProviderPro
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
           <div className="inline-block animate-spin h-8 w-8 border-4 border-gray-400 rounded-full border-t-primary-600"></div>
-          <p className="mt-2 text-gray-600">Загрузка...</p>
+          <p className="mt-2 text-gray-600">Wird geladen...</p>
         </div>
       </div>
     );

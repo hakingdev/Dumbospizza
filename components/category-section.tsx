@@ -33,7 +33,7 @@ export function CategorySection({ title, image, href }: CategorySectionProps) {
       <div className="relative h-40 w-full overflow-hidden rounded-md">
         {/* In a real app, this would use next/image with actual images */}
         <div className="absolute inset-0 bg-gray-200 flex items-center justify-center text-gray-500">
-          [{t('category.image_placeholder', 'Изображение')} {title}]
+          [{t('category.image_placeholder', 'Bild')} {title}]
         </div>
       </div>
       <h3 className="mt-4 text-lg font-semibold group-hover:text-primary-600">{title}</h3>

@@ -17,6 +17,7 @@ import { groupCartRows } from '../../../lib/cart/combo'
 import { ComboCartGroup } from '../../../components/cart/ComboCartGroup'
 import { getConflictingPromotions } from '../../../lib/promotions/coupon-conflict'
 import { PROMO_CONFLICT_MESSAGE } from '../../../components/cart/PromoConflictDialog'
+import { NoTranslate } from '../../../components/NoTranslate'
 
 export default function CartPage() {
   const router = useRouter();
@@ -122,10 +123,10 @@ export default function CartPage() {
     <div className="container mx-auto px-4 py-8">
       <Link href="/menu" className="mb-6 inline-flex max-w-full items-center gap-1 leading-tight text-primary-600">
         <ChevronLeft className="h-5 w-5 shrink-0" />
-        {t('cart.back_to_menu', 'Вернуться к меню')}
+        {t('cart.back_to_menu', 'Zurück zur Speisekarte')}
       </Link>
       
-      <h1 className="text-3xl font-bold mb-8">{t('cart.title', 'Корзина')}</h1>
+      <h1 className="text-3xl font-bold mb-8">{t('cart.title', 'Warenkorb')}</h1>
       
       {state.items.length === 0 ? (
         <div className="text-center py-16">
@@ -156,17 +157,19 @@ export default function CartPage() {
                         {item.image ? (
                           <SafeImage src={item.image} alt={item.name} className="w-full h-full object-cover" />
                         ) : (
-                          <>[{t('category.image_placeholder', 'Изображение')} {item.name}]</>
+                          <>[{t('category.image_placeholder', 'Bild')} <NoTranslate>{item.name}</NoTranslate>]</>
                         )}
                       </div>
 
                       <div className="flex-1">
                         <div className="flex items-start justify-between gap-3">
-                          <h3 className="min-w-0 break-words text-lg font-semibold leading-tight">{item.name}</h3>
+                          <h3 className="min-w-0 break-words text-lg font-semibold leading-tight">
+                            <NoTranslate>{item.name}</NoTranslate>
+                          </h3>
                           <button
                             className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-gray-400 transition-colors hover:bg-red-50 hover:text-red-500"
                             onClick={() => removeItem(item.id)}
-                            aria-label={t('cart.remove_item', 'Удалить')}
+                            aria-label={t('cart.remove_item', 'Entfernen')}
                           >
                             <Trash2 className="w-5 h-5" />
                           </button>
@@ -174,25 +177,25 @@ export default function CartPage() {
 
                         {item.size && (
                           <div className="text-gray-600 text-sm mb-2">
-                            {t('product.size', 'Размер')}: {item.size.name}{(item.size.label || item.size.size) ? ` (${item.size.label || item.size.size})` : ''}
+                            {t('product.size', 'Größe')}: <NoTranslate>{item.size.name}{(item.size.label || item.size.size) ? ` (${item.size.label || item.size.size})` : ''}</NoTranslate>
                           </div>
                         )}
 
                         {item.options?.length ? (
                           <div className="text-gray-600 text-sm mb-2">
-                            {item.options.map(o => o.name).join(', ')}
+                            <NoTranslate>{item.options.map(o => o.name).join(', ')}</NoTranslate>
                           </div>
                         ) : null}
 
                         {item.extras?.sauces?.length ? (
                           <div className="text-gray-600 text-sm mb-2">
-                            {t('cart.sauce_label', 'Соус')}: {item.extras.sauces.map(s => s.name).join(', ')}
+                            {t('cart.sauce_label', 'Sauce')}: <NoTranslate>{item.extras.sauces.map(s => s.name).join(', ')}</NoTranslate>
                           </div>
                         ) : null}
 
                         {item.extras?.toppings?.length ? (
                           <div className="text-gray-600 text-sm mb-2">
-                            {t('cart.extras_label', 'Дополнительно')}: {item.extras.toppings.map(t => t.name).join(', ')}
+                            {t('cart.extras_label', 'Extras')}: <NoTranslate>{item.extras.toppings.map(t => t.name).join(', ')}</NoTranslate>
                           </div>
                         ) : null}
                         
@@ -212,12 +215,12 @@ export default function CartPage() {
                               <Plus className="w-4 h-4" />
                             </button>
                           </div>
-                          <div className="font-semibold">{(item.price * item.quantity).toFixed(2)} €</div>
+                          <NoTranslate className="font-semibold">{(item.price * item.quantity).toFixed(2)} €</NoTranslate>
                           {state.promotionCalculation?.lineAdjustments
                             .filter((l) => l.productId === (item.productId || item.id))
                             .map((l, idx) => (
                               <div key={idx} className="text-xs text-green-600 text-right">
-                                {l.label}: -{l.discountAmount.toFixed(2)} €
+                                {l.label}: <NoTranslate>-{l.discountAmount.toFixed(2)} €</NoTranslate>
                               </div>
                             ))}
                         </div>
@@ -237,7 +240,7 @@ export default function CartPage() {
           {/* Order Summary */}
           <div className="lg:col-span-1">
             <div className="bg-white rounded-lg shadow-md p-6 sticky top-24">
-              <h2 className="text-xl font-bold mb-4">{t('cart.summary_title', 'Сводка заказа')}</h2>
+              <h2 className="text-xl font-bold mb-4">{t('cart.summary_title', 'Bestellübersicht')}</h2>
               
               <div className="mb-6">
                 <OrderSummaryBreakdown
@@ -328,11 +331,11 @@ export default function CartPage() {
               {/* No registration required message */}
               <div className="flex items-center justify-center text-center text-sm text-gray-600 mb-4 bg-gray-50 p-2 rounded">
                 <ShieldCheck className="h-4 w-4 mr-1 text-green-600" />
-                {t('cart.no_registration_required', 'Регистрация не требуется')}
+                {t('cart.no_registration_required', 'Keine Registrierung erforderlich')}
               </div>
               
               <div className="text-xs text-gray-500 text-center">
-                {t('cart.terms_agreement')} <Link href="/terms" className="text-primary-600 hover:underline">{t('footer.terms')}</Link> {t('common.and', 'и')} <Link href="/datenschutz" className="text-primary-600 hover:underline">{t('footer.privacy')}</Link>.
+                {t('cart.terms_agreement')} <Link href="/terms" className="text-primary-600 hover:underline">{t('footer.terms')}</Link> {t('common.and', 'und')} <Link href="/datenschutz" className="text-primary-600 hover:underline">{t('footer.privacy')}</Link>.
               </div>
             </div>
           </div>
