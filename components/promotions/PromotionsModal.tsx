@@ -83,11 +83,31 @@ export default function PromotionsModal() {
     setOpen(false);
   };
 
+  // Esc schließt das Werbe-Modal (wie die übrigen Modals). Wichtig auch, weil der
+  // z-[100]-Backdrop sonst den Header (Menü/Warenkorb) überdeckt und Klicks schluckt.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') close();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open]);
+
   if (!open || promotions.length === 0) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50">
-      <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto relative">
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50"
+      onClick={close}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Aktuelle Angebote"
+    >
+      <div
+        className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto relative"
+        onClick={(e) => e.stopPropagation()}
+      >
         <button
           type="button"
           onClick={close}

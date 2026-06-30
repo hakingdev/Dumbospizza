@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { useState, useEffect } from 'react'
+import { usePathname } from 'next/navigation'
 import { ShoppingCart, Menu, X, User, Phone } from 'lucide-react'
 import { useLanguage } from '../lib/contexts/LanguageContext'
 import { loadTranslation } from '../lib/i18n'
@@ -16,9 +17,25 @@ export function Header() {
     phone: DEFAULT_STORE_PHONE,
   });
   const { language } = useLanguage();
-  const [t, setT] = useState<any>(() => (k: string) => k);
+  const [t, setT] = useState<any>(() => (k: string, fallback?: string) => fallback ?? k);
   const { cartItemsCount } = useCart();
-  
+  const pathname = usePathname();
+
+  // Menü bei Seitenwechsel schließen (z. B. Klick auf einen Punkt oder Zurück-Taste).
+  useEffect(() => {
+    setIsMenuOpen(false);
+  }, [pathname]);
+
+  // Esc schließt das mobile Menü.
+  useEffect(() => {
+    if (!isMenuOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsMenuOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isMenuOpen]);
+
   useEffect(() => {
     // Инициализация перевода
     const loadTranslations = async () => {
@@ -77,7 +94,7 @@ export function Header() {
             
             {/* Desktop Navigation */}
             <nav className="hidden lg:flex items-center space-x-8">
-              <Link href="/" className="text-gray-700 hover:text-primary-600 font-medium transition-colors">
+              <Link href="/menu" className="text-gray-700 hover:text-primary-600 font-medium transition-colors">
                 {t('nav.menu', 'Меню')}
               </Link>
               <Link href="/delivery" className="text-gray-700 hover:text-primary-600 font-medium transition-colors">
@@ -116,9 +133,12 @@ export function Header() {
               
               {/* Mobile menu button */}
               <button
+                type="button"
                 className="flex h-12 w-12 items-center justify-center rounded-full text-gray-700 transition-colors hover:bg-primary-50 hover:text-primary-600 lg:hidden"
-                onClick={() => setIsMenuOpen(!isMenuOpen)}
+                onClick={() => setIsMenuOpen((prev) => !prev)}
                 aria-label={t('nav.menu_toggle', 'Menü')}
+                aria-expanded={isMenuOpen}
+                aria-controls="mobile-menu"
               >
                 {isMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
               </button>
@@ -128,9 +148,9 @@ export function Header() {
         
         {/* Mobile Navigation */}
         {isMenuOpen && (
-          <div className="lg:hidden border-t bg-white">
+          <div id="mobile-menu" className="lg:hidden border-t bg-white">
             <nav className="container mx-auto px-4 py-4 flex flex-col space-y-3">
-              <Link href="/" className="text-gray-700 hover:text-primary-600 py-2 font-medium" onClick={() => setIsMenuOpen(false)}>
+              <Link href="/menu" className="text-gray-700 hover:text-primary-600 py-2 font-medium" onClick={() => setIsMenuOpen(false)}>
                 {t('nav.menu', 'Меню')}
               </Link>
               <Link href="/delivery" className="text-gray-700 hover:text-primary-600 py-2 font-medium" onClick={() => setIsMenuOpen(false)}>

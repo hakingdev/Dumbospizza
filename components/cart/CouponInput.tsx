@@ -36,7 +36,7 @@ export default function CouponInput({
   appliedDiscountType,
 }: CouponInputProps) {
   const { language } = useLanguage();
-  const [t, setT] = useState<any>(() => (k: string) => k);
+  const [t, setT] = useState<any>(() => (k: string, fallback?: string) => fallback ?? k);
   const [couponCode, setCouponCode] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);

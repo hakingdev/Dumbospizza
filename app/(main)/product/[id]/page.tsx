@@ -66,7 +66,7 @@ export default function ProductPage() {
   const router = useRouter();
   const { addItem } = useCart();
   const { language } = useLanguage();
-  const [t, setT] = useState<any>(() => (k: string) => k);
+  const [t, setT] = useState<any>(() => (k: string, fallback?: string) => fallback ?? k);
   
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);

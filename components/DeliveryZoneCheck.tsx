@@ -13,7 +13,7 @@ export default function DeliveryZoneCheck() {
   const [result, setResult] = useState<any>(null);
   const [hasChecked, setHasChecked] = useState(false);
   const { language } = useLanguage();
-  const [t, setT] = useState<any>(() => (k: string) => k);
+  const [t, setT] = useState<any>(() => (k: string, fallback?: string) => fallback ?? k);
 
   useEffect(() => {
     // Проверяем, проверял ли пользователь адрес ранее

@@ -17,7 +17,7 @@ export default function ImageUpload({ value, onChange, label, folder = 'products
   const [uploading, setUploading] = useState(false);
   const [preview, setPreview] = useState(value);
   const { language } = useLanguage();
-  const [t, setT] = useState<any>(() => (k: string) => k);
+  const [t, setT] = useState<any>(() => (k: string, fallback?: string) => fallback ?? k);
 
   useEffect(() => {
     const loadTranslations = async () => {

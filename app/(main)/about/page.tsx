@@ -12,7 +12,7 @@ const DEFAULT_STORE_INFO = {
 
 export default function AboutPage() {
   const { language } = useLanguage();
-  const [t, setT] = useState<any>(() => (k: string) => k);
+  const [t, setT] = useState<any>(() => (k: string, fallback?: string) => fallback ?? k);
   const [storeInfo, setStoreInfo] = useState(DEFAULT_STORE_INFO);
 
   useEffect(() => {

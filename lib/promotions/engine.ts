@@ -13,7 +13,13 @@ import type {
 import { isPromotionActive, isPromotionEffectivelyActive } from './status';
 import { formatHappyHourLabel } from './schedule';
 import { matchesAudience, type PromotionCustomerContext } from './audience';
-import { getGiftProductIds, getGiftItems, getGiftProductIdSet, giftOptionId } from './gifts';
+import {
+  getGiftProductIds,
+  getGiftItems,
+  getGiftProductIdSet,
+  giftOptionId,
+  dedupeFreeGiftsByProduct,
+} from './gifts';
 import {
   buildBogoSecondOffer,
   bogoSecondItemFromOption,
@@ -370,27 +376,42 @@ export function calculatePromotions(
 
   for (const promo of pickerPromos) {
     const id = promoId(promo);
-    // одна награда на каждую подходящую единицу товара (per item)
+    // Число доступных слотов награды = число подходящих платных единиц в корзине
+    // (идемпотентно, из текущего состояния корзины). Каждый слот клиент заполняет
+    // СВОИМ выбором 2-го товара (или отказывается) — НЕ дублируем первый автоматически.
     const allowed = countEligibleBogoUnits(items, promo);
     if (allowed < 1) continue;
 
     const catalog = enrichBogoOptionsWithCartPrices(bogoCatalog[id] || [], items, promo.bogoMode);
-    const chosenIds = (selectionsByPromo.get(id) || []).slice(0, allowed);
 
-    let resolved = 0;
-    for (const cid of chosenIds) {
+    // Явно выбранные клиентом награды (по одному на слот), не больше числа единиц.
+    const chosenOptions: BogoSecondOption[] = [];
+    for (const cid of selectionsByPromo.get(id) || []) {
+      if (chosenOptions.length >= allowed) break;
       const opt =
         catalog.find((o) => o.id === cid) || catalog.find((o) => o.productId === cid);
-      if (opt) {
-        bogoSecondItems.push(bogoSecondItemFromOption(promo, opt));
-        resolved++;
-      }
+      if (opt) chosenOptions.push(opt);
     }
 
-    // остались незаполненные слоты — показываем попап для выбора следующей награды
-    if (resolved < allowed) {
+    // Одинаковые выбранные награды сворачиваем в одну строку с количеством
+    // (разные товары — отдельные строки). Это только отображение; число слотов
+    // = сумме quantity.
+    const perOption = new Map<string, { opt: BogoSecondOption; quantity: number }>();
+    for (const opt of chosenOptions) {
+      const key = opt.id || opt.productId;
+      const entry = perOption.get(key) || { opt, quantity: 0 };
+      entry.quantity += 1;
+      perOption.set(key, entry);
+    }
+    for (const { opt, quantity } of Array.from(perOption.values())) {
+      bogoSecondItems.push({ ...bogoSecondItemFromOption(promo, opt), quantity });
+    }
+
+    // Остались незаполненные слоты → предлагаем выбрать следующую награду (или отказаться).
+    const remaining = allowed - chosenOptions.length;
+    if (remaining > 0) {
       const offer = buildBogoSecondOffer(promo, bogoCatalog[id] || [], items);
-      if (offer) bogoSecondOffers.push(offer);
+      if (offer) bogoSecondOffers.push({ ...offer, remaining });
     }
   }
 
@@ -546,14 +567,26 @@ export function calculatePromotions(
     productDiscountTotal + orderDiscountTotal + bogoSecondSavings
   );
 
+  // «Один физический товар максимум раз»: несколько gratis-акций на один и тот же
+  // продукт дают подарок ОДИН раз. Дедупим авто-подарки и убираем из офферов выбора
+  // опции на товар, который уже выдан авто-подарком (чтобы пикер не предлагал его).
+  const dedupedFreeGifts = dedupeFreeGiftsByProduct(freeGifts);
+  const grantedGiftProductIds = new Set(dedupedFreeGifts.map((g) => String(g.productId)));
+  const dedupedFreeGiftOffers = freeGiftOffers
+    .map((offer) => ({
+      ...offer,
+      options: offer.options.filter((o) => !grantedGiftProductIds.has(String(o.productId))),
+    }))
+    .filter((offer) => offer.options.length > 0);
+
   return {
     subtotal,
     productDiscountTotal,
     orderDiscountTotal,
     promotionDiscountTotal,
     lineAdjustments,
-    freeGifts,
-    freeGiftOffers,
+    freeGifts: dedupedFreeGifts,
+    freeGiftOffers: dedupedFreeGiftOffers,
     giftThresholds,
     bogoSecondOffers,
     bogoSecondItems,

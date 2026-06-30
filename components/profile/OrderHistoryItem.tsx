@@ -27,7 +27,7 @@ export default function OrderHistoryItem({
 }: OrderHistoryItemProps) {
   const router = useRouter();
   const { language } = useLanguage();
-  const [t, setT] = useState<any>(() => (k: string) => k);
+  const [t, setT] = useState<any>(() => (k: string, fallback?: string) => fallback ?? k);
   const [isRepeating, setIsRepeating] = useState(false);
   const [isDownloadingInvoice, setIsDownloadingInvoice] = useState(false);
   const [invoiceError, setInvoiceError] = useState<string | null>(null);

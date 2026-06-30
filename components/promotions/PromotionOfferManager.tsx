@@ -54,9 +54,18 @@ export default function PromotionOfferManager() {
   }
 
   const pendingBogo = bogoOffers.filter((o) => !dismissed.current.has(o.promotionId));
-  // оффер подарка присутствует, пока не выбран; dismissed — отказ
+  // Подарок (Gratis-Artikel) — это ОДНО применение на акцию: ровно одна бесплатная
+  // позиция при выполненном условии (в отличие от BOGO, где слотов = числу пар).
+  // Поэтому, как только пользователь уже выбрал подарок (selectedFreeGifts), оффер
+  // больше НЕ предлагаем — иначе при добавлении следующих Angebot-товаров корзина
+  // меняется, dismissed сбрасывается, и stale-оффер (пересчёт ещё в пути) снова
+  // открыл бы попап → gratis-вода предлагалась/дублировалась 2-3 раза.
+  // Источник истины — стабильный promotionId, не видимый текст.
   const pendingGift = giftOffers.filter(
-    (o) => !dismissed.current.has(o.promotionId) && !state.declinedFreeGifts[o.promotionId]
+    (o) =>
+      !dismissed.current.has(o.promotionId) &&
+      !state.declinedFreeGifts[o.promotionId] &&
+      !state.selectedFreeGifts[o.promotionId]
   );
 
   useEffect(() => {
@@ -78,18 +87,20 @@ export default function PromotionOfferManager() {
         selections={slot}
         onSelect={(promotionId, optionId) => setSlot((s) => ({ ...s, [promotionId]: optionId }))}
         onConfirm={() => {
-          // добавляем выбранную награду (по одной за пару)
+          // Заполняем ОДИН слот выбранной наградой. НЕ помечаем оффер dismissed:
+          // если остаются незаполненные слоты (2-я, 3-я, … пицца), движок вернёт оффер
+          // снова и попап откроется для следующего ВЫБОРА (не дубль первого).
           for (const [pid, oid] of Object.entries(slot)) {
             if (oid) setSelectedBogoSecond(pid, oid);
           }
-          // Оффер обработан: не переоткрывать его авто-попапом до изменения корзины
-          // (иначе при 2+ подходящих товарах движок снова вернёт оффер → дубль-модалка).
-          bogoOffers.forEach((o) => dismissed.current.add(o.promotionId));
+          // Защита от повторного показа на ТОМ ЖЕ расчёте (до прихода свежего пересчёта).
           handledCalc.current = state.promotionCalculation;
           setSlot({});
           setOpen(null);
         }}
         onClose={() => {
+          // Отказ: больше не предлагаем оставшиеся слоты до изменения корзины
+          // (dismissed сбрасывается при следующем добавлении/удалении товара).
           bogoOffers.forEach((o) => dismissed.current.add(o.promotionId));
           handledCalc.current = state.promotionCalculation;
           setSlot({});

@@ -10,7 +10,7 @@ import { Save, ArrowLeft, Loader2 } from 'lucide-react';
 export default function NewCouponPage() {
   const router = useRouter();
   const { language } = useLanguage();
-  const [t, setT] = useState<any>(() => (k: string) => k);
+  const [t, setT] = useState<any>(() => (k: string, fallback?: string) => fallback ?? k);
   
   const [coupon, setCoupon] = useState({
     code: '',

@@ -65,12 +65,33 @@ function optionMatchesSelection(o: { id: string; productId: string }, selected: 
   return o.id === selected || o.productId === selected;
 }
 
+/**
+ * «Один физический товар максимум раз»: если несколько Gratis-Акций дают один и тот
+ * же продукт (одинаковый productId — напр. «Wasser ab 20 €» и «Wasser ab 25 €»),
+ * клиент получает его ОДИН раз. Сохраняем первое вхождение (первая по порядку акция
+ * получает кредит). Размеры одного товара считаем одним физическим товаром.
+ */
+export function dedupeFreeGiftsByProduct(gifts: PromotionFreeGift[]): PromotionFreeGift[] {
+  const seen = new Set<string>();
+  const out: PromotionFreeGift[] = [];
+  for (const g of gifts) {
+    const key = String(g.productId);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(g);
+  }
+  return out;
+}
+
 export function resolveFreeGiftsForOrder(
   calculation: PromotionCalculationResult,
   selections: Array<{ promotionId: string; productId: string }>
 ): { freeGifts: PromotionFreeGift[]; error?: string } {
   const selectionMap = new Map(selections.map((s) => [s.promotionId, s.productId]));
   const resolved: PromotionFreeGift[] = [...calculation.freeGifts];
+  // «Один физический товар максимум раз» — отслеживаем уже выданные товары, чтобы
+  // выбор из второй акции на тот же продукт не добавил дубль в заказ.
+  const claimed = new Set(resolved.map((g) => String(g.productId)));
 
   for (const offer of calculation.freeGiftOffers || []) {
     const selected = selectionMap.get(offer.promotionId);
@@ -83,6 +104,11 @@ export function resolveFreeGiftsForOrder(
     if (!option) {
       return { freeGifts: [], error: 'Ungültige Gratis-Auswahl.' };
     }
+    if (claimed.has(String(option.productId))) {
+      // Тот же товар уже выдан другой акцией — не дублируем (молча пропускаем).
+      continue;
+    }
+    claimed.add(String(option.productId));
     resolved.push({
       productId: option.productId,
       sizeName: option.sizeName || undefined,
@@ -94,7 +120,7 @@ export function resolveFreeGiftsForOrder(
     });
   }
 
-  return { freeGifts: resolved };
+  return { freeGifts: dedupeFreeGiftsByProduct(resolved) };
 }
 
 export function enrichFreeGiftOffers(
@@ -141,6 +167,9 @@ export function applySelectedFreeGifts(
   const selectionMap = new Map(selections.map((s) => [s.promotionId, s.productId]));
   const freeGifts = [...calculation.freeGifts];
   const freeGiftOffers: PromotionFreeGiftOffer[] = [];
+  // «Один физический товар максимум раз»: уже выданные товары не предлагаем повторно
+  // (ни как подарок из другой акции, ни как опцию в оставшихся офферах).
+  const claimed = new Set(freeGifts.map((g) => String(g.productId)));
 
   for (const offer of calculation.freeGiftOffers) {
     const selected = selectionMap.get(offer.promotionId);
@@ -149,6 +178,11 @@ export function applySelectedFreeGifts(
       : undefined;
 
     if (option) {
+      if (claimed.has(String(option.productId))) {
+        // Выбранный товар уже выдан другой акцией — пропускаем дубль.
+        continue;
+      }
+      claimed.add(String(option.productId));
       freeGifts.push({
         productId: option.productId,
         sizeName: option.sizeName || undefined,
@@ -159,7 +193,9 @@ export function applySelectedFreeGifts(
         label: offer.label,
       });
     } else {
-      freeGiftOffers.push(offer);
+      // Оффер без выбора остаётся, но без опций на уже выданные товары.
+      const options = offer.options.filter((o) => !claimed.has(String(o.productId)));
+      if (options.length > 0) freeGiftOffers.push({ ...offer, options });
     }
   }
 

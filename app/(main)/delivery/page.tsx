@@ -19,7 +19,7 @@ const DeliveryZoneMap = dynamic(() => import('../../../components/delivery/Deliv
 
 export default function DeliveryPage() {
   const { language } = useLanguage();
-  const [t, setT] = useState<any>(() => (k: string) => k);
+  const [t, setT] = useState<any>(() => (k: string, fallback?: string) => fallback ?? k);
   const [zones, setZones] = useState<any[]>([]);
   const [restaurantCoords, setRestaurantCoords] = useState<{ lat: number; lng: number }>({
     lat: 50.19526,

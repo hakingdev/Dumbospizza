@@ -25,7 +25,7 @@ export default function OrderConfirmationPage({ params }: OrderConfirmationProps
   const { clearCart } = useCart();
   const router = useRouter();
   const { language } = useLanguage();
-  const [t, setT] = useState<any>(() => (k: string) => k);
+  const [t, setT] = useState<any>(() => (k: string, fallback?: string) => fallback ?? k);
   
   // Fetch order details
   useEffect(() => {

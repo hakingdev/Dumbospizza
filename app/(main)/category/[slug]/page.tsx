@@ -8,21 +8,31 @@ import Link from 'next/link';
 import { useLanguage } from '../../../../lib/contexts/LanguageContext';
 import { loadTranslation } from '../../../../lib/i18n';
 
+// useParams() liefert das URL-Segment ENKODIERT (z. B. "getr%C3%A4nke" für "getränke").
+// Dekodieren, damit Anzeige korrekt ist und der Vergleich mit dem DB-slug ("getränke") greift.
+function decodeSlug(raw: string): string {
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
 export default function CategoryPage() {
   const params = useParams();
-  const slug = params.slug as string;
+  const slug = decodeSlug((params.slug as string) || '');
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [categoryName, setCategoryName] = useState<string>(slug);
   const { language } = useLanguage();
-  const [t, setT] = useState<any>(() => (k: string) => k);
+  const [t, setT] = useState<any>(() => (k: string, fallback?: string) => fallback ?? k);
 
   const categoryTitle = categoryName;
 
   useEffect(() => {
     const fetchProducts = async () => {
       try {
-        const response = await fetch(`/api/products?category=${slug}&available=true`);
+        const response = await fetch(`/api/products?category=${encodeURIComponent(slug)}&available=true`);
         const data = await response.json();
         if (data.success) {
           setProducts(data.products);

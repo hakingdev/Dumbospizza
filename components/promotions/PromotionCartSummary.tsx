@@ -14,11 +14,17 @@ function resolveDisplayedFreeGifts(
   selectedFreeGifts: Record<string, string> = {}
 ): PromotionFreeGift[] {
   const gifts = [...calculation.freeGifts];
+  // «Один физический товар максимум раз»: один и тот же продукт (productId) не
+  // показываем дважды — ни при гонке пересчёта (offer + freeGift на одну акцию),
+  // ни когда две разные gratis-акции дают один товар. Источник истины — productId.
+  const seenProducts = new Set(gifts.map((g) => String(g.productId)));
   for (const offer of calculation.freeGiftOffers || []) {
     const selected = selectedFreeGifts[offer.promotionId];
     if (!selected) continue;
     const option = offer.options.find((o) => o.id === selected || o.productId === selected);
     if (!option) continue;
+    if (seenProducts.has(String(option.productId))) continue;
+    seenProducts.add(String(option.productId));
     gifts.push({
       productId: option.productId,
       sizeName: option.sizeName,

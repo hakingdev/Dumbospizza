@@ -12,7 +12,7 @@ export default function EditCouponPage({ params }: { params: { id: string } }) {
   const router = useRouter();
   const { id } = params;
   const { language } = useLanguage();
-  const [t, setT] = useState<any>(() => (k: string) => k);
+  const [t, setT] = useState<any>(() => (k: string, fallback?: string) => fallback ?? k);
   
   const [coupon, setCoupon] = useState<any>({
     code: '',

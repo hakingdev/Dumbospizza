@@ -17,9 +17,12 @@ const DEFAULT_STORE_INFO = {
   instagram: ''
 }
 
+// Точная ссылка на точку ресторана в Google Maps (place-Link)
+const STORE_MAPS_URL = 'https://maps.app.goo.gl/FTASQjHEaMaQn9Lz7'
+
 export function Footer() {
   const { language } = useLanguage()
-  const [t, setT] = useState<any>(() => (k: string) => k)
+  const [t, setT] = useState<any>(() => (k: string, fallback?: string) => fallback ?? k)
   const cookieLang = getCookie(cookieName) as string | undefined
   const resolvedLanguage = cookieLang || language
   const fallback = (ru: string, de: string) => de
@@ -174,7 +177,16 @@ export function Footer() {
             <ul className="space-y-3">
               <li className="flex min-w-0 items-start">
                 <MapPin className="h-5 w-5 mr-2 mt-0.5 flex-shrink-0" />
-                <span className="min-w-0 break-words" translate="no">{storeInfo.address}</span>
+                <a
+                  href={STORE_MAPS_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="Adresse in Google Maps öffnen"
+                  className="min-w-0 break-words hover:text-white"
+                  translate="no"
+                >
+                  {storeInfo.address}
+                </a>
               </li>
               <li className="flex min-w-0 items-center">
                 <Phone className="h-5 w-5 mr-2 flex-shrink-0" />

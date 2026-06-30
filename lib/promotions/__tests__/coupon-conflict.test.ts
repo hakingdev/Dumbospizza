@@ -148,6 +148,9 @@ describe('AC #3 — Rabatt Euro vs Coupon', () => {
 
 // --- AC #4/#5: BOGO half_price и free не комбинируются с купоном -------------
 
+// Каждый слот награды — отдельный выбор клиента (не дубль первого). 2 подходящих
+// единицы + 1 выбор → 1 награда; для 2-го слота остаётся предложение выбрать
+// (bogoSecondOffers с remaining=1).
 describe.each([
   ['half_price', 'AC #4 — Zweite Pizza zum halben Preis', 5],
   ['free', 'AC #5 — Zweite Pizza gratis', 10],
@@ -163,7 +166,11 @@ describe.each([
       selectedBogoSecond: selection,
     });
     expect(calc.bogoSecondItems).toHaveLength(1);
+    expect(calc.bogoSecondItems[0].quantity).toBe(1); // только выбранная награда
     expect(calc.promotionDiscountTotal).toBeCloseTo(expectedSaving, 2);
+    // остаётся незаполненный слот → предложение выбрать 2-ю награду
+    expect(calc.bogoSecondOffers).toHaveLength(1);
+    expect(calc.bogoSecondOffers[0].remaining).toBe(1);
     expect(hasActiveMoneyDiscount(calc)).toBe(true);
   });
 

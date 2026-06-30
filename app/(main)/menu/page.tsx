@@ -9,7 +9,7 @@ export default function MenuPage() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const { language } = useLanguage();
-  const [t, setT] = useState<any>(() => (k: string) => k);
+  const [t, setT] = useState<any>(() => (k: string, fallback?: string) => fallback ?? k);
 
   useEffect(() => {
     fetchProducts();

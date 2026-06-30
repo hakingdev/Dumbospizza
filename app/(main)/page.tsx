@@ -72,7 +72,7 @@ function CategorySectionWrapper({
 
 export default function Home() {
   const { language } = useLanguage()
-  const [t, setT] = useState<any>(() => (k: string) => k)
+  const [t, setT] = useState<any>(() => (k: string, fallback?: string) => fallback ?? k)
   const [categories, setCategories] = useState<any[]>([])
   const [showPreOrderModal, setShowPreOrderModal] = useState(false)
   const [valentineProducts, setValentineProducts] = useState<any[]>([])

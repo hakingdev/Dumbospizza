@@ -78,7 +78,7 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
   const [optionError, setOptionError] = useState<string>('');
   const { addItem } = useCart();
   const { language } = useLanguage();
-  const [t, setT] = useState<any>(() => (k: string) => k);
+  const [t, setT] = useState<any>(() => (k: string, fallback?: string) => fallback ?? k);
 
   useEffect(() => {
     const fetchProduct = async () => {

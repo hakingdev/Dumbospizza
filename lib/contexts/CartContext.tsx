@@ -406,7 +406,12 @@ export function cartReducer(state: CartState, action: CartAction): CartState {
           const grouped: Record<string, string[]> = {};
           for (const item of payload.bogoSecondItems || []) {
             const key = item.id || item.productId;
-            (grouped[item.promotionId] = grouped[item.promotionId] || []).push(key);
+            // Награды агрегированы по товару (quantity > 1 при нескольких слотах одного
+            // товара) — восстанавливаем по одному выбору на КАЖДЫЙ слот, иначе при
+            // следующем пересчёте число выбранных позиций «схлопнется» и движок снова
+            // предложит уже заполненные слоты.
+            const list = (grouped[item.promotionId] = grouped[item.promotionId] || []);
+            for (let i = 0; i < (item.quantity || 1); i++) list.push(key);
           }
           // Symmetrisch zu freeGifts: noch nicht aufgelöste, aber gültige BOGO-Auswahl
           // beibehalten, solange das Angebot offen ist. Sonst entfernt eine

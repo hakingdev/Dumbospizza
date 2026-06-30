@@ -21,7 +21,7 @@ import { PROMO_CONFLICT_MESSAGE } from '../../../components/cart/PromoConflictDi
 export default function CartPage() {
   const router = useRouter();
   const { language } = useLanguage();
-  const [t, setT] = useState<any>(() => (k: string) => k);
+  const [t, setT] = useState<any>(() => (k: string, fallback?: string) => fallback ?? k);
   const [showGiftModal, setShowGiftModal] = useState(false);
   const [showBogoModal, setShowBogoModal] = useState(false);
   const [bogoSlot, setBogoSlot] = useState<Record<string, string>>({});

@@ -64,7 +64,15 @@ export default function BogoSecondPickerModal({
           {offers.map((offer) => (
             <div key={offer.promotionId}>
               <h3 className="font-semibold text-gray-900 mb-1">{offer.promotionName}</h3>
-              <p className="text-sm text-gray-500 mb-3">{offer.label}</p>
+              <p className="text-sm text-gray-500 mb-1">{offer.label}</p>
+              {(offer.remaining ?? 0) > 1 && (
+                <p className="text-xs font-semibold text-orange-600 mb-3">
+                  {t('checkout.bogo_remaining', 'Noch {{n}} Artikel zur Auswahl').replace(
+                    '{{n}}',
+                    String(offer.remaining)
+                  )}
+                </p>
+              )}
               <div className="space-y-2">
                 {offer.options.map((option) => {
                   const optKey = option.id || option.productId;

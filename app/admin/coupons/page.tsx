@@ -11,7 +11,7 @@ import { Pencil, Trash, PlusCircle, Calendar, Tag, Percent } from 'lucide-react'
 export default function CouponsAdminPage() {
   const router = useRouter();
   const { language } = useLanguage();
-  const [t, setT] = useState<any>(() => (k: string) => k);
+  const [t, setT] = useState<any>(() => (k: string, fallback?: string) => fallback ?? k);
   const [coupons, setCoupons] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

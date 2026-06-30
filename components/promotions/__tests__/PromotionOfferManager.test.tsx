@@ -17,6 +17,7 @@ const h = vi.hoisted(() => ({
   cart: null as any,
   setSelectedBogoSecond: null as any,
   setSelectedFreeGift: null as any,
+  declineFreeGift: null as any,
 }));
 
 vi.mock('next/navigation', () => ({ usePathname: () => '/menu' }));
@@ -39,11 +40,25 @@ const makeBogoOffer = (promotionId = 'promo1') => ({
   ],
 });
 
-// КАЖДЫЙ вызов — НОВАЯ ссылка расчёта (как ответ API при пересчёте).
-const makeCalc = (bogoOffers: any[]) =>
-  ({ bogoSecondOffers: bogoOffers, freeGiftOffers: [], appliedPromotions: [] }) as any;
+const makeGiftOffer = (promotionId = 'gift1') => ({
+  promotionId,
+  promotionName: 'Gratis Wasser ab 25 €',
+  label: 'Gratis-Artikel — wählen Sie 1 aus',
+  options: [
+    { id: 'wasser|0,5l', productId: 'wasser', sizeName: '0,5l', name: 'Wasser 0,5l' },
+    { id: 'sprite|0,33l', productId: 'sprite', sizeName: '0,33l', name: 'Sprite 0,33l' },
+  ],
+});
 
-const setCart = (promotionCalculation: any, items?: any[]) => {
+// КАЖДЫЙ вызов — НОВАЯ ссылка расчёта (как ответ API при пересчёте).
+const makeCalc = (bogoOffers: any[], giftOffers: any[] = []) =>
+  ({ bogoSecondOffers: bogoOffers, freeGiftOffers: giftOffers, appliedPromotions: [] }) as any;
+
+const setCart = (
+  promotionCalculation: any,
+  items?: any[],
+  extra: { selectedFreeGifts?: Record<string, string> } = {}
+) => {
   h.cart = {
     state: {
       items: items || [
@@ -52,55 +67,90 @@ const setCart = (promotionCalculation: any, items?: any[]) => {
       promotionCalculation,
       couponCode: undefined,
       selectedBogoSecond: {},
-      selectedFreeGifts: {},
+      selectedFreeGifts: extra.selectedFreeGifts || {},
+      declinedFreeGifts: {},
     },
     setSelectedBogoSecond: h.setSelectedBogoSecond,
     setSelectedFreeGift: h.setSelectedFreeGift,
+    declineFreeGift: h.declineFreeGift,
   };
 };
 
 beforeEach(() => {
   h.setSelectedBogoSecond = vi.fn();
   h.setSelectedFreeGift = vi.fn();
+  h.declineFreeGift = vi.fn();
 });
 
-describe('PromotionOfferManager — BOGO popup', () => {
-  it('после выбора пиццы попап НЕ переоткрывается, даже если пересчёт вернул оффер снова', async () => {
+describe('PromotionOfferManager — BOGO popup (multi-slot)', () => {
+  it('в рамках ОДНОГО расчёта попап открывается один раз (нет спама при ре-рендере)', async () => {
     const user = userEvent.setup();
-    setCart(makeCalc([makeBogoOffer()]));
+    // ОДНА И ТА ЖЕ ссылка расчёта между ре-рендерами = свежего пересчёта не было.
+    const calc = makeCalc([makeBogoOffer()]);
+    setCart(calc);
     const { rerender } = render(<PromotionOfferManager />);
 
-    // попап открылся, выбираем пиццу и подтверждаем
     await screen.findByRole('dialog');
     await user.click(screen.getAllByRole('radio')[0]);
     await user.click(screen.getByRole('button', { name: 'Auswahl übernehmen' }));
     expect(h.setSelectedBogoSecond).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 
-    // Пересчёт корзины: НОВЫЙ расчёт, оффер всё ещё есть (2+ пиццы). Корзина та же.
-    setCart(makeCalc([makeBogoOffer()]));
-    rerender(<PromotionOfferManager />);
-    await new Promise((r) => setTimeout(r, 0));
-
-    // КРИТИЧНО: попап не переоткрылся.
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    // Ре-рендеры с ТЕМ ЖЕ расчётом (без пересчёта корзины) — попап не переоткрывается
+    // (защита handledCalc), даже если оффер всё ещё в расчёте.
+    for (let i = 0; i < 3; i++) {
+      setCart(calc);
+      rerender(<PromotionOfferManager />);
+      await new Promise((r) => setTimeout(r, 0));
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    }
   });
 
-  it('open trigger срабатывает один раз на одно Angebot-событие', async () => {
+  it('пока есть незаполненные слоты, свежий пересчёт открывает попап для следующего слота', async () => {
     const user = userEvent.setup();
     setCart(makeCalc([makeBogoOffer()]));
     const { rerender } = render(<PromotionOfferManager />);
     await screen.findByRole('dialog');
     await user.click(screen.getAllByRole('radio')[0]);
     await user.click(screen.getByRole('button', { name: 'Auswahl übernehmen' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 
-    // несколько пересчётов подряд с тем же оффером и той же корзиной — попапа нет
-    for (let i = 0; i < 3; i++) {
-      setCart(makeCalc([makeBogoOffer()]));
-      rerender(<PromotionOfferManager />);
-      await new Promise((r) => setTimeout(r, 0));
-      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    }
+    // Свежий пересчёт (НОВАЯ ссылка), оффер ещё есть = остался незаполненный слот.
+    // Корзина та же. Попап должен открыться снова — для выбора следующей награды.
+    setCart(makeCalc([makeBogoOffer()]));
+    rerender(<PromotionOfferManager />);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeInTheDocument());
+  });
+
+  it('когда все слоты заполнены (оффер исчез из пересчёта), попап не открывается', async () => {
+    const user = userEvent.setup();
+    setCart(makeCalc([makeBogoOffer()]));
+    const { rerender } = render(<PromotionOfferManager />);
+    await screen.findByRole('dialog');
+    await user.click(screen.getAllByRole('radio')[0]);
+    await user.click(screen.getByRole('button', { name: 'Auswahl übernehmen' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    // Свежий пересчёт без оффера (все слоты заполнены) — попапа нет.
+    setCart(makeCalc([]));
+    rerender(<PromotionOfferManager />);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('отказ (Nein, danke) не переоткрывает попап на свежем пересчёте, пока корзина не изменилась', async () => {
+    const user = userEvent.setup();
+    setCart(makeCalc([makeBogoOffer()]));
+    const { rerender } = render(<PromotionOfferManager />);
+    await screen.findByRole('dialog');
+    await user.click(screen.getByRole('button', { name: 'Nein, danke' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    // Свежий пересчёт с тем же оффером, та же корзина — после отказа не предлагаем.
+    setCart(makeCalc([makeBogoOffer()]));
+    rerender(<PromotionOfferManager />);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('после ИЗМЕНЕНИЯ корзины (новое событие) попап может открыться снова', async () => {
@@ -119,5 +169,40 @@ describe('PromotionOfferManager — BOGO popup', () => {
     rerender(<PromotionOfferManager />);
 
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeInTheDocument());
+  });
+});
+
+describe('PromotionOfferManager — Gratis-Artikel popup (min order)', () => {
+  it('после выбора gratis-воды попап НЕ переоткрывается при добавлении Angebot-продуктов', async () => {
+    const user = userEvent.setup();
+    setCart(makeCalc([], [makeGiftOffer()]));
+    const { rerender } = render(<PromotionOfferManager />);
+
+    // попап выбора подарка открылся → выбираем воду и подтверждаем
+    await screen.findByRole('dialog');
+    await user.click(screen.getAllByRole('radio')[0]);
+    await user.click(screen.getByRole('button', { name: 'Gratis-Produkt übernehmen' }));
+    expect(h.setSelectedFreeGift).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    // Пользователь добавляет Angebot-пиццу: корзина изменилась (dismissed сбрасывается),
+    // пересчёт ещё в пути — расчёт ВСЁ ЕЩЁ содержит gratis-оффер, но вода уже выбрана.
+    // КРИТИЧНО: попап не должен открыться снова (иначе вода предлагалась бы 2-3 раза).
+    setCart(
+      makeCalc([], [makeGiftOffer()]),
+      [{ id: 'p1', productId: 'p1', name: 'Bayern', size: { name: '' }, quantity: 3, price: 10 }],
+      { selectedFreeGifts: { gift1: 'wasser|0,5l' } }
+    );
+    rerender(<PromotionOfferManager />);
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('пока gratis-вода НЕ выбрана, попап открывается (поведение без выбора сохраняется)', async () => {
+    setCart(makeCalc([], [makeGiftOffer()]));
+    render(<PromotionOfferManager />);
+    await screen.findByRole('dialog');
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 });

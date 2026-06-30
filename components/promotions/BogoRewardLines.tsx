@@ -31,6 +31,7 @@ export default function PromoRewardLines({
     price: number;
     original?: number;
     free: boolean;
+    quantity: number;
   };
 
   const rows: Row[] = [
@@ -41,6 +42,7 @@ export default function PromoRewardLines({
       price: item.unitPrice,
       original: item.originalUnitPrice,
       free: item.bogoMode === 'free',
+      quantity: item.quantity,
     })),
     ...gifts.map((g) => ({
       key: `g-${g.productId}-${g.promotionId}`,
@@ -48,8 +50,12 @@ export default function PromoRewardLines({
       badge: 'Gratis-Artikel',
       price: 0,
       free: true,
+      quantity: g.quantity,
     })),
   ];
+
+  // Имя с множителем, когда награда положена на несколько единиц (9× …).
+  const rowName = (r: Row) => (r.quantity > 1 ? `${r.quantity}× ${r.name}` : r.name);
 
   if (variant === 'compact') {
     return (
@@ -63,7 +69,7 @@ export default function PromoRewardLines({
           >
             <div className="min-w-0">
               <div className="font-medium truncate">
-                {r.name}
+                {rowName(r)}
                 <span
                   className={`ml-2 text-xs font-semibold uppercase ${
                     r.free ? 'text-emerald-600' : 'text-orange-600'
@@ -75,11 +81,11 @@ export default function PromoRewardLines({
             </div>
             <div className="text-right flex-shrink-0">
               <span className={`font-bold ${r.free ? 'text-emerald-700' : 'text-orange-700'}`}>
-                {r.price.toFixed(2)} €
+                {(r.price * r.quantity).toFixed(2)} €
               </span>
               {r.original && r.original > r.price && (
                 <span className="block text-xs text-gray-400 line-through">
-                  {r.original.toFixed(2)} €
+                  {(r.original * r.quantity).toFixed(2)} €
                 </span>
               )}
             </div>
@@ -107,7 +113,7 @@ export default function PromoRewardLines({
               {r.free ? '🎁' : '🍕'}
             </div>
             <div className="flex-1 min-w-0">
-              <div className="font-semibold truncate">{r.name}</div>
+              <div className="font-semibold truncate">{rowName(r)}</div>
               <span
                 className={`inline-block mt-1 text-xs font-semibold uppercase ${
                   r.free ? 'text-emerald-600' : 'text-orange-600'
@@ -117,11 +123,11 @@ export default function PromoRewardLines({
               </span>
               <div className="mt-2 text-right">
                 <span className={`font-bold ${r.free ? 'text-emerald-700' : 'text-orange-700'}`}>
-                  {r.price.toFixed(2)} €
+                  {(r.price * r.quantity).toFixed(2)} €
                 </span>
                 {r.original && r.original > r.price && (
                   <span className="ml-2 text-sm text-gray-400 line-through">
-                    {r.original.toFixed(2)} €
+                    {(r.original * r.quantity).toFixed(2)} €
                   </span>
                 )}
               </div>

@@ -47,7 +47,7 @@ export default function TrackOrderPage() {
   const [orders, setOrders] = useState<any[]>([]);
   const router = useRouter();
   const { language } = useLanguage();
-  const [t, setT] = useState<any>(() => (k: string) => k);
+  const [t, setT] = useState<any>(() => (k: string, fallback?: string) => fallback ?? k);
 
   useEffect(() => {
     const loadTranslations = async () => {

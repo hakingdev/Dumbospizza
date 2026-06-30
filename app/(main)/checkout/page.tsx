@@ -78,7 +78,7 @@ export default function CheckoutPage() {
   const router = useRouter()
   const { state, setDeliveryType: setCartDeliveryType, setDeliveryZone: setCartDeliveryZone, setDeliveryFee, setContactInfo, setDeliveryAddress, setPaymentMethod: setCartPaymentMethod, clearCart, applyCoupon, removeCoupon, setPromotionPromoCode, setLoyaltyPoints } = useCart()
   const { language } = useLanguage()
-  const [t, setT] = useState<any>(() => (k: string) => k)
+  const [t, setT] = useState<any>(() => (k: string, fallback?: string) => fallback ?? k)
   const [step, setStep] = useState(1)
   const [deliveryType, setDeliveryType] = useState(state.deliveryType || 'delivery')
   const [deliveryZones, setDeliveryZones] = useState<DeliveryZone[]>([])

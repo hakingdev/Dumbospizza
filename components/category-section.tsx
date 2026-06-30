@@ -14,7 +14,7 @@ interface CategorySectionProps {
 
 export function CategorySection({ title, image, href }: CategorySectionProps) {
   const { language } = useLanguage()
-  const [t, setT] = useState<any>(() => (k: string) => k)
+  const [t, setT] = useState<any>(() => (k: string, fallback?: string) => fallback ?? k)
 
   useEffect(() => {
     const loadTranslations = async () => {

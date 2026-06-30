@@ -95,6 +95,8 @@ export interface BogoSecondOffer {
   bogoMode: BogoMode;
   label: string;
   options: BogoSecondOption[];
+  /** Сколько ещё бесплатных/половинных позиций можно выбрать (незаполненные слоты). */
+  remaining?: number;
 }
 
 /** Gewählter 2. Artikel — eigene Bestellzeile. */
