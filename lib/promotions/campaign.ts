@@ -10,8 +10,7 @@ import { parseEmailRecipients } from './email-recipients';
 import { filterUnsubscribed } from '../email/suppression';
 import { buildUnsubscribeUrl } from '../email/unsubscribe';
 import { SELLER } from '../company';
-
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXTAUTH_URL || 'https://dumbospizza.de';
+import { SITE_URL } from '../site-url';
 
 /** Send mass email in chunks so a large list never becomes one huge request. */
 const EMAIL_BATCH_SIZE = 50;

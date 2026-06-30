@@ -11,6 +11,14 @@
  * терпимыми к «чужому» родителю — вместо исключения молча возвращаем узел.
  * Патч ставится один раз, до первой реконсиляции (импортируется в клиентском
  * Providers, код модуля выполняется при импорте на клиенте).
+ *
+ * ВАЖНО для insertBefore: если опорный узел уже «уехал» (переводчик переместил его),
+ * мы НЕ дописываем newNode в конец родителя. Дозапись в конец меняет ПОРЯДОК соседних
+ * элементов, из-за чего сопоставление React fiber↔DOM сбивается, и клик по одной кнопке
+ * срабатывает как клик по другой ссылке на странице (баг: CTA «Jetzt bestellen» в блоке
+ * Gratis-Artikel уводил на страницу вина /category/wein вместо главной/меню).
+ * Каноничный безопасный вариант — вернуть newNode без вставки: краш предотвращён,
+ * порядок узлов не нарушен, а React сам выправит поддерево на следующем рендере.
  */
 
 declare global {
@@ -43,9 +51,10 @@ if (typeof window !== 'undefined' && !window.__gtCompatPatched) {
       if (referenceNode && referenceNode.parentNode !== this) {
         if (process.env.NODE_ENV !== 'production') {
           // eslint-disable-next-line no-console
-          console.warn('[gt-compat] insertBefore: опорный узел из другого родителя — добавляем в конец', referenceNode);
+          console.warn('[gt-compat] insertBefore: опорный узел из другого родителя — пропуск вставки (без перестановки)', referenceNode);
         }
-        return originalInsertBefore.call(this, newNode, null) as T;
+        // НЕ дописываем в конец (иначе ломается порядок и привязка кликов).
+        return newNode;
       }
       return originalInsertBefore.call(this, newNode, referenceNode) as T;
     };

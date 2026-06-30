@@ -84,8 +84,8 @@ export function ProductCard({ product }: ProductCardProps) {
       
       <div className={`flex flex-1 flex-col px-2 ${product.valentinePromo ? 'pb-2' : ''}`}>
         <div className="mb-2 flex min-h-[3.25rem] items-start justify-between gap-3">
-          <h3 className="flex min-w-0 items-start gap-1 text-lg font-bold leading-tight text-gray-900">
-            <span className="min-w-0 break-words">{product.name}</span>
+          <h3 className="flex min-w-0 flex-1 items-start gap-1 text-lg font-bold leading-tight text-gray-900">
+            <span className="min-w-0 break-words hyphens-auto">{product.name}</span>
             {product.valentinePromo && (
               <span className="shrink-0 text-rose-500" title="Valentinstag Special">❤️</span>
             )}

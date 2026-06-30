@@ -56,7 +56,7 @@ export function Header() {
               <div className="flex min-w-0 items-center justify-center gap-4 sm:justify-end">
                 <a href={phoneToTelHref(storeInfo.phone)} className="hidden items-center whitespace-nowrap transition-colors hover:text-primary-100 sm:flex">
                   <Phone className="mr-1 h-4 w-4 shrink-0" />
-                  <span className="font-medium">{storeInfo.phone}</span>
+                  <span className="font-medium" translate="no">{storeInfo.phone}</span>
                 </a>
                 <span className="min-w-0 leading-tight">{t('header.hours', 'с 17:00 до 21:30 каждый день')}</span>
               </div>
@@ -69,7 +69,7 @@ export function Header() {
           <div className="flex h-16 items-center justify-between gap-3">
             {/* Logo */}
             <Link href="/" className="flex min-w-0 items-center">
-              <div className="truncate text-xl font-bold text-primary-600 sm:text-2xl">
+              <div className="truncate text-xl font-bold text-primary-600 sm:text-2xl" translate="no">
                 🍕 <span className="text-gray-900">Dumbos</span>
                 <span className="text-primary-600">Pizza</span>
               </div>
@@ -152,7 +152,7 @@ export function Header() {
               </Link>
               <a href={phoneToTelHref(storeInfo.phone)} className="flex items-center text-primary-600 hover:text-primary-700 py-2 font-medium">
                 <Phone className="h-5 w-5 mr-2" />
-                <span>{storeInfo.phone}</span>
+                <span translate="no">{storeInfo.phone}</span>
               </a>
             </nav>
           </div>

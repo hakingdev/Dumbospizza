@@ -1,11 +1,8 @@
 import type { MetadataRoute } from 'next';
 import { getSitemapCatalog } from '../lib/seo/catalog';
+import { SITE_URL } from '../lib/site-url';
 
-const siteUrl = (
-  process.env.NEXT_PUBLIC_SITE_URL ||
-  process.env.NEXTAUTH_URL ||
-  'https://dumbospizza.de'
-).replace(/\/$/, '');
+const siteUrl = SITE_URL;
 
 // Генерируется при запросе (товары/категории берутся из БД или Mews POS).
 export const revalidate = 3600;

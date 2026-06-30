@@ -8,9 +8,10 @@ import TranslationProvider from '../components/TranslationProvider'
 import { GoogleAnalytics } from '@next/third-parties/google'
 import { Analytics } from '@vercel/analytics/react'
 import Providers from '../components/Providers'
+import { SITE_URL } from '../lib/site-url'
 
 const inter = Inter({ subsets: ['latin', 'cyrillic'] })
-const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXTAUTH_URL || 'https://dumbospizza.de').replace(/\/$/, '')
+const siteUrl = SITE_URL
 
 export const viewport = {
   width: 'device-width',
@@ -25,7 +26,7 @@ export const metadata: Metadata = {
   openGraph: {
     type: 'website',
     locale: 'de_DE',
-    url: 'https://dumbospizza.de/',
+    url: `${siteUrl}/`,
     title: 'Dumbos Pizza | Pizza bestellen in Bad Kissingen',
     description: 'Bestellen Sie leckere Pizza in Bad Kissingen. Schnelle Lieferung, große Auswahl, Treueprogramm.',
     siteName: 'Dumbos Pizza Bad Kissingen'
@@ -39,7 +40,7 @@ export const metadata: Metadata = {
     }
   },
   alternates: {
-    canonical: 'https://dumbospizza.de'
+    canonical: siteUrl
   },
   verification: {
     google: 'NfjrGA7NalYlQacHjnSWcd8iwPPtKD9jZXkOO81P-hQ'
@@ -54,7 +55,7 @@ export default function RootLayout({
   return (
     <html lang="de">
       <head>
-        <link rel="alternate" hrefLang="de" href="https://dumbospizza.de" />
+        <link rel="alternate" hrefLang="de" href={siteUrl} />
       </head>
       <body className={inter.className}>
         <Script
@@ -143,9 +144,9 @@ export default function RootLayout({
               '@context': 'https://schema.org',
               '@type': 'Restaurant',
               name: 'Dumbos Pizza Bad Kissingen',
-              image: 'https://dumbospizza.de/images/logo.png',
-              '@id': 'https://dumbospizza.de',
-              url: 'https://dumbospizza.de',
+              image: `${siteUrl}/images/logo.png`,
+              '@id': siteUrl,
+              url: siteUrl,
               telephone: '+49 971 72730',
               address: {
                 '@type': 'PostalAddress',

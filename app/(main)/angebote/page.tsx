@@ -4,6 +4,7 @@ import { connectToDatabase } from '../../../lib/models';
 import { Promotion } from '../../../lib/models/promotion.model';
 import { toPromotionPublicView } from '../../../lib/promotions/serialize';
 import { isPromotionEffectivelyActive } from '../../../lib/promotions/status';
+import { SITE_URL } from '../../../lib/site-url';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,10 +12,13 @@ export const metadata: Metadata = {
   title: 'Angebote | Dumbos Pizza Bad Kissingen',
   description:
     'Aktuelle Aktionen, Rabatte und Gratis-Artikel bei Dumbos Pizza. Jetzt online bestellen und sparen.',
+  alternates: {
+    canonical: `${SITE_URL}/angebote`,
+  },
   openGraph: {
     title: 'Angebote | Dumbos Pizza',
     description: 'Aktuelle Aktionen und Rabatte — jetzt bestellen.',
-    url: 'https://dumbospizza.de/angebote',
+    url: `${SITE_URL}/angebote`,
     type: 'website',
   },
 };

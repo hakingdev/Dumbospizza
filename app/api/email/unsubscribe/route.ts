@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyUnsubscribeToken } from '../../../../lib/email/unsubscribe';
 import { addUnsubscribe } from '../../../../lib/email/suppression';
+import { SITE_URL } from '../../../../lib/site-url';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,7 +15,7 @@ function page(title: string, message: string, ok: boolean): Response {
   <div style="max-width:480px;margin:0 auto;background:#fff;border:1px solid #fde3c4;border-radius:16px;padding:32px;text-align:center">
     <h1 style="color:${color};font-size:22px;margin:0 0 12px">${title}</h1>
     <p style="color:#4b3b2b;font-size:15px;line-height:1.5;margin:0 0 24px">${message}</p>
-    <a href="https://dumbospizza.de" style="background:#b45309;color:#fff;padding:12px 24px;text-decoration:none;border-radius:10px;display:inline-block;font-weight:700">Zur Startseite</a>
+    <a href="${SITE_URL}" style="background:#b45309;color:#fff;padding:12px 24px;text-decoration:none;border-radius:10px;display:inline-block;font-weight:700">Zur Startseite</a>
   </div>
 </body></html>`;
   return new Response(html, {

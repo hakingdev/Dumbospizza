@@ -90,7 +90,7 @@ export function Hero() {
                     animate={{ y: [0, -12, 0] }}
                     transition={{ duration: 5, ease: 'easeInOut', repeat: Infinity }}
                   />
-                  <span className="absolute bottom-4 left-4 inline-flex items-center gap-1.5 whitespace-nowrap rounded-full bg-white px-3 py-1.5 text-[13px] font-extrabold text-gray-900 shadow-lg sm:left-6">
+                  <span className="absolute bottom-4 left-4 inline-flex items-center gap-1.5 whitespace-nowrap rounded-full bg-white px-3 py-1.5 text-[13px] font-extrabold text-gray-900 shadow-lg sm:left-6" translate="no">
                     🍕 <b className="text-secondary-600">30×40</b> · Ø33 cm
                   </span>
                 </div>

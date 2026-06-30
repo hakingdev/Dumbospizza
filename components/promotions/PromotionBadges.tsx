@@ -95,20 +95,20 @@ export function ProductCardPrice({
   if (!loaded) {
     return (
       <span className="shrink-0 whitespace-nowrap text-right text-xl font-bold leading-tight text-primary-600">
-        {fromLabel} {basePrice.toFixed(2)} €
+        {fromLabel} <span translate="no">{basePrice.toFixed(2)} €</span>
       </span>
     );
   }
 
   if (promoPrice != null && promoPrice < basePrice) {
     return (
-      <div className="shrink-0 text-right leading-tight">
-        <span className="text-sm text-gray-400 line-through block">{basePrice.toFixed(2)} €</span>
+      <div className="shrink-0 max-w-[45%] text-right leading-tight">
+        <span className="block text-sm text-gray-400 line-through" translate="no">{basePrice.toFixed(2)} €</span>
         <span className="whitespace-nowrap text-xl font-bold text-primary-600">
-          {fromLabel} {promoPrice.toFixed(2)} €
+          {fromLabel} <span translate="no">{promoPrice.toFixed(2)} €</span>
         </span>
         {bestPercent != null && (
-          <span className="text-xs text-green-700 block">Heute {bestPercent} % Rabatt</span>
+          <span className="block break-words text-xs text-green-700">Heute {bestPercent} % Rabatt</span>
         )}
       </div>
     );
@@ -116,18 +116,18 @@ export function ProductCardPrice({
 
   if (bogoHint) {
     return (
-      <div className="shrink-0 text-right leading-tight">
+      <div className="shrink-0 max-w-[45%] text-right leading-tight">
         <span className="whitespace-nowrap text-xl font-bold text-primary-600">
-          {fromLabel} {basePrice.toFixed(2)} €
+          {fromLabel} <span translate="no">{basePrice.toFixed(2)} €</span>
         </span>
-        <span className="text-xs text-green-700 block">{bogoHint}</span>
+        <span className="block break-words text-xs text-green-700">{bogoHint}</span>
       </div>
     );
   }
 
   return (
     <span className="shrink-0 whitespace-nowrap text-right text-xl font-bold leading-tight text-primary-600">
-      {fromLabel} {basePrice.toFixed(2)} €
+      {fromLabel} <span translate="no">{basePrice.toFixed(2)} €</span>
     </span>
   );
 }

@@ -78,7 +78,7 @@ export function Footer() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
           {/* Company Info */}
           <div className="min-w-0">
-            <h3 className="text-white text-lg font-semibold mb-4">Dumbos Pizza</h3>
+            <h3 className="text-white text-lg font-semibold mb-4" translate="no">Dumbos Pizza</h3>
             <p className="mb-4 break-words">
               {t('footer.description', fallback('Лучшая пицца в Bad Kissingen с доставкой на дом или в офис.', 'Die beste Pizza in Bad Kissingen mit Lieferung nach Hause oder ins Büro.'))}
             </p>
@@ -174,15 +174,15 @@ export function Footer() {
             <ul className="space-y-3">
               <li className="flex min-w-0 items-start">
                 <MapPin className="h-5 w-5 mr-2 mt-0.5 flex-shrink-0" />
-                <span className="min-w-0 break-words">{storeInfo.address}</span>
+                <span className="min-w-0 break-words" translate="no">{storeInfo.address}</span>
               </li>
               <li className="flex min-w-0 items-center">
                 <Phone className="h-5 w-5 mr-2 flex-shrink-0" />
-                <a href={phoneToTelHref(storeInfo.phone)} className="min-w-0 break-words hover:text-white">{storeInfo.phone}</a>
+                <a href={phoneToTelHref(storeInfo.phone)} className="min-w-0 break-words hover:text-white" translate="no">{storeInfo.phone}</a>
               </li>
               <li className="flex min-w-0 items-center">
                 <Mail className="h-5 w-5 mr-2 flex-shrink-0" />
-                <a href={`mailto:${storeInfo.email}`} className="min-w-0 break-all hover:text-white">{storeInfo.email}</a>
+                <a href={`mailto:${storeInfo.email}`} className="min-w-0 break-all hover:text-white" translate="no">{storeInfo.email}</a>
               </li>
               <li className="flex min-w-0 items-center">
                 <Clock className="h-5 w-5 mr-2 flex-shrink-0" />
@@ -195,7 +195,7 @@ export function Footer() {
         <div className="border-t border-gray-800 mt-10 pt-6">
           <div className="flex flex-col md:flex-row justify-between items-center gap-4">
             <div className="text-sm text-center md:text-left">
-              <p>&copy; {new Date().getFullYear()} Dumbos Pizza. {t('footer.copyright', fallback('Все права защищены.', 'Alle Rechte vorbehalten.'))}</p>
+              <p>&copy; {new Date().getFullYear()} <span translate="no">Dumbos Pizza</span>. {t('footer.copyright', fallback('Все права защищены.', 'Alle Rechte vorbehalten.'))}</p>
             </div>
             
             {/* Payment methods */}

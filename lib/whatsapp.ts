@@ -7,6 +7,7 @@
 import { getSetting } from './settings';
 import { connectToDatabase } from './models';
 import { WhatsAppQueue } from './models/whatsapp-queue.model';
+import { SITE_URL } from './site-url';
 
 const GRAPH_API_VERSION = 'v21.0';
 const DEFAULT_COUNTRY_CODE = '49';
@@ -32,7 +33,7 @@ const STATUS_MESSAGES_DE: Record<string, string> = {
 };
 
 function getTrackingUrl(orderNumber: string, baseUrl?: string): string {
-  const base = (baseUrl || process.env.NEXTAUTH_URL || 'https://dumbospizza.de').replace(/\/$/, '');
+  const base = (baseUrl || SITE_URL).replace(/\/$/, '');
   return `${base}/track?orderNumber=${encodeURIComponent(orderNumber)}`;
 }
 
