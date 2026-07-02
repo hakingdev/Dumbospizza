@@ -169,7 +169,7 @@ export default function TrackOrderPage() {
           <h2 className="text-2xl font-semibold">{t('track.found_orders', 'Gefundene Bestellungen')}</h2>
           
           {orders.map(order => (
-            <div key={order._id} className="bg-white rounded-lg shadow-lg overflow-hidden">
+            <div key={order.orderNumber} className="bg-white rounded-lg shadow-lg overflow-hidden">
               <div className="p-6 border-b">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0">

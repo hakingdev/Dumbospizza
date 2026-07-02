@@ -515,7 +515,11 @@ export default function CheckoutPage() {
         throw new Error(t('checkout.errors.server_response', 'Ungültige Antwort vom Server'))
       }
       
-      sessionStorage.setItem(`order:${data.order.id}:phone`, contactDetails.phone)
+      // Подписанный токен доступа к заказу — по нему страница подтверждения
+      // открывает заказ и счёт без сессии. Телефон в query больше не шлём.
+      if (data.order.accessToken) {
+        sessionStorage.setItem(`order:${data.order.id}:token`, data.order.accessToken)
+      }
 
       // Онлайн-оплата: заказ создан со статусом 'pending' (на кухню НЕ ушёл).
       // Создаём SumUp checkout и показываем виджет; корзину чистим и

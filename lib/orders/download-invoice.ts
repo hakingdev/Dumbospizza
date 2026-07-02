@@ -5,18 +5,19 @@
  * Заменяет прежний window.print() (который открывал пустое белое окно печати):
  * теперь пользователь получает именно файл invoice-order-{orderNumber}.pdf.
  *
- * phoneNumber передаётся для подтверждения владения заказом — backend сверяет
- * его с заказом в БД (frontend не является источником правды).
+ * Владение подтверждается подписанным токеном заказа (?token=, выдан при
+ * оформлении) ИЛИ cookie-сессией клиента (credentials: include). Номер телефона
+ * больше не является ключом доступа.
  *
  * Бросает Error с понятным сообщением, если скачивание не удалось — вызывающий
  * код показывает его пользователю.
  */
 export async function downloadOrderInvoice(
   orderId: string,
-  options: { phoneNumber?: string; orderNumber?: string | number } = {}
+  options: { token?: string | null; orderNumber?: string | number } = {}
 ): Promise<void> {
-  const query = options.phoneNumber
-    ? `?phoneNumber=${encodeURIComponent(options.phoneNumber)}`
+  const query = options.token
+    ? `?token=${encodeURIComponent(options.token)}`
     : ''
 
   let response: Response

@@ -3,15 +3,18 @@ import { connectToDatabase } from '../../../../lib/models';
 import { Order } from '../../../../lib/models/order.model';
 import { User } from '../../../../lib/models/user.model';
 import { getCustomerSession, normalizePhone } from '../../../../lib/customer-auth';
+import { verifyOrderAccessToken } from '../../../../lib/orders/access-token';
 
 // POST /api/orders/repeat - Функция для повторения заказа
-// Авторизация: cookie-сессия клиента (приоритет) ИЛИ совпадение телефона (legacy).
+// Ответ содержит PII (адрес, имя, телефон, email). Авторизация: cookie-сессия
+// клиента (владелец) ИЛИ подписанный токен заказа. Номер телефона из тела запроса
+// ключом доступа больше НЕ является (иначе IDOR: orderId+чужой телефон → адрес).
 export async function POST(request: NextRequest) {
   try {
     await connectToDatabase();
 
     const data = await request.json();
-    const { orderId, phoneNumber } = data;
+    const { orderId, token } = data;
 
     if (!orderId) {
       return NextResponse.json({
@@ -30,18 +33,16 @@ export async function POST(request: NextRequest) {
       }, { status: 404 });
     }
 
-    // Проверка владения: сессия клиента (user_id из cookie) или legacy-телефон.
+    // Проверка владения: сессия клиента (user_id из cookie) или подписанный токен.
     const session = getCustomerSession(request);
-    let authorized = false;
-    if (session) {
+    let authorized = verifyOrderAccessToken(orderId, token);
+    if (!authorized && session) {
       const user = await User.findById(session.userId);
       authorized = Boolean(
         user &&
           (String(originalOrder.user || '') === session.userId ||
             normalizePhone(originalOrder.phoneNumber) === normalizePhone(user.phoneNumber))
       );
-    } else if (phoneNumber) {
-      authorized = normalizePhone(originalOrder.phoneNumber) === normalizePhone(phoneNumber);
     }
 
     if (!authorized) {

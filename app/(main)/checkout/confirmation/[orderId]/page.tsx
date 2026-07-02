@@ -20,6 +20,7 @@ interface OrderConfirmationProps {
 export default function OrderConfirmationPage({ params }: OrderConfirmationProps) {
   const { orderId } = params;
   const [order, setOrder] = useState<any>(null);
+  const [accessToken, setAccessToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [receiptModalOpen, setReceiptModalOpen] = useState(false);
@@ -32,17 +33,22 @@ export default function OrderConfirmationPage({ params }: OrderConfirmationProps
   useEffect(() => {
     const fetchOrder = async () => {
       try {
-        const storedPhone = sessionStorage.getItem(`order:${orderId}:phone`);
-        const query = storedPhone ? `?phoneNumber=${encodeURIComponent(storedPhone)}` : '';
-        const response = await fetch(`/api/orders/${orderId}${query}`);
+        // Токен доступа к заказу (выдан при оформлении). Для клиента с cookie-
+        // сессией (/account) сработает и без токена — авторизация по cookie.
+        const storedToken = sessionStorage.getItem(`order:${orderId}:token`);
+        const query = storedToken ? `?token=${encodeURIComponent(storedToken)}` : '';
+        const response = await fetch(`/api/orders/${orderId}${query}`, {
+          credentials: 'include',
+        });
         if (!response.ok) {
           throw new Error('Bestellung nicht gefunden');
         }
-        
+
         const data = await response.json();
         if (data.success && data.order) {
           setOrder(data.order);
-          
+          setAccessToken(storedToken);
+
           // Clear cart after successful order
           clearCart();
         } else {
@@ -300,11 +306,12 @@ export default function OrderConfirmationPage({ params }: OrderConfirmationProps
         {/* НДС-чек (Beleg) — только для онлайн-оплаты, провайдер-независимо.
             Рендерим встроенно, только когда не открыта модалка: в DOM должен быть
             единственный #vat-receipt, иначе печать в PDF сработает некорректно. */}
-        {!receiptModalOpen && <OrderVatReceipt order={order} />}
+        {!receiptModalOpen && <OrderVatReceipt order={order} accessToken={accessToken} />}
       </div>
 
       <OrderVatReceiptModal
         order={order}
+        accessToken={accessToken}
         open={receiptModalOpen}
         onClose={() => setReceiptModalOpen(false)}
       />

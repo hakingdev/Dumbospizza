@@ -7,6 +7,7 @@ import { buildOrderTax } from '../../lib/orders/tax'
 
 interface OrderVatReceiptModalProps {
   order: React.ComponentProps<typeof OrderVatReceipt>['order']
+  accessToken?: string | null
   open: boolean
   onClose: () => void
 }
@@ -20,7 +21,7 @@ interface OrderVatReceiptModalProps {
  * Для офлайн-оплаты (cash / card при получении) чек не формируется → модалка не
  * показывается (возвращает null), даже если open=true.
  */
-export default function OrderVatReceiptModal({ order, open, onClose }: OrderVatReceiptModalProps) {
+export default function OrderVatReceiptModal({ order, accessToken, open, onClose }: OrderVatReceiptModalProps) {
   // Esc закрывает модалку.
   useEffect(() => {
     if (!open) return
@@ -65,7 +66,7 @@ export default function OrderVatReceiptModal({ order, open, onClose }: OrderVatR
         >
           <X className="h-5 w-5" />
         </button>
-        <OrderVatReceipt order={order} />
+        <OrderVatReceipt order={order} accessToken={accessToken} />
       </div>
     </div>
   )

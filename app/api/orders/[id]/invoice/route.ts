@@ -7,16 +7,14 @@ import { isStaff, authOptions } from '../../../../../lib/auth'
 import { getCustomerSession } from '../../../../../lib/customer-auth'
 import { isOnlinePaymentMethod } from '../../../../../lib/orders/tax'
 import { buildInvoicePdf } from '../../../../../lib/orders/invoice-pdf'
+import { verifyOrderAccessToken } from '../../../../../lib/orders/access-token'
+import { rateLimit, getClientIp, logSecurityEvent } from '../../../../../lib/security/rate-limit'
 
 // PDF — бинарные данные, нужен Node.js runtime (не Edge).
 export const runtime = 'nodejs'
 
 function normalizePhone(value?: string | null) {
   return String(value || '').replace(/[^\d+]/g, '')
-}
-
-function canReadOrderByPhone(order: any, phoneNumber?: string | null) {
-  return Boolean(phoneNumber) && normalizePhone(order.phoneNumber) === normalizePhone(phoneNumber)
 }
 
 /**
@@ -26,8 +24,9 @@ function canReadOrderByPhone(order: any, phoneNumber?: string | null) {
  *  - персонал (admin/staff) по NextAuth-сессии — любой заказ;
  *  - клиент с cookie-сессией (/account) — только свой заказ; владение
  *    проверяется по userId/телефону из подписанного cookie, НЕ из запроса;
- *  - клиент без аккаунта (/profile, страница подтверждения) — по совпадению
- *    phoneNumber из query с phoneNumber заказа в БД (как у GET /api/orders/[id]).
+ *  - клиент без аккаунта (страница подтверждения) — по подписанному токену
+ *    заказа (?token=), выданному в ответе POST /api/orders. Номер телефона
+ *    ключом доступа больше НЕ является.
  *
  * Счёт выдаём только для ОНЛАЙН-оплаты (для cash/card при получении НДС-чек не
  * формируется) — иначе 403.
@@ -36,14 +35,27 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
   try {
     await connectToDatabase()
 
+    const session = await getServerSession(authOptions)
+    const isStaffUser = Boolean(session && isStaff(session))
+
+    if (!isStaffUser) {
+      const ip = getClientIp(request)
+      const rl = rateLimit(`invoice-get:${ip}`, 20, 60_000)
+      if (!rl.allowed) {
+        logSecurityEvent('invoice-get-rate-limited', { ip, orderId: params.id })
+        return NextResponse.json(
+          { success: false, error: 'Too many requests' },
+          { status: 429, headers: { 'Retry-After': String(rl.retryAfterSeconds) } }
+        )
+      }
+    }
+
     const order = await Order.findById(params.id).exec()
     if (!order) {
       return NextResponse.json({ success: false, error: 'Order not found' }, { status: 404 })
     }
 
-    const session = await getServerSession(authOptions)
-    const phoneNumber = request.nextUrl.searchParams.get('phoneNumber')
-    const isStaffUser = Boolean(session && isStaff(session))
+    const token = request.nextUrl.searchParams.get('token')
 
     // Владелец через cookie-сессию клиента (/account): userId из подписанного
     // cookie, телефон сверяем по БД — заказ может быть привязан к user или только
@@ -61,7 +73,12 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       }
     }
 
-    if (!isStaffUser && !isCustomerOwner && !canReadOrderByPhone(order, phoneNumber)) {
+    if (!isStaffUser && !isCustomerOwner && !verifyOrderAccessToken(params.id, token)) {
+      logSecurityEvent('invoice-get-denied', {
+        ip: getClientIp(request),
+        orderId: params.id,
+        hadToken: Boolean(token),
+      })
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
     }
 

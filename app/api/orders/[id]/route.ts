@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '../../../../lib/models';
 import { Order } from '../../../../lib/models/order.model';
+import { User } from '../../../../lib/models/user.model';
 import { isStaff, authOptions } from '../../../../lib/auth';
 import { getServerSession } from 'next-auth';
+import { getCustomerSession } from '../../../../lib/customer-auth';
+import { verifyOrderAccessToken } from '../../../../lib/orders/access-token';
+import { rateLimit, getClientIp, logSecurityEvent } from '../../../../lib/security/rate-limit';
 import { sendOrderStatusNotification } from '../../../../lib/whatsapp';
 import { earnForCompletedOrder, reverseOrder } from '../../../../lib/loyalty/service';
 
@@ -16,41 +20,80 @@ function normalizePhone(value?: string | null) {
   return String(value || '').replace(/[^\d+]/g, '');
 }
 
-function canReadOrderByPhone(order: any, phoneNumber?: string | null) {
-  return Boolean(phoneNumber) && normalizePhone(order.phoneNumber) === normalizePhone(phoneNumber);
+/**
+ * Владелец заказа через клиентскую cookie-сессию (/account): userId берётся из
+ * подписанного cookie (не из запроса). Легаси-заказы без user привязываем по
+ * совпадению телефона аккаунта с телефоном заказа.
+ */
+async function isCustomerOwner(request: NextRequest, order: any): Promise<boolean> {
+  const customer = getCustomerSession(request);
+  if (!customer) return false;
+  if (order.user && String(order.user) === customer.userId) return true;
+  const user = await User.findById(customer.userId);
+  return Boolean(
+    user && normalizePhone(user.phoneNumber) === normalizePhone(order.phoneNumber)
+  );
 }
 
 // GET /api/orders/[id] - Get a specific order
 export async function GET(request: NextRequest, { params }: Params) {
   try {
     await connectToDatabase();
-    
+
+    const session = await getServerSession(authOptions);
+    const isStaffUser = Boolean(session && isStaff(session));
+
+    // Rate-limit только неперсонал: перебор orderId/токена. Персонал (админка)
+    // делает легитимно много запросов и лимиту не подлежит.
+    if (!isStaffUser) {
+      const ip = getClientIp(request);
+      const rl = rateLimit(`order-get:${ip}`, 30, 60_000);
+      if (!rl.allowed) {
+        logSecurityEvent('order-get-rate-limited', { ip, orderId: params.id });
+        return NextResponse.json(
+          { success: false, error: 'Too many requests' },
+          { status: 429, headers: { 'Retry-After': String(rl.retryAfterSeconds) } }
+        );
+      }
+    }
+
     const order = await Order.findById(params.id)
       .populate('user', 'name phoneNumber')
       .exec();
-    
+
     if (!order) {
       return NextResponse.json(
-        { success: false, error: 'Order not found' }, 
+        { success: false, error: 'Order not found' },
         { status: 404 }
       );
     }
 
-    const session = await getServerSession(authOptions);
-    const phoneNumber = request.nextUrl.searchParams.get('phoneNumber');
-    if ((!session || !isStaff(session)) && !canReadOrderByPhone(order, phoneNumber)) {
+    // Доступ: персонал (сессия) ИЛИ владелец-клиент (cookie) ИЛИ валидный
+    // подписанный токен заказа. Номер телефона больше НЕ является ключом доступа.
+    const token = request.nextUrl.searchParams.get('token');
+    const authorized =
+      isStaffUser ||
+      verifyOrderAccessToken(params.id, token) ||
+      (await isCustomerOwner(request, order));
+
+    if (!authorized) {
+      logSecurityEvent('order-get-denied', {
+        ip: getClientIp(request),
+        orderId: params.id,
+        hadToken: Boolean(token),
+      });
       return NextResponse.json(
         { success: false, error: 'Unauthorized' },
         { status: 401 }
       );
     }
-    
+
     return NextResponse.json({ success: true, order });
   } catch (error: any) {
     console.error('Error fetching order:', error);
-    return NextResponse.json({ 
-      success: false, 
-      error: error.message 
+    return NextResponse.json({
+      success: false,
+      error: error.message
     }, { status: 500 });
   }
 }

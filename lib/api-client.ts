@@ -64,9 +64,10 @@ export const getOrderById = async (id: string) => {
   return response.data;
 };
 
-// Повторение заказа
-export const repeatOrder = async (orderId: string, phoneNumber: string) => {
-  const response = await apiClient.post('/api/orders/repeat', { orderId, phoneNumber });
+// Повторение заказа. Авторизация — по cookie-сессии клиента (same-origin,
+// cookie отправляется браузером). Номер телефона ключом доступа не является.
+export const repeatOrder = async (orderId: string, token?: string) => {
+  const response = await apiClient.post('/api/orders/repeat', { orderId, token });
   return response.data;
 };
 

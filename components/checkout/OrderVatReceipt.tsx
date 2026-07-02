@@ -32,6 +32,8 @@ interface OrderVatReceiptProps {
       taxRate?: number | null
     }>
   }
+  /** Подписанный токен доступа к заказу — для скачивания PDF-счёта без сессии. */
+  accessToken?: string | null
 }
 
 /**
@@ -44,7 +46,7 @@ interface OrderVatReceiptProps {
  * (window.print) — пользователь сохраняет PDF без серверных зависимостей.
  * Печатается только этот блок (#vat-receipt), см. @media print в globals.css.
  */
-export default function OrderVatReceipt({ order }: OrderVatReceiptProps) {
+export default function OrderVatReceipt({ order, accessToken }: OrderVatReceiptProps) {
   const [downloading, setDownloading] = useState(false)
   const [downloadError, setDownloadError] = useState<string | null>(null)
 
@@ -55,7 +57,7 @@ export default function OrderVatReceipt({ order }: OrderVatReceiptProps) {
     setDownloadError(null)
     try {
       await downloadOrderInvoice(String(orderId), {
-        phoneNumber: order.phoneNumber,
+        token: accessToken,
         orderNumber: order.orderNumber,
       })
     } catch (err: any) {

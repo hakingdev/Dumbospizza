@@ -84,8 +84,9 @@ export default function OrderHistoryItem({
     setIsDownloadingInvoice(true);
     setInvoiceError(null);
     try {
+      // Авторизация — по cookie-сессии клиента (credentials: include в
+      // downloadOrderInvoice); токен здесь не нужен.
       await downloadOrderInvoice(order._id, {
-        phoneNumber: order.phoneNumber,
         orderNumber: order.orderNumber,
       });
     } catch (err: any) {
@@ -103,7 +104,7 @@ export default function OrderHistoryItem({
 
     setIsRepeating(true);
     try {
-      const result = await repeatOrder(order._id, order.phoneNumber);
+      const result = await repeatOrder(order._id);
 
       if (result.success && result.orderData) {
         // Очищаем корзину перед добавлением новых товаров

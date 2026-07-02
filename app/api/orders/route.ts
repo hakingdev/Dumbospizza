@@ -23,13 +23,17 @@ import {
 import { getServerSession } from 'next-auth';
 import { authOptions, isStaff } from '../../../lib/auth';
 import { getCustomerSession } from '../../../lib/customer-auth';
+import { signOrderAccessToken } from '../../../lib/orders/access-token';
+import { rateLimit, getClientIp, logSecurityEvent } from '../../../lib/security/rate-limit';
 import { getBalance } from '../../../lib/loyalty/service';
 import { getLoyaltyRules, computeMaxRedeemablePoints } from '../../../lib/loyalty/config';
 
 function toPublicOrderView(order: any) {
   const source = typeof order.toObject === 'function' ? order.toObject() : order;
   return {
-    _id: String(source._id),
+    // Внутренний _id намеренно НЕ отдаём анонимному вызову: иначе перебор
+    // последовательных orderNumber выдаёт id заказа, а по id (+известный телефон
+    // жертвы) раньше вытаскивался адрес. Публичная выборка — только не-PII статус.
     orderNumber: source.orderNumber,
     items: source.items,
     deliveryType: source.deliveryType,
@@ -439,7 +443,10 @@ export async function POST(request: NextRequest) {
         paymentMethod: order.paymentMethod,
         paymentStatus: order.paymentStatus,
         total: order.total,
-        loyaltyPointsEarned: order.loyaltyPointsEarned || 0
+        loyaltyPointsEarned: order.loyaltyPointsEarned || 0,
+        // Подписанный токен доступа: единственный ключ, по которому гость без
+        // сессии сможет открыть свой заказ/счёт (страница подтверждения).
+        accessToken: signOrderAccessToken(order._id.toString())
       }
     }, { status: 201 });
   } catch (error: any) {
@@ -488,6 +495,24 @@ export async function GET(request: NextRequest) {
         canReadFullOrders = true;
       } else {
         canReadFullOrders = true;
+      }
+    }
+
+    // Гостевой поиск (/track по телефону или номеру заказа) — не-PII публичная
+    // выборка, но перебираемая. Лимитируем по IP, чтобы не парсили базу.
+    if (!canReadFullOrders) {
+      const ip = getClientIp(request);
+      const rl = rateLimit(`orders-list:${ip}`, 20, 60_000);
+      if (!rl.allowed) {
+        logSecurityEvent('orders-list-rate-limited', {
+          ip,
+          phoneNumber: phoneNumber ? 'provided' : undefined,
+          orderNumber: orderNumber || undefined,
+        });
+        return NextResponse.json(
+          { success: false, error: 'Too many requests' },
+          { status: 429, headers: { 'Retry-After': String(rl.retryAfterSeconds) } }
+        );
       }
     }
 
