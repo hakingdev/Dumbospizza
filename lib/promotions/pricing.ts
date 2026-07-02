@@ -4,6 +4,7 @@ export type ProductBadgePricing = {
   type?: string;
   percentValue?: number;
   fixedValue?: number;
+  bogoMode?: string;
   happyHourActive?: boolean;
 };
 
@@ -20,7 +21,11 @@ export function computePromoDisplayPrice(
 
   for (const b of activeBadges) {
     if (b.type === 'bogo') {
-      bogoHint = 'Ab 2 Stück — Rabatt in der Kasse';
+      // 2+1: bei 2 gekauften Aktionsartikeln kommt der 3. (vom Restaurant gewählt) dazu.
+      bogoHint =
+        b.bogoMode === 'half_price'
+          ? 'Ab 2 Stück — 3. Artikel zum halben Preis'
+          : 'Ab 2 Stück — 3. Artikel gratis';
       continue;
     }
     if (b.type === 'percent_discount' && b.percentValue != null && b.percentValue > 0) {

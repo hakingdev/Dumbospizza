@@ -23,7 +23,8 @@ import {
 import {
   buildBogoSecondOffer,
   bogoSecondItemFromOption,
-  bogoNeedsPicker,
+  bogoRewardSlots,
+  BOGO_QUALIFYING_UNITS,
   countEligibleBogoUnits,
   enrichBogoOptionsWithCartPrices,
 } from './bogo';
@@ -288,7 +289,7 @@ function labelForPromo(promo: PromoLike): string {
     case 'fixed_discount':
       return `Rabatt -${promo.fixedValue ?? 0} €`;
     case 'bogo':
-      return promo.bogoMode === 'half_price' ? '2. Artikel 50 %' : '2 für 1 Aktion';
+      return promo.bogoMode === 'half_price' ? '2+1: 3. Artikel 50 %' : '2+1 Aktion';
     case 'gratis_article':
       return 'Gratis-Artikel';
     default:
@@ -338,15 +339,16 @@ export function calculatePromotions(
   );
 
   const bogoCatalog = options.bogoCatalog || {};
-  // «Только попап»: предлагаем выбор 2-го товара всегда, когда есть хотя бы один
-  // подходящий товар в корзине и каталог награды (>=2 опций). Авто-скидки нет.
+  // 2+1: награда предлагается, когда куплено >=2 подходящих единиц и настроен
+  // каталог награды (1 позиция = фикс от ресторана, 2+ = выбор). Авто-скидки нет —
+  // награда добавляется отдельной позицией после подтверждения в попапе.
   const pickerBogoIds = new Set(
     active
       .filter(
         (p) =>
           p.type === 'bogo' &&
-          (bogoCatalog[promoId(p)]?.length ?? 0) >= 2 &&
-          countEligibleBogoUnits(items, p) >= 1
+          (bogoCatalog[promoId(p)]?.length ?? 0) >= 1 &&
+          countEligibleBogoUnits(items, p) >= BOGO_QUALIFYING_UNITS
       )
       .map((p) => promoId(p))
   );
@@ -376,10 +378,10 @@ export function calculatePromotions(
 
   for (const promo of pickerPromos) {
     const id = promoId(promo);
-    // Число доступных слотов награды = число подходящих платных единиц в корзине
-    // (идемпотентно, из текущего состояния корзины). Каждый слот клиент заполняет
-    // СВОИМ выбором 2-го товара (или отказывается) — НЕ дублируем первый автоматически.
-    const allowed = countEligibleBogoUnits(items, promo);
+    // 2+1: слот награды за КАЖДЫЕ 2 подходящие платные единицы (2→1, 4→2, …),
+    // идемпотентно из текущего состояния корзины. Каждый слот клиент подтверждает
+    // в попапе (или отказывается) — награду определяет ресторан (rewardItems).
+    const allowed = bogoRewardSlots(countEligibleBogoUnits(items, promo));
     if (allowed < 1) continue;
 
     const catalog = enrichBogoOptionsWithCartPrices(bogoCatalog[id] || [], items, promo.bogoMode);
@@ -643,7 +645,7 @@ export function getProductPromotionBadges(
             ? `-${p.fixedValue ?? 0} €`
             : p.type === 'bogo'
               ? p.bogoMode === 'half_price'
-                ? '2. 50 %'
+                ? '3. 50 %'
                 : '2+1'
               : 'GRATIS'),
       name: p.name,

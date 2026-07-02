@@ -148,14 +148,13 @@ describe('AC #3 — Rabatt Euro vs Coupon', () => {
 
 // --- AC #4/#5: BOGO half_price и free не комбинируются с купоном -------------
 
-// Каждый слот награды — отдельный выбор клиента (не дубль первого). 2 подходящих
-// единицы + 1 выбор → 1 награда; для 2-го слота остаётся предложение выбрать
-// (bogoSecondOffers с remaining=1).
+// 2+1: 2 подходящих единицы = 1 слот награды; подтверждённая награда заполняет
+// его полностью (предложений не остаётся).
 describe.each([
-  ['half_price', 'AC #4 — Zweite Pizza zum halben Preis', 5],
-  ['free', 'AC #5 — Zweite Pizza gratis', 10],
+  ['half_price', 'AC #4 — Dritte Pizza zum halben Preis (2+1)', 5],
+  ['free', 'AC #5 — Dritte Pizza gratis (2+1)', 10],
 ] as const)('%s', (mode, label, expectedSaving) => {
-  const items = [cartItem({ quantity: 2 })]; // 2 подходящих единицы
+  const items = [cartItem({ quantity: 2 })]; // 2 подходящих единицы → 1 слот (2+1)
   const promo = bogoPromo(mode);
   const catalog = bogoCatalogFor(String(promo._id), mode);
   const selection = [{ promotionId: String(promo._id), productId: 'p1' }];
@@ -166,11 +165,10 @@ describe.each([
       selectedBogoSecond: selection,
     });
     expect(calc.bogoSecondItems).toHaveLength(1);
-    expect(calc.bogoSecondItems[0].quantity).toBe(1); // только выбранная награда
+    expect(calc.bogoSecondItems[0].quantity).toBe(1); // только подтверждённая награда
     expect(calc.promotionDiscountTotal).toBeCloseTo(expectedSaving, 2);
-    // остаётся незаполненный слот → предложение выбрать 2-ю награду
-    expect(calc.bogoSecondOffers).toHaveLength(1);
-    expect(calc.bogoSecondOffers[0].remaining).toBe(1);
+    // единственный слот заполнен → предложений больше нет
+    expect(calc.bogoSecondOffers).toHaveLength(0);
     expect(hasActiveMoneyDiscount(calc)).toBe(true);
   });
 

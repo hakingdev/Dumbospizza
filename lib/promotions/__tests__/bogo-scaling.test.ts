@@ -1,17 +1,18 @@
 import { describe, it, expect } from 'vitest';
 import { calculatePromotions } from '../engine';
+import { bogoRewardSlots } from '../bogo';
 
 /**
- * BOGO («2. Artikel gratis / halber Preis»):
- *  - число доступных слотов награды = число подходящих платных единиц (из корзины);
- *  - КАЖДЫЙ слот клиент выбирает сам (2-й, 3-й, … n-й товар) или отказывается —
- *    первый выбор НЕ дублируется автоматически;
+ * BOGO = «2+1» (2 kaufen → 3. Artikel gratis / zum halben Preis):
+ *  - слот награды за КАЖДЫЕ 2 подходящие платные единицы (2→1, 3→1, 4→2, …);
+ *  - награду определяет ресторан (rewardItems): 1 позиция в каталоге = фикс,
+ *    клиент только подтверждает в попапе; 2+ позиций = выбор из списка;
  *  - пока остаются незаполненные слоты, движок возвращает предложение (offer.remaining).
  */
 
 const promo = {
   _id: 'bogo1',
-  name: '2 für 1',
+  name: '2+1 Aktion',
   type: 'bogo',
   bogoMode: 'free',
   enabled: true,
@@ -36,6 +37,13 @@ const catalog = {
   ],
 };
 
+// Награда, зафиксированная рестораном: ровно одна позиция в каталоге.
+const fixedCatalog = {
+  bogo1: [
+    { id: 'p9', productId: 'p9', name: 'Margherita', unitPrice: 9, effectivePrice: 0 },
+  ],
+};
+
 const line = (productId: string, quantity: number, unitPrice = 10) => ({
   productId,
   name: productId,
@@ -46,56 +54,108 @@ const line = (productId: string, quantity: number, unitPrice = 10) => ({
 
 const sels = (...ids: string[]) => ids.map((productId) => ({ promotionId: 'bogo1', productId }));
 
-function calc(items: any[], selectedBogoSecond: any[] = []) {
-  return calculatePromotions(items, [promo], { bogoCatalog: catalog, selectedBogoSecond });
+function calc(items: any[], selectedBogoSecond: any[] = [], bogoCatalog: any = catalog) {
+  return calculatePromotions(items, [promo], { bogoCatalog, selectedBogoSecond });
 }
 
 const rewardUnits = (c: ReturnType<typeof calc>) =>
   c.bogoSecondItems.reduce((n, i) => n + i.quantity, 0);
 
-describe('BOGO per-slot choice (idempotent slots from cart, manual reward choice)', () => {
-  it('слотов = числу подходящих единиц; без выбора → предложение, наград нет', () => {
-    const c = calc([line('p1', 3)]);
+describe('bogoRewardSlots (2+1: слот за каждую пару)', () => {
+  it.each([
+    [0, 0],
+    [1, 0],
+    [2, 1],
+    [3, 1],
+    [4, 2],
+    [5, 2],
+    [6, 3],
+  ])('%i единиц → %i слотов', (units, slots) => {
+    expect(bogoRewardSlots(units)).toBe(slots);
+  });
+});
+
+describe('BOGO 2+1 (слот за каждые 2 единицы, награда от ресторана)', () => {
+  it('1 единица → НЕТ ни предложения, ни награды (порог = 2)', () => {
+    const c = calc([line('p1', 1)]);
+    expect(c.bogoSecondItems).toHaveLength(0);
+    expect(c.bogoSecondOffers).toHaveLength(0);
+  });
+
+  it('2 единицы → 1 слот: без подтверждения — предложение, наград нет', () => {
+    const c = calc([line('p1', 2)]);
     expect(c.bogoSecondItems).toHaveLength(0);
     expect(c.bogoSecondOffers).toHaveLength(1);
-    expect(c.bogoSecondOffers[0].remaining).toBe(3);
+    expect(c.bogoSecondOffers[0].remaining).toBe(1);
   });
 
-  it('частичный выбор → награда только за выбранные слоты, остальное предлагается', () => {
-    const c = calc([line('p1', 3)], sels('p1')); // выбрал 1 из 3
+  it('3 единицы → всё ещё 1 слот (неполная пара не считается)', () => {
+    const c = calc([line('p1', 3)]);
+    expect(c.bogoSecondOffers).toHaveLength(1);
+    expect(c.bogoSecondOffers[0].remaining).toBe(1);
+  });
+
+  it('2 единицы + подтверждение → 1 награда, предложения больше нет', () => {
+    const c = calc([line('p1', 2)], sels('p1'));
     expect(rewardUnits(c)).toBe(1);
-    expect(c.bogoSecondOffers[0].remaining).toBe(2);
+    expect(c.bogoSecondOffers).toHaveLength(0);
   });
 
-  it('каждый слот — отдельный выбор: 3 единицы, 3 выбора → 3 награды, без предложения', () => {
-    const c = calc([line('p1', 3)], sels('p1', 'p1', 'p1'));
-    expect(rewardUnits(c)).toBe(3);
+  it('4 единицы → 2 слота; частичное подтверждение оставляет remaining', () => {
+    const c = calc([line('p1', 4)], sels('p1'));
+    expect(rewardUnits(c)).toBe(1);
+    expect(c.bogoSecondOffers).toHaveLength(1);
+    expect(c.bogoSecondOffers[0].remaining).toBe(1);
+  });
+
+  it('одинаковые награды агрегируются в строку с количеством', () => {
+    const c = calc([line('p1', 4)], sels('p1', 'p1'));
+    expect(c.bogoSecondItems).toHaveLength(1);
+    expect(c.bogoSecondItems[0].quantity).toBe(2);
     expect(c.bogoSecondOffers).toHaveLength(0);
   });
 
   it('РАЗНЫЕ выбранные награды показываются отдельными строками', () => {
-    const c = calc([line('p1', 2), line('p2', 1, 12)], sels('p1', 'p2', 'p2'));
-    // 3 слота, 3 выбора: p1×1, p2×2 → 2 строки, суммарно 3 награды
+    // 2+2 единицы → 2 слота; выбраны p1 и p2 → 2 строки
+    const c = calc([line('p1', 2), line('p2', 2, 12)], sels('p1', 'p2'));
     expect(c.bogoSecondItems).toHaveLength(2);
-    expect(rewardUnits(c)).toBe(3);
+    expect(rewardUnits(c)).toBe(2);
     expect(c.bogoSecondOffers).toHaveLength(0);
   });
 
-  it('одинаковые выбранные награды агрегируются в строку с количеством', () => {
-    const c = calc([line('p1', 4)], sels('p1', 'p1', 'p1', 'p1'));
-    expect(c.bogoSecondItems).toHaveLength(1);
-    expect(c.bogoSecondItems[0].quantity).toBe(4);
-  });
-
-  it('выбор не превышает число слотов (уменьшение количества)', () => {
-    // было 3 выбора, корзина уменьшилась до 1 единицы → только 1 награда
-    const c = calc([line('p1', 1)], sels('p1', 'p1', 'p1'));
+  it('подтверждений больше, чем слотов → лишние отбрасываются', () => {
+    // корзина уменьшилась: было 4 единицы (2 награды), осталось 2 → только 1 награда
+    const c = calc([line('p1', 2)], sels('p1', 'p1'));
     expect(rewardUnits(c)).toBe(1);
     expect(c.bogoSecondOffers).toHaveLength(0); // слот заполнен
   });
+
+  it('квалифицирующие единицы суммируются по разным строкам (1+1 = пара)', () => {
+    const c = calc([line('p1', 1), line('p2', 1, 12)]);
+    expect(c.bogoSecondOffers).toHaveLength(1);
+    expect(c.bogoSecondOffers[0].remaining).toBe(1);
+  });
 });
 
-describe('BOGO half-price picker keeps size-specific prices', () => {
+describe('BOGO 2+1 с фиксированной наградой (1 позиция от ресторана)', () => {
+  it('каталог из 1 позиции даёт оффер с единственной опцией', () => {
+    const c = calc([line('p1', 2)], [], fixedCatalog);
+    expect(c.bogoSecondOffers).toHaveLength(1);
+    expect(c.bogoSecondOffers[0].options).toHaveLength(1);
+    expect(c.bogoSecondOffers[0].options[0].productId).toBe('p9');
+  });
+
+  it('подтверждение фиксированной награды добавляет её отдельной строкой за 0 €', () => {
+    const c = calc([line('p1', 2)], sels('p9'), fixedCatalog);
+    expect(c.bogoSecondItems).toHaveLength(1);
+    expect(c.bogoSecondItems[0].productId).toBe('p9');
+    expect(c.bogoSecondItems[0].unitPrice).toBe(0);
+    expect(c.bogoSecondItems[0].originalUnitPrice).toBe(9);
+    expect(c.bogoSecondOffers).toHaveLength(0);
+  });
+});
+
+describe('BOGO half-price (2+1) keeps size-specific prices', () => {
   const halfPricePromo = {
     ...promo,
     bogoMode: 'half_price',
@@ -132,7 +192,7 @@ describe('BOGO half-price picker keeps size-specific prices', () => {
 
   it('не копирует цену выбранного размера на остальные размеры того же товара', () => {
     const c = calculatePromotions(
-      [{ productId: 'bbq', name: 'BBQ', quantity: 1, unitPrice: 15.8, sizeName: 'small' }],
+      [{ productId: 'bbq', name: 'BBQ', quantity: 2, unitPrice: 15.8, sizeName: 'small' }],
       [halfPricePromo],
       { bogoCatalog: bbqCatalog }
     );
@@ -148,7 +208,7 @@ describe('BOGO half-price picker keeps size-specific prices', () => {
   it('использует цену из корзины только для точно совпавшего размера', () => {
     const c = calculatePromotions(
       // 16.8 имитирует тот же size + выбранный extra; другие размеры берутся из каталога.
-      [{ productId: 'bbq', name: 'BBQ', quantity: 1, unitPrice: 16.8, sizeName: 'small' }],
+      [{ productId: 'bbq', name: 'BBQ', quantity: 2, unitPrice: 16.8, sizeName: 'small' }],
       [halfPricePromo],
       { bogoCatalog: bbqCatalog }
     );

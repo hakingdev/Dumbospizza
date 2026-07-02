@@ -18,7 +18,7 @@ const TYPE_LABELS: Record<string, string> = {
   gratis_article: 'Gratis-Artikel',
   percent_discount: '% Rabatt',
   fixed_discount: '€ Rabatt',
-  bogo: '2 Artikel zum Preis von 1',
+  bogo: '2+1 — 3. Artikel gratis / 50 %',
 };
 
 export default function EditPromotionPage() {
@@ -242,13 +242,15 @@ export default function EditPromotionPage() {
         {form.type === 'bogo' && (
           <div>
             <select value={form.bogoMode} onChange={(e) => setForm({ ...form, bogoMode: e.target.value })} className="w-full border rounded-md px-3 py-2">
-              <option value="free">2 für 1 gratis</option>
-              <option value="half_price">Zweiter 50 %</option>
+              <option value="free">Dritter Artikel gratis (2+1)</option>
+              <option value="half_price">Dritter Artikel 50 % (2+1)</option>
             </select>
 
             <div className="mt-4">
               <label className="block text-sm font-medium mb-1">Qualifizierte Artikel</label>
-              <p className="text-xs text-gray-500 mb-2">Какие товары и размеры участвуют.</p>
+              <p className="text-xs text-gray-500 mb-2">
+                Какие товары и размеры участвуют. Каждые 2 купленные единицы дают 1 награду (2+1).
+              </p>
               <PromoItemSelector
                 products={products}
                 categories={categories}
@@ -259,10 +261,11 @@ export default function EditPromotionPage() {
 
             <div className="mt-4">
               <label className="block text-sm font-medium mb-1">
-                {form.bogoMode === 'free' ? 'Artikel gratis' : 'Artikel zum halben Preis'}
+                {form.bogoMode === 'free' ? 'Belohnung: Artikel gratis' : 'Belohnung: Artikel zum halben Preis'}
               </label>
               <p className="text-xs text-gray-500 mb-2">
-                Из этих позиций клиент выбирает 2-й товар.
+                Награда за 2 купленных товара — выбирает ресторан: обычно ОДНА позиция
+                (товар+размер), клиент только подтверждает. Несколько позиций = клиент выберет одну.
               </p>
               <PromoItemSelector
                 products={products}

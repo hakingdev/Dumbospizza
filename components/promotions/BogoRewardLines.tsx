@@ -39,7 +39,7 @@ export default function PromoRewardLines({
     ...bogoItems.map((item) => ({
       key: `b-${item.id || item.productId}-${item.promotionId}`,
       name: item.name,
-      badge: item.bogoMode === 'free' ? 'Gratis' : '2. Artikel −50%',
+      badge: item.bogoMode === 'free' ? 'Gratis' : '2+1 −50%',
       price: item.unitPrice,
       original: item.originalUnitPrice,
       free: item.bogoMode === 'free',

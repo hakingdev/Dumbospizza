@@ -11,6 +11,7 @@ type Badge = {
   type?: string;
   percentValue?: number;
   fixedValue?: number;
+  bogoMode?: string;
   validTo?: string;
   scheduleLabel?: string;
   happyHourActive?: boolean;

@@ -19,6 +19,7 @@ import {
   type ReceiptOp,
   type ReceiptOrder,
 } from './receipt/kitchen-receipt';
+import { stripPromoLabels } from './orders/gift-label';
 
 // node-thermal-printer exports differ across versions; use require to avoid TS export mismatch
 const thermalPrinter = require('node-thermal-printer') as any;
@@ -190,10 +191,13 @@ export async function printCustomerReceipt(
     order.items.forEach(item => {
       const itemTotal = (item.price ?? 0) * item.quantity;
       subtotal += itemTotal;
-      
+
+      // Aktions-/Gratis-Label ([GRATIS]/[AKTION]) entfernen: nur Produkt + Preis.
+      const displayName = stripPromoLabels(item.name);
+
       // Print item details
       printer.leftRight(
-        `${item.quantity}x ${item.name}`,
+        `${item.quantity}x ${displayName}`,
         `${itemTotal.toFixed(2)} €`
       );
       

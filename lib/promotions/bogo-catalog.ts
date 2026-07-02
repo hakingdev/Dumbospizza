@@ -144,7 +144,8 @@ export async function buildBogoCatalog(
         });
     }
 
-    if (opts.length >= 2) {
+    // 1 позиция достаточно: награду выбирает ресторан, клиент только подтверждает.
+    if (opts.length >= 1) {
       catalog[String(promo._id)] = opts;
     }
   }

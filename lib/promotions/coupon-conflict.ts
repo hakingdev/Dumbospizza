@@ -7,7 +7,7 @@ import type { PromotionType, PromotionCalculationResult } from './types';
  * «Денежные» виды Angebot конфликтуют с купоном:
  *   - percent_discount  (Rabatt Prozent)
  *   - fixed_discount    (Rabatt Euro)
- *   - bogo              (Zweite Pizza zum halben Preis / gratis)
+ *   - bogo              (2+1: dritte Pizza zum halben Preis / gratis)
  * «Gratis-Artikel» (gratis_article) — НЕ денежная скидка (добавляет бесплатный
  * товар, а не уменьшает сумму), поэтому совместим с купоном.
  */

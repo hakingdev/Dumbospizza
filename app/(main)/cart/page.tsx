@@ -108,6 +108,20 @@ export default function CartPage() {
     setShowBogoModal(false);
   };
 
+  const openBogoModal = () => {
+    // Фиксированная награда (1 позиция от ресторана) — предвыбираем, модалка = подтверждение.
+    setBogoSlot((s) => {
+      const next = { ...s };
+      for (const o of bogoOffers) {
+        if (o.options.length === 1 && !next[o.promotionId]) {
+          next[o.promotionId] = o.options[0].id || o.options[0].productId;
+        }
+      }
+      return next;
+    });
+    setShowBogoModal(true);
+  };
+
   const handleGiftConfirm = () => {
     // применяем выбор подарка из временного слота и закрываем
     const allSelected = giftOffers.every((offer) => Boolean(giftSlot[offer.promotionId]));
@@ -297,12 +311,14 @@ export default function CartPage() {
               {needsBogoSelection && (
                 <button
                   type="button"
-                  onClick={() => setShowBogoModal(true)}
+                  onClick={openBogoModal}
                   className="mb-4 flex min-h-[56px] w-full items-center gap-3 rounded-lg border-2 border-orange-400 bg-orange-50 p-3 text-left leading-tight text-orange-800 transition-colors hover:bg-orange-100"
                 >
                   <Percent className="h-5 w-5 shrink-0" />
                   <span className="text-sm font-medium">
-                    {t('cart.bogo_half_pick', '2. Artikel zum halben Preis — bitte wählen')}
+                    {bogoOffers[0]?.bogoMode === 'half_price'
+                      ? t('cart.bogo_half_pick', '2+1 Aktion: 3. Artikel zum halben Preis — jetzt sichern')
+                      : t('cart.bogo_free_pick', '2+1 Aktion: 3. Artikel gratis — jetzt sichern')}
                   </span>
                 </button>
               )}

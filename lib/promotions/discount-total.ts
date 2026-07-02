@@ -6,8 +6,7 @@ function roundMoney(n: number): number {
 
 /**
  * Discount subtracted from the order total.
- * In-cart BOGO (2+ units) → productDiscountTotal.
- * Picker BOGO (exactly 1 unit) → savings are already in the reduced picker line price — not subtracted again.
+ * BOGO (2+1) savings are already in the reduced reward line price — not subtracted again.
  */
 export function getAppliedPromotionDiscount(
   calculation: PromotionCalculationResult | null | undefined
@@ -20,7 +19,7 @@ export function getAppliedPromotionDiscount(
 }
 
 /**
- * Extra picker lines (2. Artikel 50 % / gratis) — only when discount is not already applied on cart lines.
+ * Extra reward lines (2+1: 3. Artikel 50 % / gratis) — only when discount is not already applied on cart lines.
  */
 export function getVisibleBogoSecondItems(
   calculation: PromotionCalculationResult | null | undefined

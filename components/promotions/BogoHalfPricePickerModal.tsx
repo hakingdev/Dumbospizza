@@ -23,6 +23,9 @@ export default function BogoSecondPickerModal({
   t = (_k, fb) => fb || '',
 }: BogoSecondPickerModalProps) {
   const allSelected = offers.every((offer) => Boolean(selections[offer.promotionId]));
+  // 2+1 с фиксированной наградой: у каждого оффера ровно 1 позиция (выбрал ресторан) —
+  // попап становится подтверждением («Ja, gerne» / «Nein, danke») вместо выбора.
+  const fixedReward = offers.every((offer) => offer.options.length === 1);
 
   return (
     <div
@@ -48,14 +51,19 @@ export default function BogoSecondPickerModal({
             <div>
               <h2 id="bogo-second-title" className="text-xl font-bold text-gray-900">
                 {offers[0]?.bogoMode === 'free'
-                  ? t('checkout.bogo_free_title', 'Wählen Sie Ihren gratis 2. Artikel')
-                  : t('checkout.bogo_half_title', 'Wählen Sie Ihren 2. Artikel zum halben Preis')}
+                  ? t('checkout.bogo_free_title', '2+1 Aktion: Ihr 3. Artikel gratis')
+                  : t('checkout.bogo_half_title', '2+1 Aktion: Ihr 3. Artikel zum halben Preis')}
               </h2>
               <p className="text-sm text-gray-600 mt-1">
-                {t(
-                  'checkout.bogo_second_subtitle',
-                  'Wählen Sie einen Artikel aus der Aktionsliste.'
-                )}
+                {fixedReward
+                  ? t(
+                      'checkout.bogo_fixed_subtitle',
+                      'Sie haben 2 Aktionsartikel im Warenkorb — diese Belohnung legen wir Ihnen dazu.'
+                    )
+                  : t(
+                      'checkout.bogo_second_subtitle',
+                      'Wählen Sie einen Artikel aus der Aktionsliste.'
+                    )}
               </p>
             </div>
           </div>
@@ -146,7 +154,9 @@ export default function BogoSecondPickerModal({
             disabled={!allSelected}
             className="flex-1 py-3 px-4 bg-orange-600 text-white font-semibold rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            {t('checkout.bogo_second_confirm', 'Auswahl übernehmen')}
+            {fixedReward
+              ? t('checkout.bogo_confirm_yes', 'Ja, gerne!')
+              : t('checkout.bogo_second_confirm', 'Auswahl übernehmen')}
           </button>
         </div>
       </div>

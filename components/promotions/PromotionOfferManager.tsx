@@ -11,9 +11,10 @@ import GratisGiftPickerModal from './GratisGiftPickerModal';
 
 /**
  * Глобальный авто-показ предложений акций (Lieferando):
- * как только в корзине появляется незаполненный слот BOGO (одна награда за пару)
- * или подарок — всплывает окно выбора. Каждая выбранная награда добавляется
- * отдельной позицией; при добавлении новой пары попап предлагает следующую.
+ * как только в корзине появляется незаполненный слот BOGO (2+1: одна награда за
+ * каждые 2 подходящих товара) или подарок — всплывает окно. Награду BOGO определяет
+ * ресторан (обычно 1 позиция — попап лишь подтверждение); каждая принятая награда
+ * добавляется отдельной позицией, при следующей паре попап предлагает следующую.
  * На /cart и /checkout не вмешиваемся.
  */
 export default function PromotionOfferManager() {
@@ -88,8 +89,20 @@ export default function PromotionOfferManager() {
     // Уже обработали этот расчёт (выбор/отказ) — ждём свежий пересчёт корзины,
     // прежде чем снова предлагать оффер. Защита от повторного открытия попапа.
     if (state.promotionCalculation && state.promotionCalculation === handledCalc.current) return;
-    if (pendingBogo.length > 0) setOpen('bogo');
-    else if (pendingGift.length > 0) setOpen('gift');
+    if (pendingBogo.length > 0) {
+      // Фиксированная награда (ресторан настроил ровно 1 позицию) — предвыбираем,
+      // попап работает как подтверждение (Ja, gerne / Nein, danke).
+      setSlot((s) => {
+        const next = { ...s };
+        for (const o of bogoOffers) {
+          if (o.options.length === 1 && !next[o.promotionId]) {
+            next[o.promotionId] = o.options[0].id || o.options[0].productId;
+          }
+        }
+        return next;
+      });
+      setOpen('bogo');
+    } else if (pendingGift.length > 0) setOpen('gift');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onCartPage, open, pendingBogo.length, pendingGift.length, state.promotionCalculation]);
 

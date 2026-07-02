@@ -64,7 +64,7 @@ export function defaultBadgeForType(
     case 'fixed_discount':
       return opts.fixedValue != null ? `-${opts.fixedValue.toFixed(0)} €` : '-€';
     case 'bogo':
-      return opts.bogoMode === 'half_price' ? '2. 50 %' : '2+1';
+      return opts.bogoMode === 'half_price' ? '3. 50 %' : '2+1';
     case 'gratis_article':
       return 'GRATIS';
     default:

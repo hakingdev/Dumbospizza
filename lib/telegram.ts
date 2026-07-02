@@ -6,6 +6,7 @@ import { Order } from './models/order.model';
 import type { IOrder } from './models/order.model';
 import { sendOrderStatusNotification } from './whatsapp';
 import { earnForCompletedOrder, reverseOrder } from './loyalty/service';
+import { stripPromoLabels } from './orders/gift-label';
 
 const botCache = new Map<string, any>();
 
@@ -109,7 +110,9 @@ function buildOrderMessageText(order: OrderNotification): string {
     const customizationsText = item.customizations?.length
       ? ` (${item.customizations.join(', ')})`
       : '';
-    return `${item.quantity}x ${item.name}${customizationsText}`;
+    // Aktions-/Gratis-Label ([GRATIS]/[AKTION]) entfernen: nur Produktname zeigen.
+    const itemName = stripPromoLabels(item.name);
+    return `${item.quantity}x ${itemName}${customizationsText}`;
   }).join('\n');
 
   const mapsUrl = order.address ? buildMapsUrl(order.address) : '';

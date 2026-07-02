@@ -167,6 +167,15 @@ function formatEuro(value) {
   return 'EUR ' + (Number(value) || 0).toFixed(2).replace('.', ',');
 }
 
+// Aktions-/Gratis-Label am Zeilenanfang ([GRATIS], [AKTION], …) entfernen:
+// auf dem Bon nur Produkt + Preis, keine Sonderkennzeichnung.
+// Spiegelbild von lib/orders/gift-label.ts. (Präfix bleibt in der DB — dort
+// wird es z. B. für Favoriten gebraucht.)
+const LEADING_LABEL_RE = /^(?:\s*\[[^\]]*\]\s*)+/;
+function stripPromoLabels(name) {
+  return String(name == null ? '' : name).replace(LEADING_LABEL_RE, '');
+}
+
 function groupItemsByCategory(items) {
   const order = [];
   const map = new Map();
@@ -221,9 +230,10 @@ async function printKitchenReceipt(n) {
     printer.println(group.category); // КАТЕГОРИЯ — жирная
     printer.bold(false);
     for (const item of group.items) {
+      const displayName = stripPromoLabels(item.name);
       const lineTotal = (item.price != null ? item.price : 0) * item.quantity;
       const right = item.price != null ? formatEuro(lineTotal) : '';
-      const left = item.quantity + 'x ' + item.name;
+      const left = item.quantity + 'x ' + displayName;
       if (right) printer.leftRight(left, right);
       else printer.println(left);
       (item.customizations || []).forEach((c) => printer.println('   - ' + c));

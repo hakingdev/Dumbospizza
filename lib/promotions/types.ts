@@ -88,7 +88,7 @@ export interface BogoSecondOption {
   effectivePrice: number;
 }
 
-/** Popup: Kunde wählt 2. Artikel aus der Aktionsliste. */
+/** Popup 2+1: Belohnung (3. Artikel) — vom Restaurant fest vorgegeben (1 Option, Kunde bestätigt) oder Auswahl aus Liste. */
 export interface BogoSecondOffer {
   promotionId: string;
   promotionName: string;
@@ -106,7 +106,7 @@ export interface BogoSecondOffer {
   qualifyingItems?: { productId: string; sizeName?: string }[];
 }
 
-/** Gewählter 2. Artikel — eigene Bestellzeile. */
+/** Bestätigte 2+1-Belohnung (3. Artikel) — eigene Bestellzeile. */
 export interface BogoSecondItem {
   id?: string;
   productId: string;

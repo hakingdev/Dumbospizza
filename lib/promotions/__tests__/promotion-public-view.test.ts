@@ -56,7 +56,7 @@ describe('toPromotionPublicView — поля для первого клика', 
 
   it('badgeText подставляется из типа, если не задан', () => {
     const view = toPromotionPublicView(makeDoc({ badgeText: undefined }));
-    expect(view.badgeText).toBe('2. 50 %'); // defaultBadgeForType(bogo, half_price)
+    expect(view.badgeText).toBe('3. 50 %'); // defaultBadgeForType(bogo, half_price) — 2+1
   });
 });
 

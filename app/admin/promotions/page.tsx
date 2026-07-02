@@ -40,8 +40,8 @@ const TYPE_CARDS = [
   },
   {
     type: 'bogo',
-    title: '2 Artikel zum Preis von 1',
-    description: '2 für 1 oder zweiter Artikel 50 %',
+    title: '2+1 Aktion',
+    description: '2 kaufen — dritter Artikel gratis oder 50 %',
     icon: Copy,
     color: 'bg-purple-50 border-purple-200 text-purple-800',
   },

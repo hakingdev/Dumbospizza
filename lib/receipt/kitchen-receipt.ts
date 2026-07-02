@@ -7,6 +7,8 @@
  * либо в текст для предпросмотра/тестов (renderOpsToText).
  */
 
+import { stripPromoLabels } from '../orders/gift-label';
+
 export interface ReceiptItem {
   name: string;
   quantity: number;
@@ -125,10 +127,12 @@ export function buildKitchenReceiptOps(order: ReceiptOrder): ReceiptOp[] {
   for (const group of groupItemsByCategory(order.items)) {
     ops.push({ type: 'text', text: group.category, bold: true }); // КАТЕГОРИЯ — жирная
     for (const item of group.items) {
+      // Aktions-/Gratis-Label ([GRATIS]/[AKTION]) entfernen: nur Produkt + Preis.
+      const displayName = stripPromoLabels(item.name);
       const lineTotal = (item.price ?? 0) * item.quantity;
       ops.push({
         type: 'lr',
-        left: `${item.quantity}x ${item.name}`,
+        left: `${item.quantity}x ${displayName}`,
         right: item.price != null ? formatEuro(lineTotal) : '',
       });
       for (const c of item.customizations || []) {

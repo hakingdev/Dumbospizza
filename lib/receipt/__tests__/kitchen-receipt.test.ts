@@ -98,3 +98,34 @@ describe('buildKitchenReceiptOps + renderOpsToText', () => {
     expect(ops[ops.length - 1].type).toBe('cut');
   });
 });
+
+describe('buildKitchenReceiptOps — Aktions-/Gratis-Positionen', () => {
+  const orderWithPromos: ReceiptOrder = {
+    orderId: '1',
+    deliveryType: 'pickup',
+    totalAmount: 7.9,
+    paymentMethod: 'cash',
+    items: [
+      { name: 'Margherita', quantity: 1, price: 7.9, category: 'Pizza' },
+      { name: '[GRATIS] Cola Zero 0,33l', quantity: 1, price: 0, category: 'Getränke' },
+      { name: '[AKTION] Salami', quantity: 1, price: 5, category: 'Pizza' },
+    ],
+  };
+  const text = renderOpsToText(buildKitchenReceiptOps(orderWithPromos), 42).join('\n');
+
+  it('печатает без меток [GRATIS]/[AKTION] — только продукт', () => {
+    expect(text).toContain('1x Cola Zero 0,33l');
+    expect(text).toContain('1x Salami');
+    expect(text).not.toContain('[GRATIS]');
+    expect(text).not.toContain('[AKTION]');
+  });
+
+  it('показывает цену у каждой позиции (продукт + стоимость)', () => {
+    const giftLine = text.split('\n').find((l) => l.includes('Cola Zero 0,33l'));
+    const aktionLine = text.split('\n').find((l) => l.includes('Salami'));
+    const paidLine = text.split('\n').find((l) => l.includes('Margherita'));
+    expect(giftLine).toContain('EUR 0,00');
+    expect(aktionLine).toContain('EUR 5,00');
+    expect(paidLine).toContain('EUR 7,90');
+  });
+});

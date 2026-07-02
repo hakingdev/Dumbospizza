@@ -53,21 +53,21 @@ export function countEligibleBogoUnits(
   }, 0);
 }
 
-export function bogoUsesPicker(catalog: BogoSecondOption[] | undefined): boolean {
-  return (catalog?.length ?? 0) >= 2;
+/** 2+1: сколько подходящих единиц нужно КУПИТЬ за одну награду. */
+export const BOGO_QUALIFYING_UNITS = 2;
+
+/** Число слотов награды: 1 за каждые 2 купленные подходящие единицы (2→1, 4→2, …). */
+export function bogoRewardSlots(eligibleUnits: number): number {
+  return Math.floor(eligibleUnits / BOGO_QUALIFYING_UNITS);
+}
+
+/** Награда настроена (rewardItems → каталог): 1 позиция = фикс от ресторана, 2+ = выбор из списка. */
+export function bogoHasRewardCatalog(catalog: BogoSecondOption[] | undefined): boolean {
+  return (catalog?.length ?? 0) >= 1;
 }
 
 function roundMoney(n: number): number {
   return Math.round(n * 100) / 100;
-}
-
-/** Picker only with exactly 1 eligible item (Lieferando: choose 2nd product). 2+ items → auto BOGO pairs in cart. */
-export function bogoNeedsPicker(
-  items: PromotionCartItem[],
-  promo: BogoPromoLike,
-  catalog: BogoSecondOption[] | undefined
-): boolean {
-  return bogoUsesPicker(catalog) && countEligibleBogoUnits(items, promo) === 1;
 }
 
 /** Use cart line price when the same product is already in the cart (size/extras). */
@@ -97,8 +97,8 @@ export function enrichBogoOptionsWithCartPrices(
 
 function labelForBogoMode(mode: BogoMode | undefined): string {
   return mode === 'half_price'
-    ? '2. Artikel zum halben Preis — bitte wählen'
-    : '2. Artikel gratis — bitte wählen';
+    ? '2+1 Aktion: 3. Artikel zum halben Preis'
+    : '2+1 Aktion: 3. Artikel gratis';
 }
 
 export function buildBogoSecondOffer(
@@ -107,7 +107,7 @@ export function buildBogoSecondOffer(
   items: PromotionCartItem[] = []
 ): BogoSecondOffer | null {
   const mode = promo.bogoMode || 'free';
-  if (!bogoUsesPicker(catalog)) return null;
+  if (!bogoHasRewardCatalog(catalog)) return null;
 
   return {
     promotionId: String(promo._id),
@@ -133,7 +133,7 @@ export function bogoSecondItemFromOption(
     originalUnitPrice: option.unitPrice,
     promotionId: String(promo._id),
     promotionName: promo.name || 'Aktion',
-    label: mode === 'half_price' ? '2. Artikel 50 %' : '2. Artikel gratis',
+    label: mode === 'half_price' ? '3. Artikel 50 %' : '3. Artikel gratis',
     bogoMode: mode,
   };
 }
@@ -148,31 +148,8 @@ export function validateBogoSecondSelection(
     // Награда опциональна (вариант «только попап»): нет выбора — клиент отказался, это ок.
     if (!productId) continue;
     if (!offer.options.some((o) => o.id === productId || o.productId === productId)) {
-      return { error: 'Ungültige Auswahl für die 2-für-1 Aktion.' };
+      return { error: 'Ungültige Auswahl für die 2+1 Aktion.' };
     }
   }
   return {};
-}
-
-export function resolveBogoSecondItems(
-  calculation: PromotionCalculationResult,
-  selections: Array<{ promotionId: string; productId: string }>,
-  promosById: Map<string, BogoPromoLike>
-): BogoSecondItem[] {
-  const resolved = [...calculation.bogoSecondItems];
-  const selectionMap = new Map(selections.map((s) => [s.promotionId, s.productId]));
-
-  for (const offer of calculation.bogoSecondOffers || []) {
-    const selectedId = selectionMap.get(offer.promotionId);
-    if (!selectedId) continue;
-    const option =
-      offer.options.find((o) => o.id === selectedId) ||
-      offer.options.find((o) => o.productId === selectedId);
-    if (!option) continue;
-    const promo = promosById.get(offer.promotionId);
-    if (!promo) continue;
-    resolved.push(bogoSecondItemFromOption(promo, option));
-  }
-
-  return resolved;
 }
