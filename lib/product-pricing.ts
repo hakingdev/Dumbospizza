@@ -9,6 +9,8 @@
  * данными: если у размера нет `price`, цена вычисляется как basePrice + priceModifier.
  */
 
+import { isMiniSize } from './mini-pizza-box';
+
 export type ProductSizeLike = {
   name?: string;
   label?: string;
@@ -34,6 +36,15 @@ export function getValidSizes(product: ProductPricingLike): ProductSizeLike[] {
   return (product.sizes || []).filter((s) => s?.name);
 }
 
+/**
+ * Размеры, доступные клиенту для ЗАКАЗА ПОШТУЧНО. Мини-размер (18 см) хранит
+ * цену сорта для «4er Mini Pizza Box» и отдельно не продаётся — скрываем его
+ * из выбора размера и из расчёта цены «от …».
+ */
+export function getOrderableSizes(product: ProductPricingLike): ProductSizeLike[] {
+  return getValidSizes(product).filter((s) => !isMiniSize(s));
+}
+
 /** Абсолютная цена размера. Поддерживает старый формат (basePrice + надбавка). */
 export function getSizePrice(
   product: ProductPricingLike,
@@ -48,9 +59,9 @@ export function getSizePrice(
   return base + (Number(size.priceModifier) || 0);
 }
 
-/** Цена в меню / для бейджей акций: минимальная цена среди размеров («от …»). */
+/** Цена в меню / для бейджей акций: минимальная цена среди ЗАКАЗЫВАЕМЫХ размеров («от …»). */
 export function getProductDisplayPrice(product: ProductPricingLike): number {
-  const sizes = getValidSizes(product);
+  const sizes = getOrderableSizes(product);
   if (sizes.length > 0) {
     const prices = sizes.map((s) => getSizePrice(product, s));
     return Math.round(Math.min(...prices) * 100) / 100;

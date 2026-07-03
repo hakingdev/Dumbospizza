@@ -9,7 +9,9 @@ import { useLanguage } from '../../../../lib/contexts/LanguageContext';
 import { loadTranslation } from '../../../../lib/i18n';
 import { ProductPromotionsBanner } from '../../../../components/promotions/PromotionBadges';
 import { normalizeObjectId } from '../../../../lib/normalize-id';
-import { getSizePrice } from '../../../../lib/product-pricing';
+import { getOrderableSizes, getSizePrice } from '../../../../lib/product-pricing';
+import { MiniPizzaBoxBuilder } from '../../../../components/mini-pizza-box/MiniPizzaBoxBuilder';
+import { MINI_BOX_CATEGORY_SLUG } from '../../../../lib/mini-pizza-box';
 import { SafeImage } from '../../../../components/SafeImage';
 import { NoTranslate } from '../../../../components/NoTranslate';
 
@@ -88,10 +90,12 @@ export default function ProductPage() {
         const data = await response.json();
         
         if (data.success) {
-          setProduct(data.product);
+          // Mini-Größe (18 cm) ist nur in der 4er Mini Pizza Box bestellbar — hier ausblenden.
+          const fetched = { ...data.product, sizes: getOrderableSizes(data.product) };
+          setProduct(fetched);
           // Set default size if available
-          if (data.product.sizes && data.product.sizes.length > 0) {
-            setSelectedSize(data.product.sizes[0]);
+          if (fetched.sizes && fetched.sizes.length > 0) {
+            setSelectedSize(fetched.sizes[0]);
           }
         }
       } catch (error) {
@@ -284,8 +288,25 @@ export default function ProductPage() {
     );
   }
   
+  // «4er Mini Pizza Box»: Direktlink öffnet den Vollbild-Konfigurator statt der Standardseite.
+  const rawCategory: any = product.category;
+  if (rawCategory?.slug === MINI_BOX_CATEGORY_SLUG) {
+    return (
+      <MiniPizzaBoxBuilder
+        isOpen
+        onClose={() => router.push('/')}
+        product={{
+          id: product._id,
+          name: product.name,
+          image: product.image,
+          categoryId: rawCategory?._id || rawCategory?.id,
+        }}
+      />
+    );
+  }
+
   const totalPrice = calculateTotalPrice();
-  
+
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="container mx-auto px-4">

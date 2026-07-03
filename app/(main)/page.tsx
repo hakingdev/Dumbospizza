@@ -26,6 +26,7 @@ const OPENING_DATE = new Date('2026-02-12T00:00:00');
 
 const categoryIcons: Record<string, string> = {
   pizza: '🍕',
+  'mini-pizza-box': '🍕',
   drinks: '🥤',
   beverages: '🥤',
   appetizers: '🍟',

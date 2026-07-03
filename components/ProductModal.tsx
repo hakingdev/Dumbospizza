@@ -7,7 +7,7 @@ import { useCart } from '../lib/contexts/CartContext';
 import { useLanguage } from '../lib/contexts/LanguageContext';
 import { loadTranslation } from '../lib/i18n';
 import { normalizeObjectId } from '../lib/normalize-id';
-import { getSizePrice } from '../lib/product-pricing';
+import { getOrderableSizes, getSizePrice } from '../lib/product-pricing';
 import { ProductPromotionsBanner } from './promotions/PromotionBadges';
 import { SafeImage } from './SafeImage';
 import { NoTranslate } from './NoTranslate';
@@ -89,10 +89,12 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
         const data = await response.json();
         
         if (data.success) {
-          setProduct(data.product);
+          // Mini-Größe (18 cm) ist nur in der 4er Mini Pizza Box bestellbar — hier ausblenden.
+          const fetched = { ...data.product, sizes: getOrderableSizes(data.product) };
+          setProduct(fetched);
           // Set default size
-          if (data.product.sizes && data.product.sizes.length > 0) {
-            setSelectedSize(data.product.sizes[0]);
+          if (fetched.sizes && fetched.sizes.length > 0) {
+            setSelectedSize(fetched.sizes[0]);
           }
           // сброс выбранных опций при открытии нового товара
           setSelectedOptions({});

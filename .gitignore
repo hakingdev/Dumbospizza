@@ -97,3 +97,4 @@ Thumbs.db
 /lib/__tests__/stripe.test.ts
 /app/api/payments/stripe/
 /components/checkout/StripePaymentForm.tsx
+.vercel

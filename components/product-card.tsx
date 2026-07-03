@@ -9,6 +9,8 @@ import { loadTranslation } from '../lib/i18n'
 import { PromotionBadges, ProductCardPrice } from './promotions/PromotionBadges'
 import { SafeImage } from './SafeImage'
 import { NoTranslate } from './NoTranslate'
+import { MiniPizzaBoxBuilder } from './mini-pizza-box/MiniPizzaBoxBuilder'
+import { MINI_BOX_CATEGORY_SLUG } from '../lib/mini-pizza-box'
 
 interface Product {
   id: string;
@@ -16,7 +18,8 @@ interface Product {
   description: string;
   price: number;
   image: string;
-  category: string;
+  /** slug-строка или populated-объект категории (как отдаёт /api/products) */
+  category: any;
   categoryId?: string;
   valentinePromo?: boolean;
 }
@@ -45,7 +48,11 @@ export function ProductCard({ product }: ProductCardProps) {
     e.stopPropagation();
     setIsModalOpen(true);
   };
-  
+
+  // «4er Mini Pizza Box»: statt Standard-Modal den Vollbild-Konfigurator öffnen.
+  const rawCategory: any = product.category;
+  const isMiniBox = rawCategory?.slug === MINI_BOX_CATEGORY_SLUG;
+
   return (
     <div 
       className={`group card relative flex h-full flex-col overflow-hidden rounded-2xl ${product.valentinePromo ? 'bg-rose-100 border-2 border-rose-200 shadow-md' : ''}`}
@@ -106,15 +113,32 @@ export function ProductCard({ product }: ProductCardProps) {
           className="mt-auto flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg bg-primary-600 px-4 py-3 text-center font-medium leading-tight text-white shadow-md transition-all hover:bg-primary-700 hover:shadow-lg"
         >
           <ShoppingCart className="h-5 w-5 shrink-0" />
-          <span className="min-w-0">{t('product_card.choose_options', 'Optionen wählen')}</span>
+          <span className="min-w-0">
+            {isMiniBox
+              ? t('product_card.build_box', 'Box zusammenstellen')
+              : t('product_card.choose_options', 'Optionen wählen')}
+          </span>
         </button>
       </div>
-      
-      <ProductModal 
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        productId={product.id}
-      />
+
+      {isMiniBox ? (
+        <MiniPizzaBoxBuilder
+          isOpen={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
+          product={{
+            id: product.id,
+            name: product.name,
+            image: product.image,
+            categoryId: rawCategory?._id || rawCategory?.id || product.categoryId,
+          }}
+        />
+      ) : (
+        <ProductModal
+          isOpen={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
+          productId={product.id}
+        />
+      )}
     </div>
   )
 }
