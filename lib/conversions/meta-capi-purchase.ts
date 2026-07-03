@@ -10,11 +10,14 @@ export type MetaCapiPurchaseInput = {
   contents: { id: string; quantity: number; itemPrice: number }[];
   clientIp?: string | null;
   userAgent?: string | null;
+  eventSourceUrl?: string | null;
+  fbp?: string | null;
+  fbc?: string | null;
 };
 
 /**
  * Meta Conversions API — Purchase.
- * event_id = orderNumber для дедупликации с клиентским App Event / Pixel.
+ * event_id = orderNumber для дедупликации с клиентским Pixel-событием Purchase.
  * @see https://developers.facebook.com/docs/marketing-api/conversions-api/parameters
  */
 export async function sendMetaCapiPurchase(input: MetaCapiPurchaseInput): Promise<void> {
@@ -30,6 +33,9 @@ export async function sendMetaCapiPurchase(input: MetaCapiPurchaseInput): Promis
   }
   if (input.clientIp) userData.client_ip_address = input.clientIp;
   if (input.userAgent) userData.client_user_agent = input.userAgent;
+  // _fbp/_fbc из куки браузера — сильно поднимают Event Match Quality
+  if (input.fbp) userData.fbp = input.fbp;
+  if (input.fbc) userData.fbc = input.fbc;
 
   const body: Record<string, unknown> = {
     data: [
@@ -37,7 +43,12 @@ export async function sendMetaCapiPurchase(input: MetaCapiPurchaseInput): Promis
         event_name: 'Purchase',
         event_time: Math.floor(Date.now() / 1000),
         event_id: input.orderNumber,
-        action_source: 'app',
+        // Заказы идут через веб-чекаут (в т.ч. из TWA-приложения) — для web-событий
+        // Meta требует action_source: 'website' + event_source_url
+        action_source: 'website',
+        event_source_url:
+          input.eventSourceUrl ||
+          `${process.env.NEXT_PUBLIC_SITE_URL || 'https://www.dumbospizza.de'}/checkout`,
         user_data: userData,
         custom_data: {
           currency: input.currency,

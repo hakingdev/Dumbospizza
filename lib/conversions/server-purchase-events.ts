@@ -10,6 +10,13 @@ function clientIpUa(request: NextRequest): { ip?: string; ua?: string } {
   return { ip, ua };
 }
 
+/** URL страницы, с которой пришёл заказ: referer, если он наш, иначе /checkout. */
+function purchaseSourceUrl(request: NextRequest): string {
+  const site = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.dumbospizza.de';
+  const referer = request.headers.get('referer') || '';
+  return referer.startsWith(site) ? referer : `${site}/checkout`;
+}
+
 function productIdString(p: IOrderItem['product']): string {
   return String(p ?? '');
 }
@@ -43,6 +50,9 @@ export async function sendServerPurchaseConversionEvents(order: IOrder, request:
       contents: metaContents,
       clientIp: ip,
       userAgent: ua,
+      eventSourceUrl: purchaseSourceUrl(request),
+      fbp: request.cookies.get('_fbp')?.value || null,
+      fbc: request.cookies.get('_fbc')?.value || null,
     }),
     sendTikTokCompletePayment({
       orderNumber: order.orderNumber,

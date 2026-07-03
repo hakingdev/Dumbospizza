@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { getProductForSeo } from '../../../../lib/seo/catalog';
+import TrackViewContent from '../../../../components/tracking/TrackViewContent';
 
 export async function generateMetadata({
   params,
@@ -37,6 +38,18 @@ export async function generateMetadata({
   };
 }
 
-export default function ProductLayout({ children }: { children: React.ReactNode }) {
-  return <>{children}</>;
+export default function ProductLayout({
+  children,
+  params,
+}: {
+  children: React.ReactNode;
+  params: { id: string };
+}) {
+  return (
+    <>
+      {children}
+      {/* Meta Pixel ViewContent — просмотр товара */}
+      <TrackViewContent productId={params.id} />
+    </>
+  );
 }

@@ -10,6 +10,7 @@ import { loadTranslation } from '../../../../../lib/i18n';
 import OrderVatReceipt from '../../../../../components/checkout/OrderVatReceipt';
 import OrderVatReceiptModal from '../../../../../components/checkout/OrderVatReceiptModal';
 import { NoTranslate } from '../../../../../components/NoTranslate';
+import { trackMetaEvent } from '../../../../../lib/analytics/meta-pixel';
 
 interface OrderConfirmationProps {
   params: {
@@ -63,6 +64,27 @@ export default function OrderConfirmationPage({ params }: OrderConfirmationProps
     
     fetchOrder();
   }, [orderId, clearCart]);
+
+  // Meta Pixel: Purchase с eventID = orderNumber — дедупликация с серверным CAPI
+  // (lib/conversions/meta-capi-purchase.ts). Guard в sessionStorage — от повторной
+  // отправки при перезагрузке страницы подтверждения.
+  useEffect(() => {
+    if (!order?.orderNumber) return;
+    const sentKey = `meta:purchase:${order.orderNumber}`;
+    if (sessionStorage.getItem(sentKey)) return;
+    sessionStorage.setItem(sentKey, '1');
+    trackMetaEvent(
+      'Purchase',
+      {
+        content_ids: (order.items || []).map((i: any) => String(i.product ?? '')),
+        content_type: 'product',
+        num_items: (order.items || []).reduce((n: number, i: any) => n + (i.quantity || 0), 0),
+        value: order.total,
+        currency: 'EUR',
+      },
+      order.orderNumber
+    );
+  }, [order]);
 
   // После успешной онлайн-оплаты checkout редиректит сюда с ?paid=1 — тогда
   // автоматически показываем клиенту НДС-чек (Beleg) во всплывающей модалке.

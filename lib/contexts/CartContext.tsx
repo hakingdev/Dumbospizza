@@ -7,6 +7,7 @@ import { calculatePromotions as fetchPromotionCalculation } from '../api-client'
 import { normalizeObjectId } from '../normalize-id';
 import { getAppliedPromotionDiscount, getBogoPickerMerchandise } from '../promotions/discount-total';
 import { giftOptionId } from '../promotions/gifts';
+import { trackMetaEvent } from '../analytics/meta-pixel';
 
 // Types
 export interface CartItem {
@@ -876,6 +877,14 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   // Cart utility functions
   const addItem = (item: CartItem) => {
     dispatch({ type: 'ADD_ITEM', payload: item });
+    // Meta Pixel: добавление в корзину (центральная точка — покрывает все пути добавления)
+    trackMetaEvent('AddToCart', {
+      content_ids: [item.productId || item.id],
+      content_type: 'product',
+      content_name: item.name,
+      value: item.price * item.quantity,
+      currency: 'EUR',
+    });
   };
   
   const updateItem = (id: string, updates: Partial<CartItem>) => {

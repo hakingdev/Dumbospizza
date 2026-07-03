@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -21,6 +21,7 @@ import {
 } from '../../../lib/order-acceptance-hours'
 import { evaluateDeliveryGate } from '../../../lib/delivery/checkout-gate'
 import { NoTranslate } from '../../../components/NoTranslate'
+import { trackMetaEvent } from '../../../lib/analytics/meta-pixel'
 
 // SumUp-виджет — только на клиенте (использует window + внешний SDK).
 const SumUpPaymentWidget = dynamic(
@@ -107,6 +108,20 @@ export default function CheckoutPage() {
   const [orderSettings, setOrderSettings] = useState<any>(null)
   const [orderBlocked, setOrderBlocked] = useState(false)
   const [orderBlockMessage, setOrderBlockMessage] = useState('')
+
+  // Meta Pixel: начало оформления — один раз, когда корзина гидратирована и не пуста
+  const initiateCheckoutSent = useRef(false)
+  useEffect(() => {
+    if (initiateCheckoutSent.current || state.items.length === 0) return
+    initiateCheckoutSent.current = true
+    trackMetaEvent('InitiateCheckout', {
+      content_ids: state.items.map((i) => i.productId || i.id),
+      content_type: 'product',
+      num_items: state.items.reduce((n, i) => n + i.quantity, 0),
+      value: state.total,
+      currency: 'EUR',
+    })
+  }, [state.items, state.total])
 
   const bogoMerchandise = getBogoPickerMerchandise(state.promotionCalculation)
   const merchandiseSubtotal = state.subtotal + bogoMerchandise
