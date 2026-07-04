@@ -1,7 +1,9 @@
 /**
  * WhatsApp order status notifications.
- * Two modes: (1) WhatsApp Web worker — пишет в очередь, воркер опрашивает сайт (исходящее с ПК);
- * (2) Meta Cloud API templates.
+ * Modes (по приоритету): (1) Twilio API — если заданы TWILIO_* env; без Content SID шлёт
+ * обычный текст (песочница/24h-окно), с Content SID — одобренный шаблон;
+ * (2) WhatsApp Web worker — пишет в очередь, воркер опрашивает сайт (исходящее с ПК);
+ * (3) Meta Cloud API templates.
  */
 
 import { getSetting } from './settings';
@@ -54,6 +56,93 @@ export interface OrderForWhatsApp {
   orderNumber: string;
 }
 
+interface TwilioConfig {
+  accountSid: string;
+  /** Basic-auth пара: API Key (SK.../secret) или Account SID/Auth Token. */
+  authUser: string;
+  authPass: string;
+  from: string;
+}
+
+function getTwilioConfig(): TwilioConfig | null {
+  const accountSid = process.env.TWILIO_ACCOUNT_SID?.trim();
+  const from = process.env.TWILIO_WHATSAPP_FROM?.trim();
+  if (!accountSid || !from) return null;
+
+  const apiKeySid = process.env.TWILIO_API_KEY_SID?.trim();
+  const apiKeySecret = process.env.TWILIO_API_KEY_SECRET?.trim();
+  const authToken = process.env.TWILIO_AUTH_TOKEN?.trim();
+
+  let authUser: string;
+  let authPass: string;
+  if (apiKeySid && apiKeySecret) {
+    authUser = apiKeySid;
+    authPass = apiKeySecret;
+  } else if (authToken) {
+    authUser = accountSid;
+    authPass = authToken;
+  } else {
+    return null;
+  }
+
+  return {
+    accountSid,
+    authUser,
+    authPass,
+    from: from.startsWith('whatsapp:') ? from : `whatsapp:${from}`,
+  };
+}
+
+async function sendViaTwilio(
+  config: TwilioConfig,
+  input: {
+    phone: string;
+    defaultCountryCode: string;
+    contentSid?: string;
+    contentVariables?: Record<string, string>;
+    fallbackText: string;
+  }
+): Promise<boolean> {
+  const normalized = normalizePhoneE164(input.phone, input.defaultCountryCode);
+  if (!normalized) {
+    console.error('WhatsApp (Twilio): invalid or empty phone number', input.phone);
+    return false;
+  }
+
+  const params = new URLSearchParams({
+    To: `whatsapp:+${normalized}`,
+    From: config.from,
+  });
+  if (input.contentSid) {
+    params.set('ContentSid', input.contentSid);
+    if (input.contentVariables) {
+      params.set('ContentVariables', JSON.stringify(input.contentVariables));
+    }
+  } else {
+    params.set('Body', input.fallbackText);
+  }
+
+  const res = await fetch(
+    `https://api.twilio.com/2010-04-01/Accounts/${config.accountSid}/Messages.json`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization:
+          'Basic ' + Buffer.from(`${config.authUser}:${config.authPass}`).toString('base64'),
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: params.toString(),
+    }
+  );
+
+  if (!res.ok) {
+    const errText = await res.text();
+    console.error('WhatsApp Twilio API error:', res.status, errText);
+    return false;
+  }
+  return true;
+}
+
 export async function enqueueWhatsAppMessageOnce(input: {
   phone: string;
   text: string;
@@ -103,6 +192,18 @@ export async function sendOrderPlacedNotification(order: OrderForWhatsApp): Prom
       `Vielen Dank für Ihre Bestellung!\n\n` +
       `Ihre Bestellung ${order.orderNumber} wurde erfolgreich aufgegeben. Wir liefern sie so schnell wie möglich.\n\n` +
       `Bestellung verfolgen: ${trackingUrl}`;
+
+    const twilio = getTwilioConfig();
+    if (twilio) {
+      return sendViaTwilio(twilio, {
+        phone: order.phoneNumber,
+        defaultCountryCode:
+          (storeSettings?.whatsappDefaultCountryCode as string)?.trim() || DEFAULT_COUNTRY_CODE,
+        contentSid: process.env.TWILIO_CONTENT_SID_ORDER_PLACED?.trim() || undefined,
+        contentVariables: { '1': order.orderNumber },
+        fallbackText: messageText,
+      });
+    }
 
     const useWebWorker =
       storeSettings?.whatsappUseWebWorker === true ||
@@ -180,6 +281,18 @@ export async function sendOrderStatusNotification(
     const statusLabel = STATUS_LABELS[newStatus] ?? newStatus;
     const statusMessageTemplate = STATUS_MESSAGES_DE[newStatus] ?? `Ihre Bestellung ${order.orderNumber}: ${newStatus}`;
     const messageText = statusMessageTemplate.replace(/\{\{orderNumber\}\}/g, order.orderNumber);
+
+    const twilio = getTwilioConfig();
+    if (twilio) {
+      return sendViaTwilio(twilio, {
+        phone: order.phoneNumber,
+        defaultCountryCode:
+          (storeSettings?.whatsappDefaultCountryCode as string)?.trim() || DEFAULT_COUNTRY_CODE,
+        contentSid: process.env.TWILIO_CONTENT_SID_ORDER_STATUS?.trim() || undefined,
+        contentVariables: { '1': order.orderNumber, '2': statusLabel },
+        fallbackText: messageText,
+      });
+    }
 
     const useWebWorker =
       storeSettings?.whatsappUseWebWorker === true ||
