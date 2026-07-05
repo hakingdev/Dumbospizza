@@ -36,6 +36,33 @@ export function normalizeStoredOrdersTime(value: unknown, defaultHour: number): 
   return def;
 }
 
+/** Дефолты для витрины — совпадают с прежним статическим текстом «17:00 - 21:30». */
+export const DEFAULT_ORDERS_START_HHMM = '17:00';
+export const DEFAULT_ORDERS_END_HHMM = '21:30';
+
+function normalizeOrDefault(value: unknown, defaultHHmm: string): string {
+  if (value == null || value === '') return defaultHHmm;
+  return normalizeStoredOrdersTime(value, parseInt(defaultHHmm, 10));
+}
+
+/** «Приём заказов с/до» из storeSettings для показа на витрине (хедер/футер/главная). */
+export function resolveOrderAcceptanceHours(
+  settings: { ordersStartHour?: unknown; ordersEndHour?: unknown } | null | undefined
+): { start: string; end: string } {
+  return {
+    start: normalizeOrDefault(settings?.ordersStartHour, DEFAULT_ORDERS_START_HHMM),
+    end: normalizeOrDefault(settings?.ordersEndHour, DEFAULT_ORDERS_END_HHMM),
+  };
+}
+
+/**
+ * Подставляет {start}/{end} в строку перевода.
+ * Одинарные скобки — чтобы i18next не трогал плейсхолдеры (его синтаксис {{...}}).
+ */
+export function formatOrderHoursTemplate(template: string, hours: { start: string; end: string }): string {
+  return template.replace(/\{start\}/g, hours.start).replace(/\{end\}/g, hours.end);
+}
+
 export function parseOrdersTimeToMinutes(value: unknown, defaultHour: number): number {
   const hhmm = normalizeStoredOrdersTime(value, defaultHour);
   const [h, m] = hhmm.split(':').map((x) => parseInt(x, 10));

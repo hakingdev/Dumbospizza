@@ -9,6 +9,7 @@ import { loadTranslation } from '../lib/i18n'
 import { useCart } from '../lib/contexts/CartContext'
 import { CartModal } from './cart/CartModal'
 import { DEFAULT_STORE_PHONE, phoneToTelHref } from '../lib/store-phone'
+import { formatOrderHoursTemplate, resolveOrderAcceptanceHours } from '../lib/order-acceptance-hours'
 
 export function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -16,6 +17,7 @@ export function Header() {
   const [storeInfo, setStoreInfo] = useState({
     phone: DEFAULT_STORE_PHONE,
   });
+  const [orderHours, setOrderHours] = useState(() => resolveOrderAcceptanceHours(null));
   const { language } = useLanguage();
   const [t, setT] = useState<any>(() => (k: string, fallback?: string) => fallback ?? k);
   const { cartItemsCount } = useCart();
@@ -54,6 +56,7 @@ export function Header() {
         if (data.success && data.settings) {
           const phone = data.settings.phone || data.settings.supportPhone || DEFAULT_STORE_PHONE;
           setStoreInfo({ phone });
+          setOrderHours(resolveOrderAcceptanceHours(data.settings));
         }
       } catch (error) {
         console.error('Error loading store settings:', error);
@@ -75,7 +78,7 @@ export function Header() {
                   <Phone className="mr-1 h-4 w-4 shrink-0" />
                   <span className="font-medium" translate="no">{storeInfo.phone}</span>
                 </a>
-                <span className="min-w-0 leading-tight">{t('header.hours', 'täglich 17:00 - 21:30')}</span>
+                <span className="min-w-0 leading-tight">{formatOrderHoursTemplate(t('header.hours', 'täglich {start} - {end}'), orderHours)}</span>
               </div>
             </div>
           </div>

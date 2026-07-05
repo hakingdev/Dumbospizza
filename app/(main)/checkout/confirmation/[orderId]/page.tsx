@@ -23,14 +23,22 @@ export default function OrderConfirmationPage({ params }: OrderConfirmationProps
   const [order, setOrder] = useState<any>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // 'not_found' — заказ реально не существует (404). 'unavailable' — заказ есть,
+  // но детали не загрузились (429/401/500/сеть): клиент попал сюда по редиректу
+  // после успешного оформления, поэтому НЕ пугаем «Fehler», а говорим, что
+  // бестеллунг принят — иначе клиенты оформляют заказ второй раз.
+  const [error, setError] = useState<'not_found' | 'unavailable' | null>(null);
   const [receiptModalOpen, setReceiptModalOpen] = useState(false);
   const { clearCart } = useCart();
   const router = useRouter();
   const { language } = useLanguage();
   const [t, setT] = useState<any>(() => (k: string, fallback?: string) => fallback ?? k);
-  
-  // Fetch order details
+
+  // Fetch order details — ровно один раз на orderId.
+  // ВАЖНО: clearCart не в зависимостях. Его идентичность менялась при каждом
+  // рендере CartProvider, эффект зацикливался (fetch → clearCart → ре-рендер →
+  // fetch …) и за секунды выбирал rate-limit GET /api/orders/[id] (30/мин):
+  // 429 → «Bestellung nicht gefunden» на успешно оформленном заказе.
   useEffect(() => {
     const fetchOrder = async () => {
       try {
@@ -42,7 +50,8 @@ export default function OrderConfirmationPage({ params }: OrderConfirmationProps
           credentials: 'include',
         });
         if (!response.ok) {
-          throw new Error('Bestellung nicht gefunden');
+          setError(response.status === 404 ? 'not_found' : 'unavailable');
+          return;
         }
 
         const data = await response.json();
@@ -53,17 +62,18 @@ export default function OrderConfirmationPage({ params }: OrderConfirmationProps
           // Clear cart after successful order
           clearCart();
         } else {
-          throw new Error('Bestelldaten konnten nicht geladen werden');
+          setError('unavailable');
         }
-      } catch (err: any) {
-        setError(err.message);
+      } catch {
+        setError('unavailable');
       } finally {
         setLoading(false);
       }
     };
-    
+
     fetchOrder();
-  }, [orderId, clearCart]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orderId]);
 
   // Meta Pixel: Purchase с eventID = orderNumber — дедупликация с серверным CAPI
   // (lib/conversions/meta-capi-purchase.ts). Guard в sessionStorage — от повторной
@@ -131,7 +141,36 @@ export default function OrderConfirmationPage({ params }: OrderConfirmationProps
     );
   }
   
-  if (error) {
+  // Детали не загрузились, но заказ оформлен (сюда попадают только по редиректу
+  // после успешного POST /api/orders и — при онлайн-оплате — после подтверждения
+  // оплаты). Главное — чтобы клиент НЕ бестеллил повторно.
+  if (error === 'unavailable') {
+    return (
+      <div className="container mx-auto px-4 py-16">
+        <div className="max-w-lg mx-auto bg-white rounded-lg shadow-lg p-6 text-center">
+          <div className="text-green-500 mb-4">
+            <CheckCircle className="w-16 h-16 mx-auto" />
+          </div>
+          <h2 className="text-2xl font-semibold mb-4">{t('confirmation.thank_you', 'Vielen Dank für Ihre Bestellung!')}</h2>
+          <p className="mb-2">{t('confirmation.degraded_received', 'Ihre Bestellung ist bei uns eingegangen und wird bearbeitet.')}</p>
+          <p className="mb-6 text-gray-600">{t('confirmation.degraded_details', 'Die Bestelldetails können gerade nicht angezeigt werden. Bitte bestellen Sie nicht erneut.')}</p>
+          <div className="flex flex-col justify-center gap-3 sm:flex-row">
+            <button
+              onClick={() => window.location.reload()}
+              className="inline-flex min-h-[48px] items-center justify-center rounded-lg bg-primary-600 px-6 py-3 text-center leading-tight text-white hover:bg-primary-700"
+            >
+              {t('confirmation.reload', 'Erneut laden')}
+            </button>
+            <Link href="/" className="inline-flex min-h-[48px] items-center justify-center rounded-lg border border-gray-300 px-6 py-3 text-center leading-tight hover:bg-gray-50">
+              {t('common.back_home', 'Zur Startseite')}
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error === 'not_found') {
     return (
       <div className="container mx-auto px-4 py-16">
         <div className="max-w-lg mx-auto bg-white rounded-lg shadow-lg p-6 text-center">
@@ -141,7 +180,7 @@ export default function OrderConfirmationPage({ params }: OrderConfirmationProps
             </svg>
           </div>
           <h2 className="text-2xl font-semibold mb-4">{t('confirmation.error_title', 'Fehler')}</h2>
-          <p className="mb-6">{error}</p>
+          <p className="mb-6">{t('confirmation.not_found', 'Bestellung nicht gefunden')}</p>
           <Link href="/" className="inline-flex min-h-[48px] items-center justify-center rounded-lg bg-primary-600 px-6 py-3 text-center leading-tight text-white hover:bg-primary-700">
             {t('common.back_home', 'Zur Startseite')}
           </Link>

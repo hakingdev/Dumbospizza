@@ -11,6 +11,7 @@ import { useLanguage } from '../../lib/contexts/LanguageContext'
 import { loadTranslation } from '../../lib/i18n'
 import PreOrderModal from '../../components/PreOrderModal'
 import { SafeImage } from '../../components/SafeImage'
+import { formatOrderHoursTemplate, resolveOrderAcceptanceHours } from '../../lib/order-acceptance-hours'
 
 const categoryColors = [
   'from-red-500 to-orange-500',
@@ -78,6 +79,7 @@ export default function Home() {
   const [showPreOrderModal, setShowPreOrderModal] = useState(false)
   const [valentineProducts, setValentineProducts] = useState<any[]>([])
   const [valentineLoading, setValentineLoading] = useState(true)
+  const [orderHours, setOrderHours] = useState(() => resolveOrderAcceptanceHours(null))
 
   useEffect(() => {
     const loadTranslations = async () => {
@@ -117,6 +119,22 @@ export default function Home() {
       }
     }
     fetchValentine()
+  }, [])
+
+  useEffect(() => {
+    const loadOrderHours = async () => {
+      try {
+        const response = await fetch('/api/settings/store', { cache: 'no-store' })
+        const data = await response.json()
+        if (data.success && data.settings) {
+          setOrderHours(resolveOrderAcceptanceHours(data.settings))
+        }
+      } catch (error) {
+        console.error('Error loading store settings:', error)
+      }
+    }
+
+    loadOrderHours()
   }, [])
 
   // Check if we should show pre-order modal (before opening date)
@@ -281,8 +299,8 @@ export default function Home() {
               <div className="inline-flex items-center justify-center w-16 h-16 bg-orange-100 rounded-full mb-4">
                 <Clock className="h-8 w-8 text-orange-600" />
               </div>
-              <h3 className="text-lg font-bold mb-2">{t('home.benefits.hours_title', 'Täglich geöffnet')}</h3>
-              <p className="text-gray-600 text-sm">{t('home.benefits.hours_text', 'Täglich von 17:00 bis 21:30')}</p>
+              <h3 className="text-lg font-bold mb-2">{formatOrderHoursTemplate(t('home.benefits.hours_title', 'Täglich geöffnet'), orderHours)}</h3>
+              <p className="text-gray-600 text-sm">{formatOrderHoursTemplate(t('home.benefits.hours_text', 'Täglich von {start} bis {end}'), orderHours)}</p>
             </div>
             
             <div className="text-center p-6 rounded-2xl bg-gradient-to-br from-blue-50 to-white border border-blue-100">

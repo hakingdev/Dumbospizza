@@ -874,8 +874,11 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     }
   }, [totals, state.total, state.subtotal, state.deliveryFee]);
   
-  // Cart utility functions
-  const addItem = (item: CartItem) => {
+  // Cart utility functions.
+  // Все обёртки над dispatch — в useCallback со стабильной идентичностью:
+  // они попадают в зависимости эффектов у потребителей (например, страница
+  // подтверждения заказа), и нестабильная идентичность зацикливала эффекты.
+  const addItem = useCallback((item: CartItem) => {
     dispatch({ type: 'ADD_ITEM', payload: item });
     // Meta Pixel: добавление в корзину (центральная точка — покрывает все пути добавления)
     trackMetaEvent('AddToCart', {
@@ -885,79 +888,79 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       value: item.price * item.quantity,
       currency: 'EUR',
     });
-  };
-  
-  const updateItem = (id: string, updates: Partial<CartItem>) => {
+  }, []);
+
+  const updateItem = useCallback((id: string, updates: Partial<CartItem>) => {
     dispatch({ type: 'UPDATE_ITEM', payload: { id, updates } });
-  };
-  
-  const removeItem = (id: string) => {
+  }, []);
+
+  const removeItem = useCallback((id: string) => {
     dispatch({ type: 'REMOVE_ITEM', payload: id });
-  };
+  }, []);
 
-  const removeCombo = (comboId: string) => {
+  const removeCombo = useCallback((comboId: string) => {
     dispatch({ type: 'REMOVE_COMBO', payload: comboId });
-  };
-  
-  const clearCart = () => {
+  }, []);
+
+  const clearCart = useCallback(() => {
     dispatch({ type: 'CLEAR_CART' });
-  };
-  
-  const setDeliveryType = (type: 'delivery' | 'pickup') => {
+  }, []);
+
+  const setDeliveryType = useCallback((type: 'delivery' | 'pickup') => {
     dispatch({ type: 'SET_DELIVERY_TYPE', payload: type });
-  };
-  
-  const setDeliveryZone = (zone: string, minOrderAmount: number) => {
+  }, []);
+
+  const setDeliveryZone = useCallback((zone: string, minOrderAmount: number) => {
     dispatch({ type: 'SET_DELIVERY_ZONE', payload: { zone, minOrderAmount } });
-  };
-  
-  const setDeliveryFee = (fee: number) => {
+  }, []);
+
+  const setDeliveryFee = useCallback((fee: number) => {
     dispatch({ type: 'SET_DELIVERY_FEE', payload: fee });
-  };
-  
-  const setContactInfo = (info: Partial<CartState['contactInfo']>) => {
+  }, []);
+
+  const setContactInfo = useCallback((info: Partial<CartState['contactInfo']>) => {
     dispatch({ type: 'SET_CONTACT_INFO', payload: info });
-  };
-  
-  const setDeliveryAddress = (address: Partial<CartState['deliveryAddress']>) => {
+  }, []);
+
+  const setDeliveryAddress = useCallback((address: Partial<CartState['deliveryAddress']>) => {
     dispatch({ type: 'SET_DELIVERY_ADDRESS', payload: address });
-  };
-  
-  const setPaymentMethod = (method: CartState['paymentMethod']) => {
+  }, []);
+
+  const setPaymentMethod = useCallback((method: CartState['paymentMethod']) => {
     dispatch({ type: 'SET_PAYMENT_METHOD', payload: method });
-  };
-  
-  const setLoyaltyPoints = (points: number) => {
+  }, []);
+
+  const setLoyaltyPoints = useCallback((points: number) => {
     dispatch({ type: 'SET_LOYALTY_POINTS', payload: points });
-  };
-  
-  const applyCoupon = (code: string, discount: number) => {
+  }, []);
+
+  const applyCoupon = useCallback((code: string, discount: number) => {
     dispatch({ type: 'APPLY_COUPON', payload: { code, discount } });
-  };
-  
-  const removeCoupon = () => {
+  }, []);
+
+  const removeCoupon = useCallback(() => {
     dispatch({ type: 'REMOVE_COUPON' });
-  };
+  }, []);
 
-  const setPromotionPromoCode = (code: string | undefined) => {
+  const setPromotionPromoCode = useCallback((code: string | undefined) => {
     dispatch({ type: 'SET_PROMOTION_PROMO_CODE', payload: code });
-  };
+  }, []);
 
-  const setSelectedFreeGift = (promotionId: string, productId: string) => {
+  const setSelectedFreeGift = useCallback((promotionId: string, productId: string) => {
     dispatch({ type: 'SET_SELECTED_FREE_GIFT', payload: { promotionId, productId } });
-  };
+  }, []);
 
-  const declineFreeGift = (promotionId: string) => {
+  const declineFreeGift = useCallback((promotionId: string) => {
     dispatch({ type: 'SET_DECLINED_FREE_GIFT', payload: { promotionId } });
-  };
+  }, []);
 
-  const setSelectedBogoSecond = (promotionId: string, productId: string) => {
+  const setSelectedBogoSecond = useCallback((promotionId: string, productId: string) => {
     dispatch({ type: 'SET_SELECTED_BOGO_SECOND', payload: { promotionId, productId } });
-  };
-  
-  const resetCheckoutData = () => {
+  }, []);
+
+  const resetCheckoutData = useCallback(() => {
     dispatch({ type: 'RESET_CHECKOUT_DATA' });
-  };
+  }, []);
   
   // Derived state
   const cartItemsCount = state.items.reduce(

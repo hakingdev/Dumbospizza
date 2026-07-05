@@ -28,8 +28,8 @@
       "fast_text": "30–60 Minuten, zu Stoßzeiten bis zu 90 Minuten",
       "quality_title": "Beste Qualität",
       "quality_text": "Nur frische Zutaten",
-      "hours_title": "täglich von 17 bis 21:30 Uhr",
-      "hours_text": "Täglich 17:00–21:30",
+      "hours_title": "täglich von {start} bis {end} Uhr",
+      "hours_text": "Täglich {start}–{end}",
       "safe_title": "Sicherheit",
       "safe_text": "Garantie für Qualität und Frische"
     },
@@ -358,7 +358,7 @@
     }
   },
   "header": {
-    "hours": "täglich 17:00 - 21:30"
+    "hours": "täglich {start} - {end}"
   },
   "city_modal": {
     "title": "Wo befinden Sie sich?",

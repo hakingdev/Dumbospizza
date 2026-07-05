@@ -9,6 +9,9 @@ import { GoogleAnalytics } from '@next/third-parties/google'
 import { Analytics } from '@vercel/analytics/react'
 import Providers from '../components/Providers'
 import { SITE_URL } from '../lib/site-url'
+import { connectToDatabase } from '../lib/models'
+import { getSetting } from '../lib/settings'
+import { resolveOrderAcceptanceHours } from '../lib/order-acceptance-hours'
 
 const inter = Inter({ subsets: ['latin', 'cyrillic'] })
 const siteUrl = SITE_URL
@@ -47,11 +50,21 @@ export const metadata: Metadata = {
   }
 }
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
+  // Часы приёма заказов для JSON-LD берём из настроек админки; при ошибке — дефолт.
+  let orderHours = resolveOrderAcceptanceHours(null)
+  try {
+    await connectToDatabase()
+    const storeSettings = await getSetting<Record<string, any>>('storeSettings', {})
+    orderHours = resolveOrderAcceptanceHours(storeSettings)
+  } catch (error) {
+    console.error('Error loading store settings for structured data:', error)
+  }
+
   return (
     <html lang="de">
       <head>
@@ -172,8 +185,8 @@ export default function RootLayout({
                     'Saturday',
                     'Sunday'
                   ],
-                  opens: '17:00',
-                  closes: '21:30'
+                  opens: orderHours.start,
+                  closes: orderHours.end
                 }
               ],
               servesCuisine: ['Pizza', 'Italienisch'],

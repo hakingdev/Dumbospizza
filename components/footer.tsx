@@ -8,6 +8,7 @@ import { loadTranslation } from '../lib/i18n'
 import { getCookie } from 'cookies-next'
 import { cookieName } from '../lib/i18n-config'
 import { DEFAULT_STORE_PHONE, phoneToTelHref } from '../lib/store-phone'
+import { formatOrderHoursTemplate, resolveOrderAcceptanceHours } from '../lib/order-acceptance-hours'
 
 const DEFAULT_STORE_INFO = {
   address: 'Kurhausstraße 11A, 97688 Bad Kissingen',
@@ -27,6 +28,7 @@ export function Footer() {
   const resolvedLanguage = cookieLang || language
   const fallback = (ru: string, de: string) => de
   const [storeInfo, setStoreInfo] = useState(DEFAULT_STORE_INFO);
+  const [orderHours, setOrderHours] = useState(() => resolveOrderAcceptanceHours(null));
   const [categories, setCategories] = useState<any[]>([]);
 
   useEffect(() => {
@@ -50,6 +52,7 @@ export function Footer() {
           const facebook = data.settings.facebook || '';
           const instagram = data.settings.instagram || '';
           setStoreInfo({ address, phone, email, facebook, instagram });
+          setOrderHours(resolveOrderAcceptanceHours(data.settings));
         }
       } catch (error) {
         console.error('Error loading store settings:', error);
@@ -198,7 +201,7 @@ export function Footer() {
               </li>
               <li className="flex min-w-0 items-center">
                 <Clock className="h-5 w-5 mr-2 flex-shrink-0" />
-                <span className="min-w-0 break-words">{t('header.hours', fallback('с 17:00 до 21:30 каждый день', 'Täglich 17:00 - 21:30'))}</span>
+                <span className="min-w-0 break-words">{formatOrderHoursTemplate(t('header.hours', fallback('с {start} до {end} каждый день', 'täglich {start} - {end}')), orderHours)}</span>
               </li>
             </ul>
           </div>
