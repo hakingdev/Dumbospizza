@@ -14,6 +14,11 @@
  *   node scripts/telegram-webhook.mjs set https://www.dumbospizza.de/api/telegram/webhook
  *   node scripts/telegram-webhook.mjs delete
  *
+ * Служебный stop-бот (блокировка приёма) — тот же скрипт с префиксом `control`:
+ *   node scripts/telegram-webhook.mjs control info
+ *   node scripts/telegram-webhook.mjs control set https://www.dumbospizza.de/api/telegram/control
+ *   node scripts/telegram-webhook.mjs control delete
+ *
  * ВАЖНО: URL должен быть КАНОНИЧЕСКИМ (www), который отдаёт 200. Apex
  * (dumbospizza.de) делает 308-редирект на www, а Telegram за редиректами НЕ ходит
  * → вебхук падает с «Wrong response from the webhook: 308 Permanent Redirect».
@@ -32,24 +37,48 @@ function loadDatabaseUrl() {
   return '';
 }
 
-async function getTelegramConfig() {
+// Два бота: основной (заказы) и служебный control (блокировка приёма). У каждого
+// свой токен/секрет/чат в storeSettings и свои env-фолбэки.
+const BOT_KINDS = {
+  main: {
+    envToken: 'TELEGRAM_BOT_TOKEN',
+    envSecret: 'TELEGRAM_WEBHOOK_SECRET',
+    envChat: 'TELEGRAM_CHAT_ID',
+    setToken: 'telegramBotToken',
+    setSecret: 'telegramWebhookSecret',
+    setChat: 'telegramChatId',
+    path: '/api/telegram/webhook',
+  },
+  control: {
+    envToken: 'TELEGRAM_CONTROL_BOT_TOKEN',
+    envSecret: 'TELEGRAM_CONTROL_WEBHOOK_SECRET',
+    envChat: 'TELEGRAM_CONTROL_CHAT_ID',
+    setToken: 'telegramControlBotToken',
+    setSecret: 'telegramControlWebhookSecret',
+    setChat: 'telegramControlChatId',
+    path: '/api/telegram/control',
+  },
+};
+
+async function getTelegramConfig(kind = 'main') {
+  const k = BOT_KINDS[kind];
   const url = loadDatabaseUrl();
-  let token = process.env.TELEGRAM_BOT_TOKEN || '';
-  let secret = process.env.TELEGRAM_WEBHOOK_SECRET || '';
-  let chatId = process.env.TELEGRAM_CHAT_ID || '';
+  let token = process.env[k.envToken] || '';
+  let secret = process.env[k.envSecret] || '';
+  let chatId = process.env[k.envChat] || '';
   if (url) {
     const sql = postgres(url, { prepare: false });
     try {
       const r = await sql`select value from settings where key='storeSettings'`;
       const s = r[0]?.value || {};
-      token = s.telegramBotToken || token;
-      secret = s.telegramWebhookSecret || secret;
-      chatId = s.telegramChatId || chatId;
+      token = s[k.setToken] || token;
+      secret = s[k.setSecret] || secret;
+      chatId = s[k.setChat] || chatId;
     } finally {
       await sql.end();
     }
   }
-  if (!token) throw new Error('Не найден telegramBotToken (ни в storeSettings, ни в env).');
+  if (!token) throw new Error(`Не найден ${k.setToken} (ни в storeSettings, ни в env).`);
   return { token, secret, chatId };
 }
 
@@ -68,9 +97,15 @@ async function info(token) {
 }
 
 async function main() {
-  const [cmd, urlArg] = process.argv.slice(2);
-  const { token, secret, chatId } = await getTelegramConfig();
-  console.log(`bot ok | chatId: ${chatId} | webhookSecret: ${secret ? 'set' : 'EMPTY'}\n`);
+  let args = process.argv.slice(2);
+  let kind = 'main';
+  if (args[0] === 'control' || args[0] === 'main') {
+    kind = args[0];
+    args = args.slice(1);
+  }
+  const [cmd, urlArg] = args;
+  const { token, secret, chatId } = await getTelegramConfig(kind);
+  console.log(`[${kind}] bot ok | chatId: ${chatId} | webhookSecret: ${secret ? 'set' : 'EMPTY'}\n`);
 
   if (cmd === 'info' || !cmd) {
     await info(token);
@@ -78,8 +113,8 @@ async function main() {
   }
 
   if (cmd === 'set') {
-    const url = urlArg || process.env.TELEGRAM_WEBHOOK_URL;
-    if (!url) throw new Error('Укажи URL: node scripts/telegram-webhook.mjs set https://.../api/telegram/webhook');
+    const url = urlArg || (kind === 'main' ? process.env.TELEGRAM_WEBHOOK_URL : '');
+    if (!url) throw new Error(`Укажи URL: node scripts/telegram-webhook.mjs ${kind} set https://www.dumbospizza.de${BOT_KINDS[kind].path}`);
     if (!secret) throw new Error('telegramWebhookSecret пуст в storeSettings — webhook без секрета небезопасен. Заполни его сначала.');
     console.log(`Регистрирую webhook → ${url}`);
     const j = await tg(token, 'setWebhook', {
@@ -100,7 +135,7 @@ async function main() {
     return;
   }
 
-  console.log('Команды: info | set <url> | delete');
+  console.log('Команды: [control] info | set <url> | delete');
 }
 
 main().catch((e) => {
