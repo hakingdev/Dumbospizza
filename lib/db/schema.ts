@@ -643,6 +643,98 @@ export const emailUnsubscribes = pgTable(
   })
 );
 
+// =====================================================================
+// Payments — онлайн-платежи внешних провайдеров (пока пишет только PayPal;
+// SumUp остаётся на своём флоу без записи в эту таблицу).
+//
+// Деньги здесь — В МИНОРНЫХ ЕДИНИЦАХ (integer-центы), в отличие от
+// евро-double в остальной схеме: суммы сверяются с провайдером до цента,
+// и float-арифметика тут недопустима. Конвертация на границе:
+// Math.round(order.total * 100) (см. lib/paypal/amount.ts).
+// =====================================================================
+export const payments = pgTable(
+  'payments',
+  {
+    id: id(),
+    orderId: text('order_id').notNull(), // ref orders.id
+    provider: text('provider').notNull(), // 'sumup' | 'paypal'
+    /** ID заказа у провайдера (PayPal Order ID). */
+    providerOrderId: text('provider_order_id').notNull(),
+    /** ID capture у провайдера — появляется после успешного capture. */
+    providerCaptureId: text('provider_capture_id'),
+    // 'created' | 'approved' | 'captured' | 'failed' | 'refunded'
+    //  | 'partially_refunded' | 'cancelled' | 'reversed'
+    // Переходы — только вперёд (см. lib/paypal/status.ts).
+    status: text('status').notNull().default('created'),
+    amountMinor: integer('amount_minor').notNull(),
+    currency: text('currency').notNull().default('EUR'), // ISO-4217
+    /** Последний сырой ответ провайдера (create/capture/refund/webhook). */
+    rawPayload: jsonb('raw_payload').$type<unknown>(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    // Идемпотентность create-order: один PayPal Order — одна строка.
+    providerOrderUq: uniqueIndex('payments_provider_order_uq').on(t.provider, t.providerOrderId),
+    orderIdx: index('payments_order_idx').on(t.orderId),
+    captureIdx: index('payments_capture_idx').on(t.providerCaptureId),
+  })
+);
+
+// =====================================================================
+// Payment events — журнал вебхуков провайдеров. UNIQUE (provider, event_id)
+// отбрасывает дубли/ретраи вебхука (INSERT ... ON CONFLICT DO NOTHING).
+// =====================================================================
+export const paymentEvents = pgTable(
+  'payment_events',
+  {
+    id: id(),
+    provider: text('provider').notNull(),
+    eventId: text('event_id').notNull(),
+    eventType: text('event_type').notNull(),
+    payload: jsonb('payload').$type<unknown>(),
+    processedAt: timestamp('processed_at', { withTimezone: true, mode: 'date' })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => ({
+    eventUq: uniqueIndex('payment_events_provider_event_uq').on(t.provider, t.eventId),
+  })
+);
+
+// =====================================================================
+// Refunds — возвраты по платежам. request_id (PayPal-Request-Id) генерируется
+// и СОХРАНЯЕТСЯ ДО вызова провайдера: ретрай после сбоя переиспользует его и
+// не создаёт второй возврат.
+// =====================================================================
+export const refunds = pgTable(
+  'refunds',
+  {
+    id: id(),
+    paymentId: text('payment_id').notNull(), // ref payments.id
+    /** ID возврата у провайдера — появляется после ответа API. */
+    providerRefundId: text('provider_refund_id'),
+    /** Идемпотентный PayPal-Request-Id, зафиксированный до вызова. */
+    requestId: text('request_id').notNull(),
+    amountMinor: integer('amount_minor').notNull(),
+    // 'pending' | 'completed' | 'failed' | 'cancelled'
+    status: text('status').notNull().default('pending'),
+    reason: text('reason'),
+    /** Кто инициировал (email админа или 'paypal' для внешних возвратов). */
+    createdBy: text('created_by'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    // partial unique: NULL до ответа провайдера допускается многократно
+    refundUq: uniqueIndex('refunds_provider_refund_uq')
+      .on(t.providerRefundId)
+      .where(sql`${t.providerRefundId} IS NOT NULL`),
+    requestUq: uniqueIndex('refunds_request_uq').on(t.requestId),
+    paymentIdx: index('refunds_payment_idx').on(t.paymentId),
+  })
+);
+
 // ---- выводимые типы (select/insert) ----
 export type Category = typeof categories.$inferSelect;
 export type Product = typeof products.$inferSelect;
@@ -663,3 +755,6 @@ export type SizeVariation = typeof sizeVariations.$inferSelect;
 export type WhatsAppQueueRow = typeof whatsappQueue.$inferSelect;
 export type PreOrder = typeof preOrders.$inferSelect;
 export type EmailUnsubscribe = typeof emailUnsubscribes.$inferSelect;
+export type Payment = typeof payments.$inferSelect;
+export type PaymentEvent = typeof paymentEvents.$inferSelect;
+export type Refund = typeof refunds.$inferSelect;

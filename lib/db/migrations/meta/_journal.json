@@ -50,6 +50,13 @@
       "when": 1782761034750,
       "tag": "0006_chemical_microchip",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1783610108289,
+      "tag": "0007_blue_the_anarchist",
+      "breakpoints": true
     }
   ]
 }
