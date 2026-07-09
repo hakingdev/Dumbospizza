@@ -29,6 +29,12 @@ const SumUpPaymentWidget = dynamic(
   { ssr: false }
 )
 
+// PayPal-кнопки — тоже только на клиенте (внешний SDK PayPal).
+const PayPalPaymentButtons = dynamic(
+  () => import('../../../components/checkout/PayPalPaymentButtons'),
+  { ssr: false }
+)
+
 type DeliveryZone = {
   _id: string;
   name: string;
@@ -89,8 +95,16 @@ export default function CheckoutPage() {
   const [termsAccepted, setTermsAccepted] = useState(false)
   // SMS-Marketing-Einwilligung — отдельная, необязательная, по умолчанию НЕ отмечена.
   const [smsConsent, setSmsConsent] = useState(false)
-  // Онлайн-оплата SumUp: данные созданного checkout для монтирования виджета.
-  const [sumup, setSumup] = useState<{ orderId: string; checkoutId: string; amount: number } | null>(null)
+  // Онлайн-оплата: модалка после создания заказа. provider — активный виджет
+  // (ровно один): SumUp (Karte/Apple/Google Pay) или PayPal; переключение табами.
+  // sumupCheckoutId создаётся лениво при первом показе SumUp-таба.
+  const [onlinePay, setOnlinePay] = useState<{
+    orderId: string
+    amount: number
+    provider: 'sumup' | 'paypal'
+    sumupCheckoutId: string | null
+    accessToken: string | null
+  } | null>(null)
   const [contactDetails, setContactDetails] = useState({
     name: '',
     phone: '',
@@ -259,7 +273,7 @@ export default function CheckoutPage() {
 
   useEffect(() => {
     if (state.paymentMethod !== paymentMethod) {
-      setCartPaymentMethod(paymentMethod as 'cash' | 'card' | 'online')
+      setCartPaymentMethod(paymentMethod as 'cash' | 'card' | 'online' | 'paypal')
     }
   }, [paymentMethod, setCartPaymentMethod, state.paymentMethod])
 
@@ -474,7 +488,9 @@ export default function CheckoutPage() {
           floor: contactDetails.floor || undefined,
           notes: contactDetails.notes || undefined
         } : undefined,
-        paymentMethod: paymentMethod,
+        // PayPal — клиентский выбор; в БД заказ остаётся 'online' (гейт
+        // принт-агента/чеки не меняются), провайдер фиксируется в payments.
+        paymentMethod: paymentMethod === 'paypal' ? 'online' : paymentMethod,
         subtotal: merchandiseSubtotal,
         tax: 0,
         deliveryFee: state.deliveryFee,
@@ -537,9 +553,10 @@ export default function CheckoutPage() {
       }
 
       // Онлайн-оплата: заказ создан со статусом 'pending' (на кухню НЕ ушёл).
-      // Создаём SumUp checkout и показываем виджет; корзину чистим и
-      // редиректим только после подтверждения оплаты (handleSumUpPaid).
+      // Показываем модалку с виджетом выбранного провайдера; корзину чистим и
+      // редиректим только после подтверждения оплаты.
       if (paymentMethod === 'online') {
+        // SumUp (Karte / Apple Pay / Google Pay): checkout создаётся сразу.
         const checkoutRes = await fetch('/api/payments/sumup/checkout', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -549,10 +566,26 @@ export default function CheckoutPage() {
         if (!checkoutRes.ok || !checkoutData.success) {
           throw new Error(checkoutData.error || t('checkout.errors.payment_init', 'Online-Zahlung konnte nicht gestartet werden'))
         }
-        setSumup({
+        setOnlinePay({
           orderId: data.order.id,
-          checkoutId: checkoutData.checkoutId,
           amount: checkoutData.amount,
+          provider: 'sumup',
+          sumupCheckoutId: checkoutData.checkoutId,
+          accessToken: data.order.accessToken || null,
+        })
+        setIsSubmitting(false)
+        return
+      }
+
+      if (paymentMethod === 'paypal') {
+        // PayPal Order создаётся лениво самими кнопками (createOrder →
+        // /api/payments/paypal/create-order); сумма считается на сервере.
+        setOnlinePay({
+          orderId: data.order.id,
+          amount: data.order.total,
+          provider: 'paypal',
+          sumupCheckoutId: null,
+          accessToken: data.order.accessToken || null,
         })
         setIsSubmitting(false)
         return
@@ -574,30 +607,85 @@ export default function CheckoutPage() {
   // Виджет SumUp сообщил об оплате → подтверждаем на сервере (источник истины),
   // и только при успехе чистим корзину и уходим на страницу подтверждения.
   const handleSumUpPaid = useCallback(async () => {
-    if (!sumup) return
+    if (!onlinePay || !onlinePay.sumupCheckoutId) return
     try {
       const res = await fetch('/api/payments/sumup/confirm', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderId: sumup.orderId, checkoutId: sumup.checkoutId }),
+        body: JSON.stringify({ orderId: onlinePay.orderId, checkoutId: onlinePay.sumupCheckoutId }),
       })
       const data = await res.json()
       if (!res.ok || !data.success) {
         throw new Error(data.error || t('checkout.errors.payment_confirm', 'Zahlung konnte nicht bestätigt werden'))
       }
-      const orderId = sumup.orderId
-      setSumup(null)
+      const orderId = onlinePay.orderId
+      setOnlinePay(null)
       clearCart()
       // ?paid=1 → на странице подтверждения автоматически всплывёт НДС-чек (Beleg).
       window.location.href = `/checkout/confirmation/${orderId}?paid=1`
     } catch (error: any) {
       setErrors({ submit: error.message || t('checkout.errors.payment_confirm', 'Zahlung konnte nicht bestätigt werden') })
     }
-  }, [sumup, clearCart, t])
+  }, [onlinePay, clearCart, t])
 
   const handleSumUpError = useCallback((message: string) => {
     setErrors({ submit: message })
   }, [])
+
+  // PayPal: capture уже подтверждён сервером (/api/payments/paypal/capture) —
+  // здесь только завершение оформления.
+  const handlePayPalPaid = useCallback(() => {
+    if (!onlinePay) return
+    const orderId = onlinePay.orderId
+    setOnlinePay(null)
+    clearCart()
+    window.location.href = `/checkout/confirmation/${orderId}?paid=1`
+  }, [onlinePay, clearCart])
+
+  // Capture PENDING: деньги в обработке, финальный статус придёт вебхуком.
+  // Уходим на подтверждение без ?paid=1 (чек появится после оплаты).
+  const handlePayPalPending = useCallback(() => {
+    if (!onlinePay) return
+    const orderId = onlinePay.orderId
+    setOnlinePay(null)
+    clearCart()
+    window.location.href = `/checkout/confirmation/${orderId}`
+  }, [onlinePay, clearCart])
+
+  // Покупатель закрыл PayPal-окно: заказ остаётся pending, корзина и модалка
+  // целы — можно попробовать снова или переключиться на SumUp.
+  const handlePayPalCancel = useCallback(() => {
+    setErrors({})
+  }, [])
+
+  const handlePayPalError = useCallback((message: string) => {
+    setErrors({ submit: message })
+  }, [])
+
+  // Переключение способа онлайн-оплаты в модалке (ровно один активный виджет).
+  // SumUp checkout создаётся лениво при первом переходе на таб SumUp.
+  const switchOnlineProvider = useCallback(async (provider: 'sumup' | 'paypal') => {
+    if (!onlinePay || onlinePay.provider === provider) return
+    setErrors({})
+    if (provider === 'sumup' && !onlinePay.sumupCheckoutId) {
+      try {
+        const res = await fetch('/api/payments/sumup/checkout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ orderId: onlinePay.orderId }),
+        })
+        const data = await res.json()
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || t('checkout.errors.payment_init', 'Online-Zahlung konnte nicht gestartet werden'))
+        }
+        setOnlinePay({ ...onlinePay, provider, sumupCheckoutId: data.checkoutId, amount: data.amount })
+      } catch (error: any) {
+        setErrors({ submit: error.message || t('checkout.errors.payment_init', 'Online-Zahlung konnte nicht gestartet werden') })
+      }
+      return
+    }
+    setOnlinePay({ ...onlinePay, provider })
+  }, [onlinePay, t])
 
   const totalItems = state.items.reduce((sum, item) => sum + item.quantity, 0) + bogoItemCount
   
@@ -969,7 +1057,7 @@ export default function CheckoutPage() {
                       value="cash"
                       checked={paymentMethod === 'cash'}
                       onChange={(e) => {
-                      setPaymentMethod(e.target.value as 'cash' | 'card' | 'online')
+                      setPaymentMethod(e.target.value as 'cash' | 'card' | 'online' | 'paypal')
                       if (errors.paymentMethod) {
                         setErrors(prev => {
                           const newErrors = { ...prev }
@@ -1004,7 +1092,7 @@ export default function CheckoutPage() {
                       value="card"
                       checked={paymentMethod === 'card'}
                       onChange={(e) => {
-                      setPaymentMethod(e.target.value as 'cash' | 'card' | 'online')
+                      setPaymentMethod(e.target.value as 'cash' | 'card' | 'online' | 'paypal')
                       if (errors.paymentMethod) {
                         setErrors(prev => {
                           const newErrors = { ...prev }
@@ -1035,7 +1123,7 @@ export default function CheckoutPage() {
                       value="online"
                       checked={paymentMethod === 'online'}
                       onChange={(e) => {
-                      setPaymentMethod(e.target.value as 'cash' | 'card' | 'online')
+                      setPaymentMethod(e.target.value as 'cash' | 'card' | 'online' | 'paypal')
                       if (errors.paymentMethod) {
                         setErrors(prev => {
                           const newErrors = { ...prev }
@@ -1052,6 +1140,38 @@ export default function CheckoutPage() {
                       <p className="text-sm text-gray-500">{t('checkout.payments.online_hint', 'Apple Pay, Google Pay oder Karte')}</p>
                     </div>
                     {paymentMethod === 'online' && (
+                      <Check className="h-5 w-5 ml-auto text-primary-600" />
+                    )}
+                  </label>
+
+                  <label className={`flex items-center p-4 border rounded-lg cursor-pointer ${
+                    paymentMethod === 'paypal'
+                      ? 'border-primary-500 bg-primary-50'
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}>
+                    <input
+                      type="radio"
+                      name="paymentMethod"
+                      value="paypal"
+                      checked={paymentMethod === 'paypal'}
+                      onChange={(e) => {
+                      setPaymentMethod(e.target.value as 'cash' | 'card' | 'online' | 'paypal')
+                      if (errors.paymentMethod) {
+                        setErrors(prev => {
+                          const newErrors = { ...prev }
+                          delete newErrors.paymentMethod
+                          return newErrors
+                        })
+                      }
+                    }}
+                      className="sr-only"
+                    />
+                    <Wallet className="h-6 w-6 mr-3 text-primary-600" />
+                    <div>
+                      <p className="font-medium"><NoTranslate>PayPal</NoTranslate></p>
+                      <p className="text-sm text-gray-500">{t('checkout.payments.paypal_hint', 'Mit Ihrem PayPal-Konto bezahlen')}</p>
+                    </div>
+                    {paymentMethod === 'paypal' && (
                       <Check className="h-5 w-5 ml-auto text-primary-600" />
                     )}
                   </label>
@@ -1328,28 +1448,72 @@ export default function CheckoutPage() {
         </div>
       </div>
 
-      {sumup && (
+      {onlinePay && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-lg bg-white p-6 shadow-xl">
             <h3 className="mb-1 text-lg font-semibold">
               {t('checkout.payments.online', 'Online bezahlen')}
             </h3>
             <p className="mb-4 text-sm text-gray-500">
-              {t('checkout.payments.online_amount', 'Zu zahlen')}: <NoTranslate>{sumup.amount.toFixed(2)} €</NoTranslate>
+              {t('checkout.payments.online_amount', 'Zu zahlen')}: <NoTranslate>{onlinePay.amount.toFixed(2)} €</NoTranslate>
             </p>
 
-            <SumUpPaymentWidget
-              checkoutId={sumup.checkoutId}
-              amount={sumup.amount}
-              locale={language === 'de' ? 'de-DE' : 'en-GB'}
-              onPaid={handleSumUpPaid}
-              onError={handleSumUpError}
-            />
+            {/* Способ оплаты — табы; активен ровно один виджет */}
+            <div className="mb-4 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => switchOnlineProvider('sumup')}
+                className={`rounded-md border py-2 px-3 text-sm font-medium transition-colors ${
+                  onlinePay.provider === 'sumup'
+                    ? 'border-primary-500 bg-primary-50 text-primary-700'
+                    : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                {t('checkout.payments.tab_card', 'Karte / Apple / Google Pay')}
+              </button>
+              <button
+                type="button"
+                onClick={() => switchOnlineProvider('paypal')}
+                className={`rounded-md border py-2 px-3 text-sm font-medium transition-colors ${
+                  onlinePay.provider === 'paypal'
+                    ? 'border-primary-500 bg-primary-50 text-primary-700'
+                    : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                <NoTranslate>PayPal</NoTranslate>
+              </button>
+            </div>
+
+            {errors.submit && (
+              <p className="mb-3 text-sm text-red-600">{errors.submit}</p>
+            )}
+
+            {onlinePay.provider === 'sumup' && onlinePay.sumupCheckoutId && (
+              <SumUpPaymentWidget
+                checkoutId={onlinePay.sumupCheckoutId}
+                amount={onlinePay.amount}
+                locale={language === 'de' ? 'de-DE' : 'en-GB'}
+                onPaid={handleSumUpPaid}
+                onError={handleSumUpError}
+              />
+            )}
+
+            {onlinePay.provider === 'paypal' && (
+              <PayPalPaymentButtons
+                orderId={onlinePay.orderId}
+                accessToken={onlinePay.accessToken}
+                locale={language === 'de' ? 'de_DE' : 'en_GB'}
+                onPaid={handlePayPalPaid}
+                onPending={handlePayPalPending}
+                onCancel={handlePayPalCancel}
+                onError={handlePayPalError}
+              />
+            )}
 
             <button
               type="button"
               className="mt-4 w-full rounded-md border border-gray-300 bg-white py-2 px-4 text-gray-700 transition-colors hover:bg-gray-50"
-              onClick={() => setSumup(null)}
+              onClick={() => setOnlinePay(null)}
             >
               {t('common.cancel', 'Abbrechen')}
             </button>

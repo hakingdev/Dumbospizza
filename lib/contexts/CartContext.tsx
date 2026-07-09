@@ -89,7 +89,9 @@ export interface CartState {
     floor?: string;
     notes?: string;
   };
-  paymentMethod?: 'cash' | 'card' | 'online';
+  // 'paypal' — клиентское значение выбора на чекауте; в БД такой заказ
+  // сохраняется как 'online' (провайдер живёт в таблице payments).
+  paymentMethod?: 'cash' | 'card' | 'online' | 'paypal';
 }
 
 type CartAction =

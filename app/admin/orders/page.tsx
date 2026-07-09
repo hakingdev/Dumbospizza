@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Search, ShoppingBag, Eye, ChevronDown, ChevronUp, Download } from 'lucide-react';
 import OrderTaxSummary from '../../../components/admin/OrderTaxSummary';
+import PaymentRefundPanel from '../../../components/admin/PaymentRefundPanel';
 const EXPORT_STATUSES = [
   { value: '', label: 'Все статусы' },
   { value: 'new', label: 'Новый' },
@@ -335,6 +336,10 @@ export default function OrdersPage() {
                                 {order.paymentMethod === 'card' && 'Картой'}
                                 {order.paymentMethod === 'online' && 'Онлайн'}
                               </div>
+                              {/* PayPal-платежи заказа + возвраты (для SumUp записей нет — панель скрыта) */}
+                              {order.paymentMethod === 'online' && (
+                                <PaymentRefundPanel orderId={orderId} />
+                              )}
                               {order.notes && (
                                 <>
                                   <h4 className="font-semibold mb-2 mt-4">Примечания</h4>
