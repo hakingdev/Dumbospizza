@@ -1,6 +1,11 @@
 import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 import db from '../db/client';
+import { generateNextOrderNumber } from '../orders/order-number';
+import {
+  claimPaidAndPromoteWithExecutor,
+  isUniqueViolation,
+} from '../orders/payment-draft';
 import {
   orders,
   payments,
@@ -112,10 +117,13 @@ export interface PayPalStore {
 type DbExecutor = Pick<typeof db, 'select' | 'insert' | 'update' | 'transaction'>;
 
 class DrizzlePayPalStore implements PayPalStore {
-  constructor(private readonly dbx: DbExecutor = db) {}
+  constructor(
+    private readonly dbx: DbExecutor = db,
+    private readonly inTx = false
+  ) {}
 
   async runInTransaction<T>(fn: (txStore: PayPalStore) => Promise<T>): Promise<T> {
-    return this.dbx.transaction(async (tx) => fn(new DrizzlePayPalStore(tx as DbExecutor)));
+    return this.dbx.transaction(async (tx) => fn(new DrizzlePayPalStore(tx as DbExecutor, true)));
   }
 
   async getOrderById(orderId: string): Promise<Order | null> {
@@ -126,12 +134,25 @@ class DrizzlePayPalStore implements PayPalStore {
   async claimOrderPaid(orderId: string): Promise<boolean> {
     // 'failed' тоже допускает переход: после DENIED клиент вправе оплатить
     // заказ повторно (новый capture COMPLETED должен довести заказ до paid).
-    const rows = await this.dbx
-      .update(orders)
-      .set({ paymentStatus: 'completed' })
-      .where(and(eq(orders.id, orderId), inArray(orders.paymentStatus, ['pending', 'failed'])))
-      .returning({ id: orders.id });
-    return rows.length > 0;
+    //
+    // Вместе с CAS-оплатой ПРОМОУТИТСЯ драфт онлайн-оплаты (общий guarded
+    // UPDATE с SumUp confirm/webhook, см. lib/orders/payment-draft.ts):
+    // pending_payment → 'new' + присвоение orderNumber; до этого момента
+    // онлайн-заказ невидим для админ-списка/кухни/принт-агента.
+    //
+    // Ретрай при гонке нумерации (unique violation) — только вне транзакции:
+    // внутри транзакции вебхука Postgres после ошибки abort'ит её целиком,
+    // событие откатывается и PayPal ретраит доставку.
+    const attempts = this.inTx ? 1 : 3;
+    for (let attempt = 1; ; attempt++) {
+      const candidate = await generateNextOrderNumber(this.dbx);
+      try {
+        const row = await claimPaidAndPromoteWithExecutor(this.dbx, orderId, candidate);
+        return row !== null;
+      } catch (error) {
+        if (!isUniqueViolation(error) || attempt >= attempts) throw error;
+      }
+    }
   }
 
   async markOrderPaymentFailed(orderId: string): Promise<boolean> {

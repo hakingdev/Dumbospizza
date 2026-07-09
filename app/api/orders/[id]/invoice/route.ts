@@ -90,6 +90,14 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       )
     }
 
+    // Драфт незавершённой оплаты (pending_payment): заказа ещё нет — счёта тоже.
+    if (order.status === 'pending_payment') {
+      return NextResponse.json(
+        { success: false, error: 'Bestellung ist noch nicht bezahlt.' },
+        { status: 403 }
+      )
+    }
+
     const pdfBytes = await buildInvoicePdf(order as any)
     const filename = `invoice-order-${order.orderNumber}.pdf`
 

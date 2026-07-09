@@ -1,7 +1,7 @@
-import { like, desc } from 'drizzle-orm';
-import db from '../db/client';
 import { createModel } from '../db/mongoose-compat';
 import { orders, users } from '../db/schema';
+import { generateNextOrderNumber } from '../orders/order-number';
+import { PENDING_PAYMENT_STATUS } from '../orders/payment-draft';
 
 export interface IOrderItem {
   product: string;
@@ -87,7 +87,19 @@ export interface IOrder {
   total: number;
   paymentMethod: 'cash' | 'card' | 'online';
   paymentStatus: 'pending' | 'completed' | 'failed';
-  status: 'new' | 'preparing' | 'ready_for_delivery' | 'delivering' | 'completed' | 'cancelled';
+  /**
+   * 'pending_payment' — драфт онлайн-оплаты: не «Новый», невидим для админ-списка,
+   * кухни и принт-агента; становится 'new' только после серверного подтверждения
+   * оплаты (см. lib/orders/payment-draft.ts).
+   */
+  status:
+    | 'pending_payment'
+    | 'new'
+    | 'preparing'
+    | 'ready_for_delivery'
+    | 'delivering'
+    | 'completed'
+    | 'cancelled';
   notes?: string;
   /** Желаемое время доставки в формате HH:mm (например "16:45") */
   desiredDeliveryTime?: string;
@@ -120,30 +132,18 @@ export const Order = createModel(orders, {
   },
   // Генерация orderNumber (YYMMDD + порядковый номер) и стартовая запись истории.
   preSave: async (doc, isNew) => {
-    if (!isNew || doc.orderNumber) return;
-    const today = new Date();
-    const dateString =
-      today.getFullYear().toString().slice(-2) +
-      String(today.getMonth() + 1).padStart(2, '0') +
-      String(today.getDate()).padStart(2, '0');
-
-    const last = await db
-      .select({ orderNumber: orders.orderNumber })
-      .from(orders)
-      .where(like(orders.orderNumber, `${dateString}%`))
-      .orderBy(desc(orders.orderNumber))
-      .limit(1);
-
-    let sequenceNumber = '001';
-    if (last[0]?.orderNumber) {
-      const lastSequence = parseInt(last[0].orderNumber.slice(-3), 10);
-      sequenceNumber = String(lastSequence + 1).padStart(3, '0');
-    }
-    doc.orderNumber = `${dateString}${sequenceNumber}`;
+    if (!isNew) return;
 
     if (!doc.statusUpdates || doc.statusUpdates.length === 0) {
       doc.statusUpdates = [{ status: doc.status || 'new', timestamp: new Date() }];
     }
+
+    // Драфт онлайн-оплаты номер НЕ получает: нумерация происходит при промоуте
+    // после подтверждения оплаты (см. lib/orders/payment-draft.ts) — брошенные
+    // попытки оплаты не съедают номера и не видны как заказы.
+    if (doc.orderNumber || doc.status === PENDING_PAYMENT_STATUS) return;
+
+    doc.orderNumber = await generateNextOrderNumber();
   },
 });
 

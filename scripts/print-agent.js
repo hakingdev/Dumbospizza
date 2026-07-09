@@ -40,6 +40,17 @@ const PRINT_AGENT_SECRET = process.env.PRINT_AGENT_SECRET || '';
 const PRINTER_RAW = process.env.KITCHEN_PRINTER_INTERFACE || process.env.PRINTER_INTERFACE || 'EPSON TM-P20 Receipt';
 const POLL_INTERVAL_MS = parseInt(process.env.PRINT_AGENT_POLL_MS || '5000', 10);
 
+const os = require('os');
+const path = require('path');
+const { createPrintAgent, createPrintedStore } = require('./print-agent-core');
+
+// Идентификатор экземпляра — в логах агента и сервера (decision=claimed/printed).
+const AGENT_ID = `${os.hostname()}#${process.pid}`;
+// Persistent-хранилище напечатанных ключей: переживает рестарт, защищает от
+// второго чека при потерянном подтверждении/reclaim'е зависшего заказа.
+const STATE_FILE =
+  process.env.PRINT_AGENT_STATE_FILE || path.join(__dirname, 'printed-orders.json');
+
 // Windows: "COM3" -> "\\.\COM3". Network: "tcp://..." stays. Name: "printer:Name" or use as-is for driver.
 const PRINTER_INTERFACE = /^COM\d+$/i.test(PRINTER_RAW)
   ? '\\\\.\\' + PRINTER_RAW.toUpperCase()
@@ -276,7 +287,9 @@ async function printKitchenReceipt(n) {
 
 async function fetchPendingOrders() {
   const url = `${API_BASE_URL.replace(/\/$/, '')}/api/orders?kitchenPrintStatus=pending&limit=10`;
-  const res = await fetch(url, { headers: { 'X-Print-Agent-Key': PRINT_AGENT_SECRET } });
+  const res = await fetch(url, {
+    headers: { 'X-Print-Agent-Key': PRINT_AGENT_SECRET, 'X-Print-Agent-Id': AGENT_ID }
+  });
   if (!res.ok) throw new Error('API ' + res.status);
   const data = await res.json();
   return data.orders || [];
@@ -286,33 +299,32 @@ async function markPrinted(orderId) {
   const url = `${API_BASE_URL.replace(/\/$/, '')}/api/orders/${orderId}/mark-printed`;
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'X-Print-Agent-Key': PRINT_AGENT_SECRET, 'Content-Type': 'application/json' }
+    headers: {
+      'X-Print-Agent-Key': PRINT_AGENT_SECRET,
+      'X-Print-Agent-Id': AGENT_ID,
+      'Content-Type': 'application/json'
+    }
   });
   if (!res.ok) throw new Error('mark-printed ' + res.status);
 }
 
 let notConnectedHintShown = false;
 
-async function runOnce() {
-  const orders = await fetchPendingOrders();
-  if (orders.length === 0) {
-    console.log('[poll]', new Date().toLocaleTimeString('de-DE'), '— no pending orders');
-    return;
-  }
-  for (const order of orders) {
-    try {
-      await printKitchenReceipt(orderToNotification(order));
-      await markPrinted(order._id);
-      console.log('[OK] Printed order', order.orderNumber);
-    } catch (err) {
-      console.error('[ERR] Order', order.orderNumber, err.message);
-      if (!notConnectedHintShown && err.message.includes('Printer not connected')) {
-        notConnectedHintShown = true;
-        console.error('>>> Run:  node print-agent.js --list-ports   and set KITCHEN_PRINTER_INTERFACE=COM3');
-      }
+// Логика тика (идемпотентность по ключу заказа, нереентрантность) — в
+// print-agent-core.js; здесь только реальные I/O-зависимости.
+const agent = createPrintAgent({
+  fetchPendingOrders,
+  printReceipt: (order) => printKitchenReceipt(orderToNotification(order)),
+  markPrinted,
+  store: createPrintedStore(STATE_FILE),
+  agentId: AGENT_ID,
+  onOrderError: (err) => {
+    if (!notConnectedHintShown && String(err && err.message).includes('Printer not connected')) {
+      notConnectedHintShown = true;
+      console.error('>>> Run:  node print-agent.js --list-ports   and set KITCHEN_PRINTER_INTERFACE=COM3');
     }
-  }
-}
+  },
+});
 
 async function loop() {
   if (!PRINT_AGENT_SECRET) {
@@ -320,9 +332,15 @@ async function loop() {
     process.exit(1);
   }
   console.log('Print agent: polling', API_BASE_URL, 'every', POLL_INTERVAL_MS, 'ms. Printer:', PRINTER_RAW);
+  console.log('Agent id:', AGENT_ID, '| printed-keys store:', STATE_FILE);
+  // Следующий тик стартует только после завершения предыдущего (никаких
+  // наложений setInterval); печать дольше интервала просто сдвигает цикл.
   for (;;) {
     try {
-      await runOnce();
+      const res = await agent.runOnce();
+      if (!res.skipped && res.count === 0) {
+        console.log('[poll]', new Date().toLocaleTimeString('de-DE'), '— no pending orders');
+      }
     } catch (e) {
       console.error('Poll error:', e.message);
     }

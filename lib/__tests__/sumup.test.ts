@@ -49,4 +49,33 @@ describe('isSumUpCheckoutPaid', () => {
       isSumUpCheckoutPaid(checkout({ amount: 1.0 }), { reference: '250620001', amount: 24.9 })
     ).toBe(false);
   });
+
+  it('принимает любой из допустимых references (orders.id — новая схема, orderNumber — легаси)', () => {
+    const expected = { references: ['orderid123', '250620001'], amount: 24.9 };
+    expect(
+      isSumUpCheckoutPaid(checkout({ checkout_reference: 'orderid123' }), expected)
+    ).toBe(true);
+    expect(
+      isSumUpCheckoutPaid(checkout({ checkout_reference: '250620001' }), expected)
+    ).toBe(true);
+    expect(
+      isSumUpCheckoutPaid(checkout({ checkout_reference: 'other' }), expected)
+    ).toBe(false);
+  });
+
+  it('игнорирует пустые/отсутствующие references (у драфта нет orderNumber)', () => {
+    expect(
+      isSumUpCheckoutPaid(checkout({ checkout_reference: 'orderid123' }), {
+        references: ['orderid123', null, undefined],
+        amount: 24.9,
+      })
+    ).toBe(true);
+    // Пустой reference заказа не должен «совпасть» с пустым в checkout.
+    expect(
+      isSumUpCheckoutPaid(checkout({ checkout_reference: '' }), {
+        references: ['', null],
+        amount: 24.9,
+      })
+    ).toBe(false);
+  });
 });

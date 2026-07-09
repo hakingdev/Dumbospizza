@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
 import { connectToDatabase } from '../../../../lib/models';
 import { Order } from '../../../../lib/models/order.model';
+import { visibleOrderStatusFilter } from '../../../../lib/orders/payment-draft';
 
 export const dynamic = 'force-dynamic';
 
@@ -76,7 +77,8 @@ export async function GET(request: NextRequest) {
     const endDate = searchParams.get('endDate');
 
     const query: Record<string, any> = {};
-    if (status) query.status = status;
+    // Драфты онлайн-оплаты (pending_payment) в экспорт не попадают.
+    query.status = visibleOrderStatusFilter(status);
     if (startDate || endDate) {
       query.createdAt = {};
       if (startDate) query.createdAt.$gte = parseStartDateParam(startDate);

@@ -259,6 +259,25 @@ export function toColumnValues(model: ModelRef, src: AnyRecord): AnyRecord {
   return values;
 }
 
+/**
+ * Сериализация значения колонки для сравнения «изменилось ли поле».
+ * Строка-снапшот иммунна к in-place мутациям (push в jsonb-массив и т.п.).
+ */
+function serializeColumnValue(v: any): string {
+  if (v === undefined) return ' undefined';
+  if (v === null) return ' null';
+  if (v instanceof Date) return ' date:' + v.getTime();
+  return JSON.stringify(v) ?? ' undefined';
+}
+
+/** Снапшот текущих значений колонок документа (после приведения типов). */
+function snapshotColumns(model: ModelRef, doc: AnyRecord): Record<string, string> {
+  const snap: Record<string, string> = {};
+  const values = toColumnValues(model, doc);
+  for (const [k, v] of Object.entries(values)) snap[k] = serializeColumnValue(v);
+  return snap;
+}
+
 async function saveDoc(model: ModelRef, doc: any): Promise<any> {
   const isNew = doc.__isNew === true;
   if (model.config.preSave) await model.config.preSave(doc, isNew);
@@ -270,9 +289,21 @@ async function saveDoc(model: ModelRef, doc: any): Promise<any> {
     await db.insert(model.table).values(values);
     doc.__isNew = false;
   } else {
+    // Как в Mongoose, пишем ТОЛЬКО изменённые с момента загрузки поля.
+    // Blind-запись всего документа затирала параллельные обновления той же
+    // строки (например, kitchenPrintStatus, выставленный принт-агентом, пока
+    // finalize ждал уведомления, — заказ возвращался в очередь → двойной чек).
     const { id, ...rest } = values;
-    await db.update(model.table).set(rest).where(eq(model.table.id, doc.id));
+    const snap: Record<string, string> = doc.__snapshot || {};
+    const changed: AnyRecord = {};
+    for (const [k, v] of Object.entries(rest)) {
+      if (snap[k] !== serializeColumnValue(v)) changed[k] = v;
+    }
+    if (Object.keys(changed).length > 0) {
+      await db.update(model.table).set(changed).where(eq(model.table.id, doc.id));
+    }
   }
+  doc.__snapshot = snapshotColumns(model, doc);
   return doc;
 }
 
@@ -290,6 +321,12 @@ function makeDoc(model: ModelRef, data: AnyRecord, isNew: boolean): any {
   const hidden: PropertyDescriptor = { enumerable: false, writable: true, configurable: true };
   Object.defineProperty(doc, '__isNew', { ...hidden, value: isNew });
   Object.defineProperty(doc, '__model', { ...hidden, value: model });
+  // База для dirty-tracking в save(): у новых документов пустая (всё пишется
+  // в INSERT), у загруженных — значения строки на момент материализации.
+  Object.defineProperty(doc, '__snapshot', {
+    ...hidden,
+    value: isNew ? {} : snapshotColumns(model, doc),
+  });
   Object.defineProperty(doc, 'save', { ...hidden, value: function () { return saveDoc(model, this); } });
   Object.defineProperty(doc, 'populate', {
     ...hidden,

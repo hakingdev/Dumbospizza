@@ -162,10 +162,17 @@
     "payments": {
       "cash": "Barzahlung bei Lieferung",
       "card": "Kartenzahlung bei Lieferung",
-      "online": "Online-Zahlung"
+      "online": "Online-Zahlung",
+      "card_online": "Karte, Apple Pay & Google Pay",
+      "sepa": "SEPA-Lastschrift",
+      "paypal_hint": "Mit Ihrem PayPal-Konto bezahlen",
+      "pay_title": "Bezahlung",
+      "online_amount": "Zu zahlen",
+      "back_to_methods": "Zurück zur Zahlungsart"
     },
     "submitting": "Bestellung wird aufgegeben...",
     "place_order": "Bestellung aufgeben",
+    "pay_now": "Jetzt bezahlen",
     "back_to_cart": "Zurück zum Warenkorb",
     "summary_title": "Ihre Bestellung",
     "items": "Artikel",

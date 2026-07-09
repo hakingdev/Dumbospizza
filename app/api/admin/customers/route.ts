@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
-import { and, or, eq, ilike, inArray, sql, desc } from 'drizzle-orm';
+import { and, or, eq, ilike, inArray, ne, sql, desc } from 'drizzle-orm';
 import db from '../../../../lib/db/client';
 import { users, orders, loyaltyPrograms } from '../../../../lib/db/schema';
 import { authOptions, isStaff } from '../../../../lib/auth';
+import { PENDING_PAYMENT_STATUS } from '../../../../lib/orders/payment-draft';
 
 // GET /api/admin/customers — список клиентов с числом заказов и балансом баллов
 export async function GET(request: NextRequest) {
@@ -50,7 +51,7 @@ export async function GET(request: NextRequest) {
       : [];
     const balanceByUser = new Map(balances.map((b) => [b.user, Number(b.balance)]));
 
-    // Число заказов по номеру телефона.
+    // Число заказов по номеру телефона (без драфтов незавершённой онлайн-оплаты).
     const counts = phones.length
       ? await db
           .select({
@@ -58,7 +59,9 @@ export async function GET(request: NextRequest) {
             count: sql<number>`count(*)::int`,
           })
           .from(orders)
-          .where(inArray(orders.phoneNumber, phones))
+          .where(
+            and(inArray(orders.phoneNumber, phones), ne(orders.status, PENDING_PAYMENT_STATUS))
+          )
           .groupBy(orders.phoneNumber)
       : [];
     const countByPhone = new Map(counts.map((c) => [c.phoneNumber, c.count]));

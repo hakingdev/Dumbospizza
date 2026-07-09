@@ -87,9 +87,13 @@ export async function POST(request: NextRequest) {
     // Финализация (Telegram/печать/лояльность/конверсии) — ровно один раз, тем
     // вызовом, который перевёл заказ в оплаченные. Ошибка финализации не
     // отменяет оплату: логируем критично, отвечаем успехом.
+    let orderNumber = order.orderNumber;
     if (result.shouldFinalize) {
       try {
         const orderDoc = await Order.findById(result.orderId);
+        // Драфт получил номер только что, при промоуте внутри claimOrderPaid —
+        // в ответ идёт свежий номер, а не null из строки, прочитанной до capture.
+        if (orderDoc?.orderNumber) orderNumber = orderDoc.orderNumber;
         if (orderDoc) await finalizeOrderPlacement(orderDoc, request);
       } catch (error) {
         logPayPalCritical('finalize_failed', {
@@ -103,7 +107,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       orderId: result.orderId,
-      orderNumber: order.orderNumber,
+      orderNumber,
       paymentStatus: result.paymentStatus,
       alreadyPaid: result.alreadyCaptured === true,
       pending: result.pending === true,

@@ -89,9 +89,9 @@ export interface CartState {
     floor?: string;
     notes?: string;
   };
-  // 'paypal' — клиентское значение выбора на чекауте; в БД такой заказ
+  // 'paypal'/'sepa' — клиентские значения выбора на чекауте; в БД такой заказ
   // сохраняется как 'online' (провайдер живёт в таблице payments).
-  paymentMethod?: 'cash' | 'card' | 'online' | 'paypal';
+  paymentMethod?: 'cash' | 'card' | 'online' | 'paypal' | 'sepa';
 }
 
 type CartAction =

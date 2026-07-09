@@ -146,8 +146,16 @@ export async function finalizeOrderPlacement(order: any, request: NextRequest): 
   });
 
   // Печать: прямая термопечать только на локальном сервере (где задан интерфейс
-  // принтера). На Vercel принтер недоступен → оставляем 'pending', и заказ
-  // печатает принт-агент, опрашивающий /api/orders?kitchenPrintStatus=pending.
+  // принтера). На Vercel принтер недоступен → статус печати НЕ трогаем: заказ
+  // создан с kitchenPrintStatus='pending' и уже стоит в очереди принт-агента
+  // (GET /api/orders?kitchenPrintStatus=pending, атомарный claim).
+  //
+  // ВАЖНО (баг «двойной чек»): раньше здесь стоял безусловный сброс статусов в
+  // 'pending'. Пока finalize ждал уведомления (fetch без таймаута может висеть
+  // десятки секунд), принт-агент успевал напечатать заказ и проставить
+  // 'completed' — сброс возвращал заказ в очередь, и следующий тик агента
+  // печатал второй чек. Статус печати меняем только «вперёд» (успех → completed);
+  // неуспех ничего не пишет — заказ и так остаётся в очереди.
   const hasLocalPrinter = Boolean(
     process.env.KITCHEN_PRINTER_INTERFACE ||
       process.env.PRINTER_INTERFACE ||
@@ -160,19 +168,12 @@ export async function finalizeOrderPlacement(order: any, request: NextRequest): 
       deliveryFee: order.deliveryFee,
     })
       .then((printResult) => {
-        order.kitchenPrintStatus = printResult.kitchen ? 'completed' : 'pending';
-        order.customerPrintStatus = printResult.customer ? 'completed' : 'pending';
-        return order.save();
+        if (printResult.kitchen) order.kitchenPrintStatus = 'completed';
+        if (printResult.customer) order.customerPrintStatus = 'completed';
+        if (printResult.kitchen || printResult.customer) return order.save();
       })
       .catch((err) => {
         console.error('Error printing receipts:', err);
-        order.kitchenPrintStatus = 'pending';
-        order.customerPrintStatus = 'pending';
-        return order.save();
       });
-  } else {
-    order.kitchenPrintStatus = 'pending';
-    order.customerPrintStatus = 'pending';
-    await order.save();
   }
 }

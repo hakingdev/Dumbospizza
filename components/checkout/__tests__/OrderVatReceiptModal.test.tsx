@@ -24,7 +24,8 @@ describe('OrderVatReceiptModal — авто-всплывающий НДС-чек
   it('online + open → показывает модалку с Beleg', () => {
     render(<OrderVatReceiptModal order={onlineOrder} open onClose={() => {}} />);
     expect(screen.getByTestId('receipt-modal')).toBeTruthy();
-    expect(screen.getByText(/Beleg/)).toBeTruthy();
+    // Точный заголовок: в чеке есть ещё «Beleg-Nr.», и /Beleg/ матчил бы оба.
+    expect(screen.getByText('Beleg (inkl. MwSt.)')).toBeTruthy();
     expect(screen.getByText(/Aufschlüsselung der Steuern/)).toBeTruthy();
   });
 

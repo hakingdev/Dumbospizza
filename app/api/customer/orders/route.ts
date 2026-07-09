@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '../../../../lib/models';
 import { User } from '../../../../lib/models/user.model';
 import { Order } from '../../../../lib/models/order.model';
+import { visibleOrderStatusFilter } from '../../../../lib/orders/payment-draft';
 import { getCustomerSession } from '../../../../lib/customer-auth';
 
 // GET /api/customer/orders — заказы текущего клиента (по cookie-сессии)
@@ -24,7 +25,11 @@ export async function GET(request: NextRequest) {
     const skip = (page - 1) * limit;
 
     // Заказы по userId ИЛИ по номеру телефона клиента (старые заказы без user).
-    const query = { $or: [{ user: session.userId }, { phoneNumber: user.phoneNumber }] };
+    // Драфты незавершённой онлайн-оплаты (pending_payment) клиенту не показываем.
+    const query = {
+      $or: [{ user: session.userId }, { phoneNumber: user.phoneNumber }],
+      status: visibleOrderStatusFilter(),
+    };
 
     const orders = await Order.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit);
     const total = await Order.countDocuments(query);

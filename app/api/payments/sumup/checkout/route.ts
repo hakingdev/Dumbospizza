@@ -1,15 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '../../../../../lib/models';
 import { Order } from '../../../../../lib/models/order.model';
-import { createSumUpCheckout } from '../../../../../lib/sumup';
+import { createSumUpCheckout, listSumUpCheckoutsByReference } from '../../../../../lib/sumup';
 import { buildSumUpCheckoutDescription } from '../../../../../lib/orders/tax';
+import { SITE_URL } from '../../../../../lib/site-url';
 
 /**
  * POST /api/payments/sumup/checkout
  * Body: { orderId }
- * Создаёт SumUp checkout для уже созданного онлайн-заказа и возвращает checkoutId
- * для монтирования платёжного виджета на клиенте. Сумма берётся с сервера (order.total),
- * не с клиента.
+ * Создаёт (или переиспользует) SumUp checkout для онлайн-заказа-драфта и
+ * возвращает checkoutId для монтирования платёжного виджета. Сумма берётся
+ * с сервера (order.total), не с клиента.
+ *
+ * checkout_reference = orders.id — стабильный ключ идемпотентности заказа:
+ * повторное открытие виджета/ретрай переиспользует существующий PENDING
+ * checkout с той же суммой вместо создания дубля, а вебхук/confirm по
+ * reference однозначно находят заказ.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -36,20 +42,55 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Order is already paid' }, { status: 409 });
     }
 
-    // Чек SumUp формируется из единственного текстового поля description.
-    // Передаём в него реальные позиции (Artikel) и разбивку налогов (USt. 7 % /
-    // 19 %), а не одну общую строку. VAT применяется только к онлайн-заказам —
-    // этот маршрут вызывается исключительно для paymentMethod === 'online'.
-    const checkout = await createSumUpCheckout({
-      reference: order.orderNumber,
-      amount: order.total,
-      currency: 'EUR',
-      description: buildSumUpCheckoutDescription({
-        orderNumber: order.orderNumber,
-        items: order.items,
-        paymentMethod: order.paymentMethod,
-      }),
-    });
+    const reference = String(order._id);
+
+    // Идемпотентность на стороне SumUp: существующий PENDING checkout с той же
+    // суммой переиспользуем (SumUp и сам отклоняет второй checkout с тем же
+    // reference — DUPLICATED_CHECKOUT).
+    let checkout = null as Awaited<ReturnType<typeof createSumUpCheckout>> | null;
+    try {
+      const existing = await listSumUpCheckoutsByReference(reference);
+      checkout =
+        existing.find(
+          (c) => c.status === 'PENDING' && Math.abs(c.amount - order.total) <= 0.01
+        ) || null;
+      if (checkout) {
+        console.log(
+          `[payment-draft] checkout_reused order=${reference} checkout=${checkout.id} amount=${checkout.amount}`
+        );
+      }
+    } catch (listError) {
+      // Листинг — оптимизация; при сбое просто создаём новый checkout.
+      console.error('SumUp list checkouts error:', listError);
+    }
+
+    if (!checkout) {
+      // Чек SumUp формируется из единственного текстового поля description.
+      // Передаём в него реальные позиции (Artikel) и разбивку налогов (USt. 7 % /
+      // 19 %), а не одну общую строку. У драфта номера ещё нет (нумерация — при
+      // промоуте после оплаты) — в заголовок идёт reference.
+      checkout = await createSumUpCheckout({
+        reference,
+        amount: order.total,
+        currency: 'EUR',
+        description: buildSumUpCheckoutDescription({
+          orderNumber: order.orderNumber || reference,
+          items: order.items,
+          paymentMethod: order.paymentMethod,
+        }),
+        // APM-флоу (redirect) требуют redirect_url при создании checkout (дока
+        // SumUp); карте/кошелькам не мешает. Возврат — на страницу подтверждения;
+        // промоут заказа при этом делает вебхук/confirm, не редирект.
+        redirectUrl: `${SITE_URL}/checkout/confirmation/${reference}`,
+        // Бэкенд-колбэк SumUp (CHECKOUT_STATUS_CHANGED): задаётся здесь на
+        // каждый checkout — в кабинете SumUp ничего регистрировать не нужно.
+        // SITE_URL канонично www (apex отдал бы 308 и колбэк бы терялся).
+        returnUrl: `${SITE_URL}/api/payments/sumup/webhook`,
+      });
+      console.log(
+        `[payment-draft] checkout_created order=${reference} checkout=${checkout.id} amount=${order.total}`
+      );
+    }
 
     return NextResponse.json({
       success: true,

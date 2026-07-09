@@ -14,6 +14,12 @@ import {
 import { validateBogoSecondSelection } from '../../../lib/promotions/bogo';
 import { getAppliedPromotionDiscount, getVisibleBogoSecondItems } from '../../../lib/promotions/discount-total';
 import { finalizeOrderPlacement } from '../../../lib/orders/finalize';
+import {
+  initialOrderPlacementState,
+  visibleOrderStatusFilter,
+  sweepStaleDraftsThrottled,
+} from '../../../lib/orders/payment-draft';
+import { claimPendingPrintOrders } from '../../../lib/orders/print-queue';
 import { getSetting } from '../../../lib/settings';
 import {
   formatMinutesAsHHmm,
@@ -50,24 +56,6 @@ function toPublicOrderView(order: any) {
     createdAt: source.createdAt,
     updatedAt: source.updatedAt,
   };
-}
-
-async function claimPendingPrintOrders(query: any, limit: number) {
-  const candidates = await Order.find(query)
-    .sort({ createdAt: -1 })
-    .limit(limit);
-
-  const claimed: any[] = [];
-  for (const candidate of candidates) {
-    const id = String(candidate._id || candidate.id);
-    const order = await Order.findOneAndUpdate(
-      { _id: id, kitchenPrintStatus: 'pending' },
-      { $set: { kitchenPrintStatus: 'printing' } }
-    );
-    if (order) claimed.push(order);
-  }
-
-  return claimed;
 }
 
 export async function POST(request: NextRequest) {
@@ -390,7 +378,11 @@ export async function POST(request: NextRequest) {
       total: calculatedTotal,
       paymentMethod: orderData.paymentMethod,
       paymentStatus: 'pending',
-      status: 'new',
+      // Онлайн-оплата: заказ рождается ДРАФТОМ (pending_payment, без номера) и
+      // становится «Новым» только после серверного подтверждения оплаты
+      // (SumUp webhook/confirm, PayPal capture/webhook → claimOrderPaidAndPromote).
+      // Отмена/закрытие окна/FAILED/EXPIRED «Новый» заказ не создают.
+      status: initialOrderPlacementState(orderData.paymentMethod).status,
       kitchenPrintStatus: 'pending',
       customerPrintStatus: 'pending',
       loyaltyPointsUsed,
@@ -426,12 +418,15 @@ export async function POST(request: NextRequest) {
 
     // Побочные эффекты заказа: списание купона, баллы лояльности, аналитика
     // акций, уведомления (Telegram/WhatsApp/конверсии) и печать чеков.
-    // Для онлайн-оплаты (SumUp) откладываем до подтверждения оплаты —
-    // см. /api/payments/sumup/confirm. Иначе кухня/Telegram/печать сработали бы
-    // по неоплаченному заказу. Принт-агент тоже не видит неоплаченные онлайн-заказы
-    // (см. GET-гейт по paymentStatus ниже).
-    if (order.paymentMethod !== 'online') {
+    // Для онлайн-оплаты заказ — драфт: финализация происходит ТОЛЬКО при
+    // промоуте после подтверждения оплаты (SumUp webhook/confirm, PayPal
+    // capture/webhook). Кухня/Telegram/печать по неоплаченному заказу не срабатывают.
+    if (initialOrderPlacementState(order.paymentMethod).finalizeImmediately) {
       await finalizeOrderPlacement(order, request);
+    } else {
+      console.log(
+        `[payment-draft] created order=${order._id} total=${order.total} — awaiting online payment`
+      );
     }
 
     return NextResponse.json({
@@ -516,10 +511,18 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Ленивая TTL-очистка брошенных онлайн-драфтов (страховка, если cron
+    // не настроен): не чаще раза в 10 минут на инстанс, ошибки глотает.
+    if (canReadFullOrders) {
+      await sweepStaleDraftsThrottled();
+    }
+
     const query: any = {};
     if (phoneNumber) query.phoneNumber = phoneNumber;
     if (orderNumber) query.orderNumber = orderNumber;
-    if (status) query.status = status;
+    // Драфты онлайн-оплаты (pending_payment) НИКОГДА не попадают в выборку:
+    // ни в админ-список «Заказы», ни в гостевой /track, ни принт-агенту.
+    query.status = visibleOrderStatusFilter(status);
     if (kitchenPrintStatus) {
       query.kitchenPrintStatus = kitchenPrintStatus;
       // Принт-агент не должен видеть неоплаченные онлайн-заказы: SumUp-оплата
@@ -532,7 +535,13 @@ export async function GET(request: NextRequest) {
     }
 
     if (isPrintAgent && kitchenPrintStatus === 'pending') {
-      const orders = await claimPendingPrintOrders(query, limit);
+      // Атомарная выдача очереди печати (pending→printing + reclaim зависших):
+      // kitchenPrintStatus добавляет print-queue, сюда идёт гейт по оплате
+      // и статусу (драфты pending_payment агенту не выдаются никогда).
+      const baseQuery: any = { $or: query.$or, status: query.status };
+      const orders = await claimPendingPrintOrders(baseQuery, limit, {
+        agentId: request.headers.get('X-Print-Agent-Id') || undefined,
+      });
 
       return NextResponse.json({
         success: true,

@@ -93,10 +93,19 @@ export class MemoryPayPalStore implements PayPalStore {
     return row ? clone(row) : null;
   }
 
+  /** Счётчик выданных при промоуте номеров (нумерация — атрибут промоута). */
+  promotedNumberSeq = 0;
+
   async claimOrderPaid(orderId: string): Promise<boolean> {
     const row = this.orders.get(orderId);
     if (!row || !['pending', 'failed'].includes(row.paymentStatus)) return false;
     row.paymentStatus = 'completed';
+    // Зеркало claimPaidAndPromoteWithExecutor (lib/orders/payment-draft.ts):
+    // драфт онлайн-оплаты становится «Новым» и получает номер только при оплате.
+    if (row.status === 'pending_payment') row.status = 'new';
+    if (!row.orderNumber) {
+      row.orderNumber = `P-${String(++this.promotedNumberSeq).padStart(3, '0')}`;
+    }
     this.claimCount += 1;
     return true;
   }

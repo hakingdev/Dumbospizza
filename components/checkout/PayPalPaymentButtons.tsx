@@ -14,6 +14,9 @@ import { PayPalScriptProvider, PayPalButtons } from '@paypal/react-paypal-js'
  * INSTRUMENT_DECLINED: сервер отвечает { restart: true } → actions.restart()
  * даёт покупателю выбрать другой способ в том же PayPal-окне.
  * Pay Later / Venmo / карта отключены через disable-funding (ТЗ §3).
+ * Рендерится standalone-кнопка ровно одного funding-источника (prop
+ * fundingSource): 'paypal' или 'sepa' — SEPA-Lastschrift в чекауте идёт
+ * отдельным пунктом списка, а не второй кнопкой в стеке.
  */
 
 interface PayPalPaymentButtonsProps {
@@ -21,6 +24,12 @@ interface PayPalPaymentButtonsProps {
   /** HMAC-токен доступа к заказу (из ответа POST /api/orders). */
   accessToken?: string | null
   locale?: string // 'de_DE' | 'en_GB'
+  /**
+   * Standalone-кнопка ровно одного funding-источника: 'paypal' (жёлтая) или
+   * 'sepa' (SEPA-Lastschrift через PayPal). Плоский список чекаута ведёт эти
+   * источники отдельными пунктами — стек из двух кнопок не рендерим.
+   */
+  fundingSource?: 'paypal' | 'sepa'
   /** Оплата подтверждена сервером (capture COMPLETED). */
   onPaid: () => void
   /** Capture в статусе PENDING — итог придёт вебхуком. */
@@ -34,6 +43,7 @@ export default function PayPalPaymentButtons({
   orderId,
   accessToken,
   locale = 'de_DE',
+  fundingSource = 'paypal',
   onPaid,
   onPending,
   onCancel,
@@ -127,11 +137,18 @@ export default function PayPalPaymentButtons({
         intent: 'capture',
         components: 'buttons',
         disableFunding: 'paylater,venmo,card',
+        // sepa включён ВСЕГДА, чтобы параметры SDK-скрипта были одинаковыми
+        // для пунктов PayPal и SEPA: разные опции заставляют react-paypal-js
+        // перезагружать скрипт при смене метода, и кнопка теряется в гонке.
+        // Standalone-кнопка всё равно рендерит ровно свой fundingSource.
+        enableFunding: 'sepa',
         locale,
       }}
     >
       <PayPalButtons
-        style={{ layout: 'vertical', label: 'paypal' }}
+        // Ровно одна кнопка выбранного funding-источника — без стека.
+        fundingSource={fundingSource}
+        style={{ layout: 'vertical', ...(fundingSource === 'paypal' ? { label: 'paypal' as const } : {}) }}
         disabled={processing}
         createOrder={createOrder}
         onApprove={onApprove}

@@ -187,10 +187,17 @@
     "payments": {
       "cash": "Наличными при получении",
       "card": "Картой при получении",
-      "online": "Онлайн оплата"
+      "online": "Онлайн оплата",
+      "card_online": "Карта, Apple Pay и Google Pay",
+      "sepa": "SEPA-Lastschrift",
+      "paypal_hint": "Оплата через ваш аккаунт PayPal",
+      "pay_title": "Оплата",
+      "online_amount": "К оплате",
+      "back_to_methods": "Назад к выбору оплаты"
     },
     "submitting": "Оформление...",
     "place_order": "Оформить заказ",
+    "pay_now": "Оплатить",
     "back_to_cart": "Вернуться в корзину",
     "summary_title": "Ваш заказ",
     "items": "Товары",

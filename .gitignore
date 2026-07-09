@@ -98,3 +98,7 @@ Thumbs.db
 /app/api/payments/stripe/
 /components/checkout/StripePaymentForm.tsx
 .vercel
+
+# Print-agent: локальное persistent-хранилище напечатанных ключей (на машине оператора)
+/scripts/printed-orders.json
+/scripts/printed-orders.json.tmp
