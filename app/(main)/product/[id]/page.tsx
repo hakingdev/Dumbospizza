@@ -9,7 +9,11 @@ import { useLanguage } from '../../../../lib/contexts/LanguageContext';
 import { loadTranslation } from '../../../../lib/i18n';
 import { ProductPromotionsBanner } from '../../../../components/promotions/PromotionBadges';
 import { normalizeObjectId } from '../../../../lib/normalize-id';
-import { getOrderableSizes, getSizePrice } from '../../../../lib/product-pricing';
+import {
+  getOrderableSizes,
+  getSizePrice,
+  hasNoActiveRegularSizes,
+} from '../../../../lib/product-pricing';
 import { MiniPizzaBoxBuilder } from '../../../../components/mini-pizza-box/MiniPizzaBoxBuilder';
 import { MINI_BOX_CATEGORY_SLUG } from '../../../../lib/mini-pizza-box';
 import { SafeImage } from '../../../../components/SafeImage';
@@ -91,12 +95,13 @@ export default function ProductPage() {
         
         if (data.success) {
           // Mini-Größe (18 cm) ist nur in der 4er Mini Pizza Box bestellbar — hier ausblenden.
-          const fetched = { ...data.product, sizes: getOrderableSizes(data.product) };
+          const fetched = {
+            ...data.product,
+            available: data.product.available && !hasNoActiveRegularSizes(data.product),
+            sizes: getOrderableSizes(data.product),
+          };
           setProduct(fetched);
-          // Set default size if available
-          if (fetched.sizes && fetched.sizes.length > 0) {
-            setSelectedSize(fetched.sizes[0]);
-          }
+          setSelectedSize(fetched.sizes?.[0] || null);
         }
       } catch (error) {
         console.error('Error fetching product:', error);

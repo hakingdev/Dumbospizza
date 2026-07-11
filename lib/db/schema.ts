@@ -99,6 +99,7 @@ export const products = pgTable(
           name: string;
           label: string;
           price: number;
+          active?: boolean;
           size?: string;
           priceModifier?: number;
         }[]

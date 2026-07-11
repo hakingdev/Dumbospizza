@@ -7,7 +7,11 @@ import { useCart } from '../lib/contexts/CartContext';
 import { useLanguage } from '../lib/contexts/LanguageContext';
 import { loadTranslation } from '../lib/i18n';
 import { normalizeObjectId } from '../lib/normalize-id';
-import { getOrderableSizes, getSizePrice } from '../lib/product-pricing';
+import {
+  getOrderableSizes,
+  getSizePrice,
+  hasNoActiveRegularSizes,
+} from '../lib/product-pricing';
 import { ProductPromotionsBanner } from './promotions/PromotionBadges';
 import { SafeImage } from './SafeImage';
 import { NoTranslate } from './NoTranslate';
@@ -90,12 +94,14 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
         
         if (data.success) {
           // Mini-Größe (18 cm) ist nur in der 4er Mini Pizza Box bestellbar — hier ausblenden.
-          const fetched = { ...data.product, sizes: getOrderableSizes(data.product) };
+          const fetched = {
+            ...data.product,
+            available: data.product.available && !hasNoActiveRegularSizes(data.product),
+            sizes: getOrderableSizes(data.product),
+          };
           setProduct(fetched);
-          // Set default size
-          if (fetched.sizes && fetched.sizes.length > 0) {
-            setSelectedSize(fetched.sizes[0]);
-          }
+          // Сбрасываем старый выбор при открытии другого товара.
+          setSelectedSize(fetched.sizes?.[0] || null);
           // сброс выбранных опций при открытии нового товара
           setSelectedOptions({});
           setOptionError('');
@@ -304,7 +310,7 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
                     <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto"></div>
                     <p className="mt-4 text-gray-600">{t('common.loading', 'Wird geladen...')}</p>
                   </div>
-                ) : product ? (
+                ) : product?.available ? (
                   <>
                     <button
                       onClick={onClose}
@@ -573,8 +579,16 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
                     </div>
                   </>
                 ) : (
-                  <div className="p-12 text-center">
-                    <p className="text-gray-600">{t('product_modal.not_found', 'Produkt nicht gefunden')}</p>
+                  <div className="relative p-12 text-center">
+                    <button
+                      type="button"
+                      onClick={onClose}
+                      className="absolute right-3 top-3 rounded-full bg-white p-2 shadow-lg transition-colors hover:bg-gray-50"
+                      aria-label={t('common.close', 'Schließen')}
+                    >
+                      <X className="h-5 w-5" />
+                    </button>
+                    <p className="text-gray-600">{t('product.unavailable', 'Produkt nicht verfügbar')}</p>
                   </div>
                 )}
               </Dialog.Panel>

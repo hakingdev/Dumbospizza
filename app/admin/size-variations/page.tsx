@@ -86,7 +86,7 @@ export default function SizeVariationsPage() {
   };
 
   const remove = async (id: string) => {
-    if (!confirm('Удалить размер из библиотеки? У товаров, где он уже задан, размер сохранится.')) return;
+    if (!confirm('Удалить размер из библиотеки и из всех связанных товаров?')) return;
     try {
       const res = await fetch(`/api/size-variations/${id}`, { method: 'DELETE' });
       const data = await res.json();

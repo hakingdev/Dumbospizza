@@ -105,7 +105,7 @@ export function MiniPizzaBoxBuilder({ isOpen, onClose, product }: MiniPizzaBoxBu
         }
         const list: MiniSort[] = (data.products || [])
           .map((p: any) => {
-            const mini = (p.sizes || []).find((s: any) => isMiniSize(s));
+            const mini = (p.sizes || []).find((s: any) => s?.active !== false && isMiniSize(s));
             if (!mini) return null;
             return {
               id: p._id || p.id,

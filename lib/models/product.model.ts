@@ -39,6 +39,7 @@ export interface IProduct {
     name: string;
     label: string;
     price: number;
+    active?: boolean;
     /** @deprecated габарит — заменён на label */
     size?: string;
     /** @deprecated надбавка — заменена на абсолютную price */

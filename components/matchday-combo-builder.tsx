@@ -167,11 +167,13 @@ export function MatchdayComboBuilder({ isDe }: { isDe: boolean }) {
           .filter(
             (p) =>
               p.category?.slug === 'pizza' &&
-              (p.sizes || []).some((s: any) => s?.name === PIZZA_SIZE_NAME)
+              (p.sizes || []).some(
+                (s: any) => s?.name === PIZZA_SIZE_NAME && s?.active !== false
+              )
           )
           .map((p) => {
             const size = (p.sizes || []).find(
-              (s: any) => s?.name === PIZZA_SIZE_NAME
+              (s: any) => s?.name === PIZZA_SIZE_NAME && s?.active !== false
             );
             return {
               id: p._id || p.id,

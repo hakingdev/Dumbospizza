@@ -93,7 +93,8 @@ export default function NewProductPage() {
         variationId: s.variationId,
         name: s.name,
         label: s.label || '',
-        price: Number(s.price) || 0
+        price: Number(s.price) || 0,
+        active: s.active !== false
       }));
 
     const newProduct = {

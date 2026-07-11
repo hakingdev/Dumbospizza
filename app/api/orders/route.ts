@@ -33,6 +33,16 @@ import { signOrderAccessToken } from '../../../lib/orders/access-token';
 import { rateLimit, getClientIp, logSecurityEvent } from '../../../lib/security/rate-limit';
 import { getBalance } from '../../../lib/loyalty/service';
 import { getLoyaltyRules, computeMaxRedeemablePoints } from '../../../lib/loyalty/config';
+import { hydrateSizeVariationStates } from '../../../lib/size-variation-sync';
+import { hasConfiguredRegularSizes } from '../../../lib/product-pricing';
+
+function normalizeSizeKey(value: unknown): string {
+  return String(value || '')
+    .trim()
+    .toLocaleLowerCase('de-DE')
+    .replace(/[×x]/g, 'x')
+    .replace(/\s+/g, '');
+}
 
 function toPublicOrderView(order: any) {
   const source = typeof order.toObject === 'function' ? order.toObject() : order;
@@ -116,8 +126,56 @@ export async function POST(request: NextRequest) {
     const categoryByProduct = new Map<string, string>();
     if (lineProductIds.length > 0) {
       const lineProducts = await Product.find({ _id: { $in: lineProductIds } })
-        .select('taxRate category')
+        .select('taxRate category sizes')
         .lean();
+      await hydrateSizeVariationStates(lineProducts as any[]);
+
+      const productById = new Map(lineProducts.map((p: any) => [String(p._id), p]));
+      for (const item of orderData.items || []) {
+        const product = productById.get(String(item.productId || item.id));
+        const sizes = Array.isArray((product as any)?.sizes) ? (product as any).sizes : [];
+        if (!item?.size) {
+          if (product && hasConfiguredRegularSizes(product as any)) {
+            return NextResponse.json(
+              {
+                success: false,
+                error: `Bitte wählen Sie für „${item.name || 'den Artikel'}“ erneut eine verfügbare Größe.`,
+              },
+              { status: 400 }
+            );
+          }
+          continue;
+        }
+        if (sizes.length === 0) continue;
+
+        const requestedVariationId = String(item.size.variationId || '');
+        const requestedKeys = new Set(
+          [item.size.id, item.size.name, item.size.label, item.size.size]
+            .map(normalizeSizeKey)
+            .filter(Boolean)
+        );
+        const matchedSize = sizes.find((size: any) => {
+          if (
+            requestedVariationId &&
+            String(size?.variationId || '') === requestedVariationId
+          ) {
+            return true;
+          }
+          return [size?.id, size?.name, size?.label, size?.size]
+            .map(normalizeSizeKey)
+            .some((key) => key && requestedKeys.has(key));
+        });
+
+        if (!matchedSize || matchedSize.active === false) {
+          return NextResponse.json(
+            {
+              success: false,
+              error: `Die Größe „${item.size.name || item.size.label || ''}“ ist nicht mehr verfügbar. Bitte aktualisieren Sie den Warenkorb.`,
+            },
+            { status: 400 }
+          );
+        }
+      }
 
       // Имена категорий (для группировки в кухонном чеке): id → name.
       const catIds = Array.from(

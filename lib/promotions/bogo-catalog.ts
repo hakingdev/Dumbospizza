@@ -1,6 +1,7 @@
 import { Product } from '../models/product.model';
 import type { BogoSecondOption, BogoMode } from './types';
 import { getProductDisplayPrice, getSizePrice, getValidSizes } from '../product-pricing';
+import { hydrateSizeVariationStates } from '../size-variation-sync';
 
 type PromoRewardItem = { productId?: unknown; sizeName?: unknown };
 
@@ -56,6 +57,7 @@ export async function buildBogoCatalog(
         };
 
   const products = await Product.find(query).select('name image basePrice sizes category').lean();
+  await hydrateSizeVariationStates(products as any[]);
   const productById = new Map(products.map((p) => [String(p._id), p]));
 
   const catalog: Record<string, BogoSecondOption[]> = {};
@@ -72,7 +74,9 @@ export async function buildBogoCatalog(
         const sizeName = String(it.sizeName || '').trim();
         const pricing = { basePrice: Number(p.basePrice) || 0, sizes: (p.sizes as any[]) || [] };
         if (sizeName) {
-          const size = (p.sizes as any[] | undefined)?.find((s) => s?.name === sizeName);
+          const size = (p.sizes as any[] | undefined)?.find(
+            (s) => s?.name === sizeName && s?.active !== false
+          );
           if (!size) continue;
           const unitPrice = getSizePrice(pricing, size);
           const sizeLabel = size.label || size.size || size.name;

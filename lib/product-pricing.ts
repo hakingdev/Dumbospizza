@@ -15,6 +15,8 @@ export type ProductSizeLike = {
   name?: string;
   label?: string;
   price?: number;
+  /** false = размер выключен в общей библиотеке */
+  active?: boolean;
   // legacy
   size?: string;
   priceModifier?: number;
@@ -31,9 +33,9 @@ export type ProductExtrasLike = {
   sides?: Array<{ price?: number }>;
 };
 
-/** Размер считается валидным, если у него есть название. */
+/** Размер считается валидным, если у него есть название и он не выключен. */
 export function getValidSizes(product: ProductPricingLike): ProductSizeLike[] {
-  return (product.sizes || []).filter((s) => s?.name);
+  return (product.sizes || []).filter((s) => s?.name && s.active !== false);
 }
 
 /**
@@ -43,6 +45,16 @@ export function getValidSizes(product: ProductPricingLike): ProductSizeLike[] {
  */
 export function getOrderableSizes(product: ProductPricingLike): ProductSizeLike[] {
   return getValidSizes(product).filter((s) => !isMiniSize(s));
+}
+
+/** Есть ли у товара обычные (не Mini Box) варианты размера вообще. */
+export function hasConfiguredRegularSizes(product: ProductPricingLike): boolean {
+  return (product.sizes || []).some((s) => Boolean(s?.name) && !isMiniSize(s));
+}
+
+/** У товара есть размерные варианты, но сейчас ни один из них не доступен. */
+export function hasNoActiveRegularSizes(product: ProductPricingLike): boolean {
+  return hasConfiguredRegularSizes(product) && getOrderableSizes(product).length === 0;
 }
 
 /** Абсолютная цена размера. Поддерживает старый формат (basePrice + надбавка). */

@@ -11,6 +11,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions, isStaff } from '../../../../lib/auth';
 import { toRefId } from '../../../../lib/normalize-id';
 import { sanitizeProductInput } from '../../../../lib/products/sanitize';
+import { hydrateSizeVariationStates } from '../../../../lib/size-variation-sync';
 
 async function isAuthorized() {
   const session = await getServerSession(authOptions);
@@ -39,7 +40,8 @@ export async function GET(
       }, { status: 404 });
     }
     
-    return NextResponse.json({ success: true, product });
+    const [hydratedProduct] = await hydrateSizeVariationStates([product as any]);
+    return NextResponse.json({ success: true, product: hydratedProduct });
   } catch (error: any) {
     console.error('Error fetching product:', error);
     return NextResponse.json({ 

@@ -3,6 +3,10 @@ import { connectToDatabase } from '../../../../lib/models';
 import { SizeVariation } from '../../../../lib/models/size-variation.model';
 import { getServerSession } from 'next-auth';
 import { authOptions, isStaff } from '../../../../lib/auth';
+import {
+  removeSizeVariationFromProducts,
+  syncSizeVariationToProducts,
+} from '../../../../lib/size-variation-sync';
 
 async function isAuthorized() {
   const session = await getServerSession(authOptions);
@@ -37,7 +41,9 @@ export async function PUT(
       return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
     }
 
-    return NextResponse.json({ success: true, variation });
+    const updatedProducts = await syncSizeVariationToProducts(variation);
+
+    return NextResponse.json({ success: true, variation, updatedProducts });
   } catch (error: any) {
     console.error('Error updating size variation:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
@@ -61,7 +67,9 @@ export async function DELETE(
       return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
     }
 
-    return NextResponse.json({ success: true });
+    const updatedProducts = await removeSizeVariationFromProducts(params.id, variation.name);
+
+    return NextResponse.json({ success: true, updatedProducts });
   } catch (error: any) {
     console.error('Error deleting size variation:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

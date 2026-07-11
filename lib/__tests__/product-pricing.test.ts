@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { getOrderableSizes, getProductDisplayPrice } from '../product-pricing';
+import {
+  getOrderableSizes,
+  getProductDisplayPrice,
+  hasNoActiveRegularSizes,
+} from '../product-pricing';
 
 /**
  * Mini-Größe (18 cm) speichert den Sortenpreis für die 4er Mini Pizza Box und
@@ -27,5 +31,29 @@ describe('product-pricing — Mini-Größe (4er Mini Pizza Box)', () => {
     expect(
       getProductDisplayPrice({ basePrice: 19.6, sizes: [{ name: 'Mini 18cm', price: 4.9 }] })
     ).toBe(19.6);
+  });
+
+  it('выключенный библиотечный размер нельзя заказать и он не влияет на цену «от»', () => {
+    const product = {
+      basePrice: 20,
+      sizes: [
+        { name: 'Small', price: 6.9, active: false },
+        { name: 'Large', price: 13.9, active: true },
+      ],
+    };
+
+    expect(getOrderableSizes(product).map((s) => s.name)).toEqual(['Large']);
+    expect(getProductDisplayPrice(product)).toBe(13.9);
+  });
+
+  it('помечает товар недоступным, если выключены все обычные размеры', () => {
+    expect(
+      hasNoActiveRegularSizes({
+        sizes: [
+          { name: 'Small', price: 6.9, active: false },
+          { name: 'Mini 18cm', price: 4.9, active: true },
+        ],
+      })
+    ).toBe(true);
   });
 });

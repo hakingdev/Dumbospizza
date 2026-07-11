@@ -7,6 +7,7 @@ import { Category } from '../../../lib/models/category.model';
 import { getServerSession } from 'next-auth';
 import { authOptions, isStaff } from '../../../lib/auth';
 import { sanitizeProductInput } from '../../../lib/products/sanitize';
+import { hydrateSizeVariationStates } from '../../../lib/size-variation-sync';
 
 async function isAuthorized() {
   const session = await getServerSession(authOptions);
@@ -57,6 +58,8 @@ export async function GET(request: NextRequest) {
     if (limit) {
       products = products.slice(0, parseInt(limit, 10));
     }
+
+    products = await hydrateSizeVariationStates(products);
     
     return NextResponse.json({ success: true, products });
   } catch (error: any) {

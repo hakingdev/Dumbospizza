@@ -12,7 +12,7 @@ interface ProductLike {
   _id: string;
   name: string;
   category: any; // id или { _id, name }
-  sizes?: { name: string; label?: string; size?: string }[];
+  sizes?: { name: string; label?: string; size?: string; active?: boolean }[];
 }
 
 interface CategoryLike {
@@ -65,7 +65,7 @@ export default function PromoItemSelector({
 }) {
   const [open, setOpen] = useState<Record<string, boolean>>({});
 
-  const sizesOf = (p: ProductLike) => (p.sizes || []).filter((s) => s?.name);
+  const sizesOf = (p: ProductLike) => (p.sizes || []).filter((s) => s?.name && s.active !== false);
 
   const has = (productId: string, sizeName: string) =>
     value.some((v) => v.productId === productId && (v.sizeName || '') === sizeName);

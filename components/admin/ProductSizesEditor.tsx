@@ -10,6 +10,7 @@ export interface ProductSizeRow {
   name: string;
   label: string;
   price: number;
+  active?: boolean;
 }
 
 interface Variation {
@@ -57,7 +58,7 @@ export default function ProductSizesEditor({ sizes, onChange }: Props) {
     if (!v) return;
     onChange([
       ...sizes,
-      { id: v._id, variationId: v._id, name: v.name, label: v.label, price: 0 }
+      { id: v._id, variationId: v._id, name: v.name, label: v.label, price: 0, active: true }
     ]);
     setSelectedToAdd('');
   };
@@ -93,7 +94,8 @@ export default function ProductSizesEditor({ sizes, onChange }: Props) {
             variationId: d.variation._id,
             name: d.variation.name,
             label: d.variation.label,
-            price: 0
+            price: 0,
+            active: true
           }
         ]);
         setNewName('');
@@ -137,6 +139,9 @@ export default function ProductSizesEditor({ sizes, onChange }: Props) {
               <div className="px-4 py-2 border rounded-lg bg-gray-50">
                 <span className="font-medium">{size.name}</span>
                 {size.label && <span className="text-gray-500 text-sm ml-2">{size.label}</span>}
+                {size.active === false && (
+                  <span className="ml-2 text-xs font-medium text-red-600">Выключен в библиотеке</span>
+                )}
               </div>
             </div>
             <div className="col-span-4">
