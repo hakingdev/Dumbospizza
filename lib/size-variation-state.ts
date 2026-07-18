@@ -20,7 +20,14 @@ function variationIdOf(variation: SizeVariationState): string {
   return String(variation._id ?? variation.id ?? '');
 }
 
-function normalizedSizeName(value: unknown): string {
+/**
+ * Kanonischer Schlüssel eines Größennamens: unabhängig von Groß-/Kleinschreibung,
+ * Leerzeichen, „×“ vs. „x“ und der Reihenfolge der Kantenlängen
+ * („ca. 40x30“ und „ca. 30x40“ sind derselbe Größenschlüssel).
+ * Wer Produkte nach einem Größennamen filtert, sollte hierüber vergleichen —
+ * ein roher ===-Vergleich bricht, sobald die Größe umbenannt wird.
+ */
+export function normalizedSizeName(value: unknown): string {
   const compact = String(value || '')
     .trim()
     .toLocaleLowerCase('de-DE')

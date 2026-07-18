@@ -4,6 +4,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { ShoppingCart, Check, ChevronDown, Pizza, CupSoda } from 'lucide-react';
 import { useCart } from '../lib/contexts/CartContext';
+import { normalizedSizeName } from '../lib/size-variation-state';
 import { NoTranslate } from './NoTranslate';
 
 /**
@@ -14,13 +15,24 @@ import { NoTranslate } from './NoTranslate';
  * Getränke sind gratis und erhöhen den Preis NICHT.
  *
  * Preise kommen ausschließlich aus den echten Menüdaten (/api/products),
- * Größe „30×40“ entspricht in den Daten der Variante „ca. 40x30“.
+ * Größe „30×40“ entspricht in den Daten der Variante „ca. 30x40“.
  * Es werden keine Produktpreise verändert — der −5 €-Rabatt gilt nur in dieser Kombi.
+ *
+ * Der Abgleich läuft bewusst über normalizedSizeName und nicht über ===:
+ * die Größe hieß früher „ca. 40x30“, und ein roher Vergleich hat die Kombi nach
+ * der Umbenennung stillschweigend auf „nicht verfügbar“ gesetzt.
  */
 
 const COMBO_DISCOUNT = 5; // fester Kombi-Rabatt in €
 const FREE_DRINK_SLOTS = 2; // Anzahl Gratis-Getränke (nach Wahl)
-const PIZZA_SIZE_NAME = 'ca. 40x30'; // Datenname für das 30×40-Format
+const PIZZA_SIZE_NAME = 'ca. 30x40'; // Datenname für das 30×40-Format
+const PIZZA_SIZE_KEY = normalizedSizeName(PIZZA_SIZE_NAME);
+
+/** Die 30×40-Variante eines Produkts — unabhängig von der Schreibweise des Namens. */
+const findComboSize = (product: any) =>
+  (product?.sizes || []).find(
+    (s: any) => normalizedSizeName(s?.name) === PIZZA_SIZE_KEY && s?.active !== false
+  );
 
 const money = (n: number) =>
   n.toFixed(2).replace('.', ',').replace(/,00$/, '') + ' €';
@@ -164,17 +176,9 @@ export function MatchdayComboBuilder({ isDe }: { isDe: boolean }) {
         const list: any[] = data.products || [];
 
         const pizzaOpts: PizzaOption[] = list
-          .filter(
-            (p) =>
-              p.category?.slug === 'pizza' &&
-              (p.sizes || []).some(
-                (s: any) => s?.name === PIZZA_SIZE_NAME && s?.active !== false
-              )
-          )
+          .filter((p) => p.category?.slug === 'pizza' && findComboSize(p))
           .map((p) => {
-            const size = (p.sizes || []).find(
-              (s: any) => s?.name === PIZZA_SIZE_NAME && s?.active !== false
-            );
+            const size = findComboSize(p);
             return {
               id: p._id || p.id,
               name: p.name,
@@ -242,7 +246,7 @@ export function MatchdayComboBuilder({ isDe }: { isDe: boolean }) {
     const comboLabel = isDe
       ? 'Matchday-Kombi · 2 Pizzen 30×40'
       : 'Matchday-Kombi · 2 Pizzen 30×40';
-    const size = { id: 'combo-3040', name: '30×40', label: 'ca. 40x30' };
+    const size = { id: 'combo-3040', name: '30×40', label: PIZZA_SIZE_NAME };
 
     const pizzaItem = (p: PizzaOption, index: number) => ({
       id: `${comboId}:pizza-${index}`,

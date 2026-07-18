@@ -13,13 +13,15 @@ vi.mock('next/link', () => ({
 
 import { MatchdayComboBuilder } from '../matchday-combo-builder';
 
-// Echte Menüdaten-Form: Pizza mit 30×40-Variante ("ca. 40x30") + Getränke.
+// Echte Menüdaten-Form: Pizza mit 30×40-Variante + Getränke.
+// Bewusst gemischte Schreibweise: die API liefert heute "ca. 30x40", ältere
+// Datensätze trugen "ca. 40x30" — beide müssen die Kombi qualifizieren.
 const PRODUCTS = [
   {
     _id: 'pizza-1',
     name: 'Margherita',
     category: { slug: 'pizza' },
-    sizes: [{ name: 'ca. 40x30', price: 13.9 }],
+    sizes: [{ name: 'ca. 30x40', price: 13.9 }],
   },
   {
     _id: 'pizza-2',
@@ -101,5 +103,63 @@ describe('MatchdayComboBuilder — Picker-Schriftgröße (Fix: auf Mobil nicht w
     // Summe aller Positionen = Kombi-Preis.
     const sum = added.reduce((s, i) => s + i.price * i.quantity, 0);
     expect(sum).toBeCloseTo(27.8, 2);
+  });
+});
+
+describe('MatchdayComboBuilder — Größenname (Regression: „Kombi gerade nicht verfügbar“)', () => {
+  // Die 30×40-Größe wurde in der Bibliothek von „ca. 40x30“ auf „ca. 30x40“
+  // umbenannt. Der Builder verglich den Namen roh mit === und fand danach keine
+  // einzige Pizza mehr — die Kombi fiel wortlos auf den Fallback zurück.
+  const sizeNames = ['ca. 30x40', 'ca. 40x30', 'ca. 30X40', ' ca. 30×40 '];
+
+  it.each(sizeNames)('qualifiziert Pizzen mit Größe %j', async (sizeName) => {
+    global.fetch = vi.fn().mockResolvedValue({
+      json: async () => ({
+        success: true,
+        products: [
+          { _id: 'p1', name: 'Margherita', category: { slug: 'pizza' }, sizes: [{ name: sizeName, price: 13.9 }] },
+          { _id: 'p2', name: 'Brooklyn', category: { slug: 'pizza' }, sizes: [{ name: sizeName, price: 18.9 }] },
+        ],
+      }),
+    }) as any;
+
+    render(<MatchdayComboBuilder isDe={true} />);
+
+    await screen.findByLabelText('1. Pizza wählen');
+    expect(screen.queryByText(/nicht verfügbar/i)).toBeNull();
+    await waitFor(() => {
+      expect(screen.getByTestId('combo-total')).toHaveTextContent('27,80 €');
+    });
+  });
+
+  it('zeigt den Fallback, wenn es die 30×40-Größe wirklich nicht gibt', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      json: async () => ({
+        success: true,
+        products: [
+          { _id: 'p1', name: 'Margherita', category: { slug: 'pizza' }, sizes: [{ name: 'ca. 20x20', price: 7.9 }] },
+        ],
+      }),
+    }) as any;
+
+    render(<MatchdayComboBuilder isDe={true} />);
+
+    expect(await screen.findByText(/nicht verfügbar/i)).toBeInTheDocument();
+  });
+
+  it('ignoriert die 30×40-Größe, wenn sie deaktiviert ist', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      json: async () => ({
+        success: true,
+        products: [
+          { _id: 'p1', name: 'Margherita', category: { slug: 'pizza' }, sizes: [{ name: 'ca. 30x40', price: 13.9, active: false }] },
+          { _id: 'p2', name: 'Brooklyn', category: { slug: 'pizza' }, sizes: [{ name: 'ca. 30x40', price: 18.9, active: false }] },
+        ],
+      }),
+    }) as any;
+
+    render(<MatchdayComboBuilder isDe={true} />);
+
+    expect(await screen.findByText(/nicht verfügbar/i)).toBeInTheDocument();
   });
 });
