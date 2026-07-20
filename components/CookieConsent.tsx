@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { storageGet, storageSet } from '../lib/safe-storage';
 
 const STORAGE_KEY = 'cookie-consent';
 
@@ -9,20 +10,16 @@ export default function CookieConsent() {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const stored = window.localStorage.getItem(STORAGE_KEY);
-    if (!stored) {
+    if (!storageGet(STORAGE_KEY)) {
       setVisible(true);
     }
   }, []);
 
-  const handleAccept = () => {
-    window.localStorage.setItem(STORAGE_KEY, 'accepted');
-    setVisible(false);
-  };
-
-  const handleDecline = () => {
-    window.localStorage.setItem(STORAGE_KEY, 'declined');
+  // Баннер закрываем ВСЕГДА, даже если запись не удалась (заблокированные cookies
+  // на iOS): иначе бросок происходил до setVisible(false), и на телефоне плашка
+  // намертво висела внизу экрана, перекрывая витрину.
+  const dismiss = (choice: 'accepted' | 'declined') => {
+    storageSet(STORAGE_KEY, choice);
     setVisible(false);
   };
 
@@ -42,14 +39,14 @@ export default function CookieConsent() {
         <div className="grid w-full grid-cols-2 items-center gap-2 sm:flex sm:w-auto">
           <button
             type="button"
-            onClick={handleDecline}
+            onClick={() => dismiss('declined')}
             className="inline-flex min-h-[42px] items-center justify-center whitespace-nowrap rounded-md border border-gray-300 px-4 py-2 text-center text-sm font-medium leading-tight text-gray-700 hover:bg-gray-50 sm:min-w-[112px]"
           >
             Ablehnen
           </button>
           <button
             type="button"
-            onClick={handleAccept}
+            onClick={() => dismiss('accepted')}
             className="inline-flex min-h-[42px] items-center justify-center whitespace-nowrap rounded-md bg-primary-600 px-4 py-2 text-center text-sm font-medium leading-tight text-white hover:bg-primary-700 sm:min-w-[142px]"
           >
             Alle akzeptieren

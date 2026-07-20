@@ -114,8 +114,19 @@ export function HomeBannerSlider() {
     const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
     const apply = () => (mq.matches ? autoplay.stop() : autoplay.play());
     apply();
-    mq.addEventListener('change', apply);
-    return () => mq.removeEventListener('change', apply);
+
+    // MediaQueryList.addEventListener есть только с Safari 14 / iOS 14; раньше
+    // существовал лишь устаревший addListener. На старом iOS прямой вызов бросал
+    // «TypeError: mq.addEventListener is not a function» прямо в эффекте — React
+    // размонтировал всё дерево, и вместо главной посетитель видел
+    // «Application error: a client-side exception». На десктопе метод есть везде,
+    // поэтому баг выглядел как «не грузит только с телефона».
+    if (typeof mq.addEventListener === 'function') {
+      mq.addEventListener('change', apply);
+      return () => mq.removeEventListener('change', apply);
+    }
+    mq.addListener(apply);
+    return () => mq.removeListener(apply);
   }, [emblaApi, banners]);
 
   const scrollPrev = useCallback(() => emblaApi?.scrollPrev(), [emblaApi]);
@@ -141,7 +152,7 @@ export function HomeBannerSlider() {
     return (
       <section className="py-6">
         <div className="container mx-auto px-4">
-          <div className="aspect-[3/2] w-[88%] animate-pulse rounded-2xl bg-gray-200 sm:aspect-[2/1] sm:w-[70%] lg:w-[55%]" />
+          <div className="aspect-video w-[88%] animate-pulse rounded-2xl bg-gray-200 sm:w-[70%] lg:w-[55%]" />
         </div>
       </section>
     );
@@ -165,7 +176,12 @@ export function HomeBannerSlider() {
               {banners.map((banner, i) => (
                 <div
                   key={banner._id}
-                  className="aspect-[3/2] min-w-0 flex-[0_0_88%] sm:aspect-[2/1] sm:flex-[0_0_70%] lg:flex-[0_0_55%]"
+                  // 16:9 на всех брейкпоинтах — ровно в том формате, в котором
+                  // баннеры и рисуются (1600×900). Раньше слайд был 3:2 на
+                  // мобильном и 2:1 от sm: object-cover подгонял картинку под
+                  // чужую пропорцию и срезал по 7.8% слева и справа — вместе с
+                  // вёрстанным в макет заголовком («AB 25 €» терял начало).
+                  className="aspect-video min-w-0 flex-[0_0_88%] sm:flex-[0_0_70%] lg:flex-[0_0_55%]"
                   role="group"
                   aria-roledescription="slide"
                   aria-label={`${i + 1} von ${banners.length}`}

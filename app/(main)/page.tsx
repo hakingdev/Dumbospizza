@@ -13,6 +13,7 @@ import { loadTranslation } from '../../lib/i18n'
 import PreOrderModal from '../../components/PreOrderModal'
 import { SafeImage } from '../../components/SafeImage'
 import { formatOrderHoursTemplate, resolveOrderAcceptanceHours } from '../../lib/order-acceptance-hours'
+import { storageGet, storageSet } from '../../lib/safe-storage'
 
 const categoryColors = [
   'from-red-500 to-orange-500',
@@ -145,7 +146,7 @@ export default function Home() {
 
     // Show modal if we're before opening date and user hasn't closed it
     if (now < OPENING_DATE) {
-      const hasSeenModal = localStorage.getItem('pre-order-modal-seen')
+      const hasSeenModal = storageGet('pre-order-modal-seen')
       if (!hasSeenModal) {
         // Show modal after a short delay
         const timer = setTimeout(() => {
@@ -162,7 +163,7 @@ export default function Home() {
         isOpen={showPreOrderModal} 
         onClose={() => {
           setShowPreOrderModal(false)
-          localStorage.setItem('pre-order-modal-seen', 'true')
+          storageSet('pre-order-modal-seen', 'true')
         }} 
       />
       <Hero />

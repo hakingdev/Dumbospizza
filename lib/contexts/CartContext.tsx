@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import type { PromotionCalculationResult } from '../promotions/types';
 import { calculatePromotions as fetchPromotionCalculation } from '../api-client';
 import { normalizeObjectId } from '../normalize-id';
+import { storageGet, storageSet } from '../safe-storage';
 import { getAppliedPromotionDiscount, getBogoPickerMerchandise } from '../promotions/discount-total';
 import { giftOptionId } from '../promotions/gifts';
 import { trackMetaEvent } from '../analytics/meta-pixel';
@@ -726,7 +727,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(cartReducer, initialState, () => {
     if (typeof window !== 'undefined') {
       try {
-        const savedCart = localStorage.getItem('pizza-cart');
+        const savedCart = storageGet('pizza-cart');
         if (savedCart) {
           const parsed = JSON.parse(savedCart);
           const loaded = {
@@ -772,11 +773,14 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   // Monoton steigende Sequenz, um veraltete Promotion-Antworten zu verwerfen.
   const recalcSeqRef = useRef(0);
 
-  // Save cart to localStorage when it changes
+  // Save cart to localStorage when it changes.
+  // Чтение уже было в try/catch, а запись — нет. Между тем именно setItem бросает
+  // QuotaExceededError (приватный режим / переполненная квота на iOS) и
+  // SecurityError (включена блокировка всех cookies). CartProvider оборачивает всё
+  // приложение, так что бросок отсюда ронял КАЖДУЮ страницу. storageSet при
+  // недоступном storage просто вернёт false — корзина живёт в памяти до перезагрузки.
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('pizza-cart', JSON.stringify(state));
-    }
+    storageSet('pizza-cart', JSON.stringify(state));
   }, [state]);
 
   const recalculatePromotions = useCallback(async () => {

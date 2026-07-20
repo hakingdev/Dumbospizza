@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ChevronLeft, CreditCard, Truck, Check, Landmark, Loader2, Wallet } from 'lucide-react'
 import { useCart } from '../../../lib/contexts/CartContext'
+import { storageSet } from '../../../lib/safe-storage'
 import CouponInput from '../../../components/cart/CouponInput'
 import { getConflictingPromotions } from '../../../lib/promotions/coupon-conflict'
 import PromotionCartSummary from '../../../components/promotions/PromotionCartSummary'
@@ -632,8 +633,12 @@ export default function CheckoutPage() {
       
       // Подписанный токен доступа к заказу — по нему страница подтверждения
       // открывает заказ и счёт без сессии. Телефон в query больше не шлём.
+      // Заказ на сервере уже СОЗДАН. Бросок из sessionStorage (заблокированные
+      // cookies / приватный режим на iOS) улетал бы в общий catch, показывал
+      // «попробуйте ещё раз» — и клиент оформлял ДУБЛЬ. Токен не критичен:
+      // без него страница подтверждения откроется по cookie-сессии.
       if (data.order.accessToken) {
-        sessionStorage.setItem(`order:${data.order.id}:token`, data.order.accessToken)
+        storageSet(`order:${data.order.id}:token`, data.order.accessToken, 'session')
       }
 
       // Онлайн-оплата: на сервере создан ДРАФТ (status 'pending_payment', без

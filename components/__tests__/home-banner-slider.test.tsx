@@ -89,6 +89,35 @@ describe('HomeBannerSlider', () => {
     });
   });
 
+  // Regression: iOS < 14 kennt MediaQueryList.addEventListener nicht, dort gibt es
+  // nur das alte addListener. Der Slider rief ungeprüft addEventListener auf →
+  // TypeError im Effect → React hängt den ganzen Baum ab → «Application error:
+  // a client-side exception» statt Startseite. Desktop war nie betroffen, also sah
+  // es exakt wie «lädt nur am PC, nicht am Handy» aus.
+  // Der Mock oben in beforeEach hatte addEventListener — deshalb blieb das unentdeckt.
+  it('läuft auf altem iOS ohne MediaQueryList.addEventListener weiter', async () => {
+    const addListener = vi.fn();
+    const removeListener = vi.fn();
+    window.matchMedia = vi.fn().mockReturnValue({
+      matches: false,
+      addListener,
+      removeListener,
+      // kein addEventListener/removeEventListener — genau die iOS-13-Form
+    }) as any;
+    mockBanners(BANNERS);
+
+    const { container, unmount } = render(<HomeBannerSlider />);
+
+    await waitFor(() => {
+      expect(screen.getByText('2+1 auf alle Pizzen')).toBeInTheDocument();
+    });
+    expect(container.querySelectorAll('[role="group"]')).toHaveLength(2);
+    expect(addListener).toHaveBeenCalled();
+
+    unmount();
+    expect(removeListener).toHaveBeenCalled();
+  });
+
   it('bricht bei kaputter API nicht — Sektion verschwindet still', async () => {
     global.fetch = vi.fn().mockRejectedValue(new Error('500')) as any;
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});

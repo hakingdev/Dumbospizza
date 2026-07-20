@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { CheckCircle, ArrowRight, Clock } from 'lucide-react';
 import Link from 'next/link';
 import { useCart } from '../../../../../lib/contexts/CartContext';
+import { storageGet, storageSet } from '../../../../../lib/safe-storage';
 import { useLanguage } from '../../../../../lib/contexts/LanguageContext';
 import { loadTranslation } from '../../../../../lib/i18n';
 import OrderVatReceipt from '../../../../../components/checkout/OrderVatReceipt';
@@ -44,7 +45,7 @@ export default function OrderConfirmationPage({ params }: OrderConfirmationProps
       try {
         // Токен доступа к заказу (выдан при оформлении). Для клиента с cookie-
         // сессией (/account) сработает и без токена — авторизация по cookie.
-        const storedToken = sessionStorage.getItem(`order:${orderId}:token`);
+        const storedToken = storageGet(`order:${orderId}:token`, 'session');
         const query = storedToken ? `?token=${encodeURIComponent(storedToken)}` : '';
         const response = await fetch(`/api/orders/${orderId}${query}`, {
           credentials: 'include',
@@ -81,8 +82,9 @@ export default function OrderConfirmationPage({ params }: OrderConfirmationProps
   useEffect(() => {
     if (!order?.orderNumber) return;
     const sentKey = `meta:purchase:${order.orderNumber}`;
-    if (sessionStorage.getItem(sentKey)) return;
-    sessionStorage.setItem(sentKey, '1');
+    // Без try/catch бросок отсюда ронял бы страницу подтверждения уже ПОСЛЕ оплаты.
+    if (storageGet(sentKey, 'session')) return;
+    storageSet(sentKey, '1', 'session');
     trackMetaEvent(
       'Purchase',
       {
