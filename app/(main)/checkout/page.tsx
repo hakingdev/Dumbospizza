@@ -1489,7 +1489,7 @@ export default function CheckoutPage() {
             {/* Coupon Input */}
             <div className="border-b pb-4 mb-4">
               <CouponInput
-                orderAmount={state.items.filter((i) => !i.comboId).reduce((s, i) => s + i.price * i.quantity, 0)}
+                orderAmount={state.items.reduce((s, i) => s + i.price * i.quantity, 0)}
                 appliedCode={state.couponCode}
                 appliedDiscount={state.couponDiscount}
                 onCouponApplied={(coupon) => {

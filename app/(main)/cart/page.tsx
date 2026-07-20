@@ -13,8 +13,6 @@ import GratisGiftPickerModal from '../../../components/promotions/GratisGiftPick
 import BogoHalfPricePickerModal from '../../../components/promotions/BogoHalfPricePickerModal'
 import { SafeImage } from '../../../components/SafeImage'
 import { useCart } from '../../../lib/contexts/CartContext'
-import { groupCartRows } from '../../../lib/cart/combo'
-import { ComboCartGroup } from '../../../components/cart/ComboCartGroup'
 import { getConflictingPromotions } from '../../../lib/promotions/coupon-conflict'
 import { PROMO_CONFLICT_MESSAGE } from '../../../components/cart/PromoConflictDialog'
 import { NoTranslate } from '../../../components/NoTranslate'
@@ -32,7 +30,6 @@ export default function CartPage() {
     totals,
     updateItem,
     removeItem,
-    removeCombo,
     applyCoupon,
     removeCoupon,
     setPromotionPromoCode,
@@ -85,10 +82,7 @@ export default function CartPage() {
   const subtotal = totals.subtotal ?? 0;
   const deliveryFee = totals.deliveryFee ?? state.deliveryFee;
   const grandTotal = Math.max(0, totals.total ?? 0);
-  // Купон считается только по обычным товарам — combo (Angebot) исключаем из базы.
-  const couponOrderAmount = state.items
-    .filter((i) => !i.comboId)
-    .reduce((s, i) => s + i.price * i.quantity, 0);
+  const couponOrderAmount = state.items.reduce((s, i) => s + i.price * i.quantity, 0);
 
   const handleProceedToCheckout = () => {
     // Награда BOGO опциональна — не блокируем оформление.
@@ -155,16 +149,7 @@ export default function CartPage() {
             {/* Cart Items */}
             <div className="bg-white rounded-lg shadow-md overflow-hidden">
               <ul className="divide-y divide-gray-200">
-                {groupCartRows(state.items).map((row) => {
-                  if (row.kind === 'combo') {
-                    return (
-                      <li key={row.comboId} className="p-4">
-                        <ComboCartGroup group={row} onRemove={removeCombo} freeLabel={t('cart.free', 'gratis')} />
-                      </li>
-                    )
-                  }
-                  const item = row.item
-                  return (
+                {state.items.map((item) => (
                   <li key={item.id} className="p-4">
                     <div className="flex flex-col md:flex-row md:items-center gap-4">
                       <div className="md:w-24 h-24 bg-gray-200 rounded-md flex items-center justify-center text-gray-500 flex-shrink-0 overflow-hidden">
@@ -241,8 +226,7 @@ export default function CartPage() {
                       </div>
                     </div>
                   </li>
-                  )
-                })}
+                ))}
               </ul>
               {/* Награды акции — строками рядом с товарами */}
               <div className="p-4 pt-0 space-y-2">

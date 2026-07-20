@@ -8,8 +8,6 @@ import { useLanguage } from '../../lib/contexts/LanguageContext';
 import { loadTranslation } from '../../lib/i18n';
 import OrderSummaryBreakdown from './OrderSummaryBreakdown';
 import BogoRewardLines from '../promotions/BogoRewardLines';
-import { groupCartRows } from '../../lib/cart/combo';
-import { ComboCartGroup } from './ComboCartGroup';
 import { NoTranslate } from '../NoTranslate';
 
 interface CartModalProps {
@@ -18,7 +16,7 @@ interface CartModalProps {
 }
 
 export function CartModal({ isOpen, onClose }: CartModalProps) {
-  const { state, updateItem, removeItem, removeCombo } = useCart();
+  const { state, updateItem, removeItem } = useCart();
   const {
     items,
     subtotal,
@@ -100,19 +98,7 @@ export function CartModal({ isOpen, onClose }: CartModalProps) {
             </div>
           ) : (
             <div className="space-y-4">
-              {groupCartRows(items).map((row) => {
-                if (row.kind === 'combo') {
-                  return (
-                    <ComboCartGroup
-                      key={row.comboId}
-                      group={row}
-                      onRemove={removeCombo}
-                      freeLabel={t('cart.free', 'gratis')}
-                    />
-                  );
-                }
-                const item = row.item;
-                return (
+              {items.map((item) => (
                 <div key={item.id} className="bg-gray-50 rounded-xl p-4">
                   <div className="flex items-start space-x-4">
                     {/* Image placeholder */}
@@ -175,8 +161,7 @@ export function CartModal({ isOpen, onClose }: CartModalProps) {
                     </div>
                   </div>
                 </div>
-                );
-              })}
+              ))}
               {/* Награды акции (2-й товар со скидкой) — строками рядом с товарами */}
               <BogoRewardLines calculation={promotionCalculation} selectedFreeGifts={selectedFreeGifts} variant="card" />
             </div>

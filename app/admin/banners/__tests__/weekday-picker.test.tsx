@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { WeekdayPicker } from '../page';
+import { WeekdayPicker } from '../../../../components/admin/WeekdayPicker';
 
 /** Кнопка дня по подписи (Пн/Вт/…). */
 function day(label: string) {

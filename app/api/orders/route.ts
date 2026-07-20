@@ -295,13 +295,7 @@ export async function POST(request: NextRequest) {
         )
       : [];
 
-    // Matchday-Kombi-Positionen nehmen NICHT an anderen Aktionen teil — wie im
-    // Client (CartContext.recalculatePromotions). Sonst würde der Server für eine
-    // Kombi-Bestellung ein Gratis-Angebot erzeugen, das der Kunde nie zu sehen bekam,
-    // und die Bestellung fälschlich blockieren ("Bitte wählen Sie Ihr Gratis-Produkt aus").
-    const promotionItems = Array.isArray(orderData.items)
-      ? orderData.items.filter((i: any) => !i.comboId)
-      : [];
+    const promotionItems = Array.isArray(orderData.items) ? orderData.items : [];
 
     let promotionCalc = await calculateOrderPromotions(promotionItems, {
       channel: orderData.channel === 'app' ? 'app' : 'web',

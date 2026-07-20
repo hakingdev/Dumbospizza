@@ -5,7 +5,6 @@ import { Promotion } from '../../../lib/models/promotion.model';
 import { toPromotionPublicView } from '../../../lib/promotions/serialize';
 import { isPromotionEffectivelyActive } from '../../../lib/promotions/status';
 import { SITE_URL } from '../../../lib/site-url';
-import { MatchdayComboBuilder } from '../../../components/matchday-combo-builder';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,21 +46,6 @@ export default async function AngebotePage() {
     <div className="container mx-auto px-4 py-10 max-w-4xl">
       <h1 className="text-3xl font-bold mb-2">Angebote & Aktionen</h1>
       <p className="text-gray-600 mb-8">Alle aktuellen Rabatte — automatisch in der Bestellung angewendet.</p>
-
-      {/* Interaktives Kombi-Angebot: eigene Preislogik, deshalb kein Promotion-Datensatz. */}
-      <section className="mb-10 rounded-2xl bg-gradient-to-br from-primary-700 to-primary-900 p-6 text-white shadow-lg md:p-8">
-        <span className="mb-4 inline-flex items-center gap-2 rounded-full bg-yellow-400 px-3 py-1.5 text-xs font-bold text-yellow-900">
-          ⚽ Matchday-Kombi
-        </span>
-        <h2 className="mb-2 text-2xl font-extrabold md:text-3xl">
-          Zwei Pizzen 30 × 40 cm + Getränke gratis
-        </h2>
-        <p className="mb-6 max-w-[560px] text-white/90">
-          Stell dir deine Kombi zusammen: zwei Pizzen 30 × 40 cm nach Wahl, dazu Getränke gratis —
-          5 € günstiger als einzeln.
-        </p>
-        <MatchdayComboBuilder isDe={true} />
-      </section>
 
       {promotions.length === 0 ? (
         <p className="text-gray-500">Derzeit keine aktiven Angebote.</p>

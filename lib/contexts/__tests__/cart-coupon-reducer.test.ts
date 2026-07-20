@@ -72,49 +72,31 @@ describe('cartReducer / REMOVE_COUPON', () => {
   });
 });
 
-describe('cartReducer / промокод удаляет combo (Angebot не комбинируется с промокодом)', () => {
-  const comboState = () =>
+describe('cartReducer / купон и промокод не трогают состав корзины', () => {
+  const cartState = () =>
     baseState({
-      items: [
-        { id: 'reg', productId: 'reg', name: 'Pizza', price: 12, quantity: 1 },
-        { id: 'c:p1', name: 'Bayern', price: 16.9, quantity: 1, comboId: 'c', comboRole: 'pizza' },
-        { id: 'c:d0', name: 'Cola', price: 0, quantity: 1, comboId: 'c', comboRole: 'drink' },
-        { id: 'c:discount', name: 'Kombi-Rabatt', price: -5, quantity: 1, comboId: 'c', comboRole: 'discount' },
-      ],
+      items: [{ id: 'reg', productId: 'reg', name: 'Pizza', price: 12, quantity: 1 }],
     });
 
-  it('APPLY_COUPON удаляет ВСЕ combo-позиции и пересчитывает сумму только по обычным товарам', () => {
-    const next = cartReducer(comboState(), {
+  it('APPLY_COUPON сохраняет товары и считает скидку по ним', () => {
+    const next = cartReducer(cartState(), {
       type: 'APPLY_COUPON',
       payload: { code: 'TEAM', discount: 3.6 }, // 30% от 12 €
     });
-    expect(next.items.map((i: any) => i.id)).toEqual(['reg']); // combo полностью удалён
-    expect(next.items.some((i: any) => i.comboId)).toBe(false);
+    expect(next.items.map((i: any) => i.id)).toEqual(['reg']);
     expect(next.subtotal).toBeCloseTo(12, 2);
     expect(next.couponCode).toBe('TEAM');
-    expect(next.total).toBeCloseTo(12 - 3.6, 2); // купон только по обычным товарам
+    expect(next.total).toBeCloseTo(12 - 3.6, 2);
   });
 
-  it('combo-only корзина + APPLY_COUPON → корзина без combo (пустая)', () => {
-    const state = baseState({
-      items: [
-        { id: 'c:p1', name: 'Bayern', price: 16.9, quantity: 1, comboId: 'c', comboRole: 'pizza' },
-        { id: 'c:discount', name: 'Kombi-Rabatt', price: -5, quantity: 1, comboId: 'c', comboRole: 'discount' },
-      ],
-    });
-    const next = cartReducer(state, { type: 'APPLY_COUPON', payload: { code: 'TEAM', discount: 0 } });
-    expect(next.items).toEqual([]);
-    expect(next.subtotal).toBe(0);
-  });
-
-  it('SET_PROMOTION_PROMO_CODE с кодом удаляет combo; снятие кода (undefined) товары не трогает', () => {
-    const applied = cartReducer(comboState(), { type: 'SET_PROMOTION_PROMO_CODE', payload: 'TEAM' });
-    expect(applied.items.some((i: any) => i.comboId)).toBe(false);
+  it('SET_PROMOTION_PROMO_CODE (установка и снятие) товары не трогает', () => {
+    const applied = cartReducer(cartState(), { type: 'SET_PROMOTION_PROMO_CODE', payload: 'TEAM' });
+    expect(applied.items.map((i: any) => i.id)).toEqual(['reg']);
     expect(applied.promotionPromoCode).toBe('TEAM');
 
-    const regularOnly = baseState({ items: [{ id: 'reg', name: 'Pizza', price: 12, quantity: 1 }] });
-    const removed = cartReducer(regularOnly, { type: 'SET_PROMOTION_PROMO_CODE', payload: undefined });
+    const removed = cartReducer(applied, { type: 'SET_PROMOTION_PROMO_CODE', payload: undefined });
     expect(removed.items.map((i: any) => i.id)).toEqual(['reg']);
+    expect(removed.promotionPromoCode).toBeUndefined();
   });
 });
 
