@@ -255,6 +255,35 @@ export const users = pgTable(
 );
 
 // =====================================================================
+// User identities (Вход через Google / Apple)
+// =====================================================================
+// Отдельная таблица, а не пара колонок в users: один клиент может привязать и
+// Google, и Apple к одному аккаунту. `subject` — стабильный `sub` из id_token
+// провайдера; именно он ключ, а не email (Apple Private Relay адрес может
+// смениться или быть отключён, и тогда поиск по email перестал бы находить
+// аккаунт).
+export const userIdentities = pgTable(
+  'user_identities',
+  {
+    id: id(),
+    user: text('user_id').notNull(), // ref users.id
+    provider: text('provider').notNull(), // 'google' | 'apple'
+    subject: text('subject').notNull(), // sub из id_token
+    email: text('email'), // email на момент привязки, для справки
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    // Одна и та же учётка провайдера не может вести на два наших аккаунта.
+    providerSubjectUq: uniqueIndex('user_identities_provider_subject_uq').on(
+      t.provider,
+      t.subject
+    ),
+    userIdx: index('user_identities_user_idx').on(t.user),
+  })
+);
+
+// =====================================================================
 // Coupons
 // =====================================================================
 export const coupons = pgTable(
@@ -736,6 +765,43 @@ export const refunds = pgTable(
   })
 );
 
+// =====================================================================
+// Homepage banners (рекламная лента на главной)
+// =====================================================================
+/**
+ * Ручные рекламные баннеры для слайдера на главной. Живут отдельно от
+ * promotions: акция — это правило расчёта скидки, баннер — только картинка со
+ * ссылкой. Ссылаться баннер может на что угодно (/angebote/x, /menu, категорию).
+ *
+ * Показ задаётся днями недели (как у акций), а не окном дат: оффер вида
+ * «2+1 по понедельникам» повторяется каждую неделю и не требует правок.
+ */
+export const homepageBanners = pgTable(
+  'homepage_banners',
+  {
+    id: id(),
+    title: text('title').notNull(),
+    subtitle: text('subtitle'),
+    image: text('image').notNull(),
+    linkUrl: text('link_url'),
+    badgeText: text('badge_text'),
+    enabled: boolean('enabled').notNull().default(true),
+    order: integer('order').notNull().default(0),
+    // 0 = Вс … 6 = Сб; те же значения и тот же jsonb, что у promotions
+    activeDaysOfWeek: jsonb('active_days_of_week')
+      .$type<number[]>()
+      .notNull()
+      .default([0, 1, 2, 3, 4, 5, 6]),
+    scheduleTimeZone: text('schedule_time_zone').notNull().default('Europe/Berlin'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    // выборка активных на главной: enabled + сортировка по order
+    activeIdx: index('homepage_banners_active_idx').on(t.enabled, t.order),
+  })
+);
+
 // ---- выводимые типы (select/insert) ----
 export type Category = typeof categories.$inferSelect;
 export type Product = typeof products.$inferSelect;
@@ -759,3 +825,4 @@ export type EmailUnsubscribe = typeof emailUnsubscribes.$inferSelect;
 export type Payment = typeof payments.$inferSelect;
 export type PaymentEvent = typeof paymentEvents.$inferSelect;
 export type Refund = typeof refunds.$inferSelect;
+export type HomepageBanner = typeof homepageBanners.$inferSelect;

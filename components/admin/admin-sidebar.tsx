@@ -21,7 +21,8 @@ import {
   ListPlus,
   Bell,
   Star,
-  MessageSquare
+  MessageSquare,
+  GalleryHorizontalEnd
 } from 'lucide-react';
 
 export default function AdminSidebar() {
@@ -73,6 +74,11 @@ export default function AdminSidebar() {
       name: 'Angebote',
       href: '/admin/promotions',
       icon: Megaphone
+    },
+    {
+      name: 'Banner (Startseite)',
+      href: '/admin/banners',
+      icon: GalleryHorizontalEnd
     },
     {
       name: 'Delivery Zones',

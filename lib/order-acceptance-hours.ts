@@ -86,3 +86,14 @@ export function getNowMinutesInTimeZone(timeZone: string, date: Date): number {
   const minute = Number(parts.find((p) => p.type === 'minute')?.value ?? '0');
   return hour * 60 + minute;
 }
+
+/**
+ * День недели (0 = Вс … 6 = Сб) в заданной зоне, а не в зоне сервера.
+ * На Vercel сервер живёт в UTC: в 00:30 по Берлину там ещё вчера, и
+ * расписание «только понедельник» отработало бы воскресеньем.
+ */
+export function getDayOfWeekInTimeZone(timeZone: string, date: Date): number {
+  const weekday = new Intl.DateTimeFormat('en-US', { timeZone, weekday: 'short' }).format(date);
+  const map: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  return map[weekday] ?? date.getDay();
+}

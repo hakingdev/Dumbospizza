@@ -392,7 +392,8 @@
     "rating": "Bewertung",
     "image_alt": "Leckere Pizza mit Lieferung",
     "badge_discount": "auf die erste Bestellung",
-    "badge_delivery": "Lieferung"
+    "badge_delivery": "Lieferung",
+    "cta_offers": "Angebote ansehen"
   },
   "product_modal": {
     "size_title": "Größe wählen:",

@@ -10,7 +10,7 @@ interface ImageUploadProps {
   value: string;
   onChange: (url: string) => void;
   label?: string;
-  folder?: 'products' | 'categories';
+  folder?: 'products' | 'categories' | 'banners';
 }
 
 export default function ImageUpload({ value, onChange, label, folder = 'products' }: ImageUploadProps) {

@@ -19,16 +19,19 @@ export async function POST(request: NextRequest) {
     const contentType = request.headers.get('content-type') || '';
     let imagePath = '';
 
+    const ALLOWED_FOLDERS = ['products', 'categories', 'banners'] as const;
+    type AllowedFolder = (typeof ALLOWED_FOLDERS)[number];
+    const isAllowedFolder = (v: unknown): v is AllowedFolder =>
+      typeof v === 'string' && (ALLOWED_FOLDERS as readonly string[]).includes(v);
+    const folderError = `Invalid request. folder must be one of: ${ALLOWED_FOLDERS.join(', ')}`;
+
     if (contentType.includes('multipart/form-data')) {
       const formData = await request.formData();
       const file = formData.get('file');
       const folder = formData.get('folder');
 
-      if (!file || typeof folder !== 'string' || !['products', 'categories'].includes(folder)) {
-        return NextResponse.json({
-          success: false,
-          error: 'Invalid request. Required fields: file, folder (products or categories)'
-        }, { status: 400 });
+      if (!file || !isAllowedFolder(folder)) {
+        return NextResponse.json({ success: false, error: folderError }, { status: 400 });
       }
 
       const hasArrayBuffer = file && typeof (file as any).arrayBuffer === 'function';
@@ -40,21 +43,18 @@ export async function POST(request: NextRequest) {
       imagePath = await saveBinaryImage(
         Buffer.from(arrayBuffer),
         (file as any).type,
-        folder as 'products' | 'categories',
+        folder,
         (file as any).name
       );
     } else {
       const data = await request.json();
       const { image, folder } = data;
 
-      if (!image || !folder || !['products', 'categories'].includes(folder)) {
-        return NextResponse.json({
-          success: false,
-          error: 'Invalid request. Required fields: image, folder (products or categories)'
-        }, { status: 400 });
+      if (!image || !isAllowedFolder(folder)) {
+        return NextResponse.json({ success: false, error: folderError }, { status: 400 });
       }
 
-      imagePath = await saveBase64Image(image, folder as 'products' | 'categories');
+      imagePath = await saveBase64Image(image, folder);
     }
     
     return NextResponse.json({

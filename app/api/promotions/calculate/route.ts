@@ -6,6 +6,7 @@ import { calculatePromotions } from '../../../../lib/promotions/engine';
 import { hasActiveMoneyDiscount } from '../../../../lib/promotions/coupon-conflict';
 import { enrichFreeGiftOffers, applySelectedFreeGifts } from '../../../../lib/promotions/gifts';
 import { buildBogoCatalog } from '../../../../lib/promotions/bogo-catalog';
+import { buildGiftCatalog } from '../../../../lib/promotions/gift-catalog';
 import { resolvePromotionCustomerContext } from '../../../../lib/promotions/audience';
 import type { PromotionCartItem, PromotionChannel } from '../../../../lib/promotions/types';
 
@@ -67,7 +68,10 @@ export async function POST(request: NextRequest) {
 
     const promotions = await Promotion.find({ enabled: true }).lean();
     const customerContext = await resolvePromotionCustomerContext(phoneNumber);
-    const bogoCatalog = await buildBogoCatalog(promotions as any);
+    const [bogoCatalog, giftCatalog] = await Promise.all([
+      buildBogoCatalog(promotions as any),
+      buildGiftCatalog(promotions as any),
+    ]);
 
     let calculation = calculatePromotions(items, promotions as any, {
       channel,
@@ -75,6 +79,7 @@ export async function POST(request: NextRequest) {
       customerContext,
       selectedBogoSecond,
       bogoCatalog,
+      giftCatalog,
       excludeMoneyDiscounts: couponActive,
     });
 
@@ -88,6 +93,7 @@ export async function POST(request: NextRequest) {
             customerContext,
             selectedBogoSecond,
             bogoCatalog,
+            giftCatalog,
           })
         )
       : hasActiveMoneyDiscount(calculation);

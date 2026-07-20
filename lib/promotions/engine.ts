@@ -308,6 +308,12 @@ export function calculatePromotions(
     selectedBogoSecond?: Array<{ promotionId: string; productId: string }>;
     bogoCatalog?: Record<string, BogoSecondOption[]>;
     /**
+     * Schlüssel der lieferbaren Gratis-Positionen (siehe buildGiftCatalog).
+     * Ohne diesen Katalog wird NICHT gefiltert — die Engine bleibt rein und
+     * Unit-Tests ohne DB verhalten sich wie bisher.
+     */
+    giftCatalog?: ReadonlySet<string>;
+    /**
      * Подавить ДЕНЕЖНЫЕ акции (percent/fixed/bogo). Используется, когда активен
      * купон: денежная скидка не может комбинироваться с купоном, но Gratis-Artikel
      * остаётся. См. lib/promotions/coupon-conflict.ts.
@@ -520,7 +526,12 @@ export function calculatePromotions(
   for (const promo of active) {
     if (promo.type !== 'gratis_article') continue;
 
-    const giftItems = getGiftItems(promo);
+    // Abgeschaltete Produkte/Größen fallen hier raus — VOR der Eligibility, damit
+    // ein Angebot, dessen Geschenke alle aus sind, gar nicht erst greift.
+    const giftCatalog = options.giftCatalog;
+    const giftItems = getGiftItems(promo).filter(
+      (g) => !giftCatalog || giftCatalog.has(giftOptionId(g.productId, g.sizeName))
+    );
     if (giftItems.length === 0) continue;
 
     let eligible = false;

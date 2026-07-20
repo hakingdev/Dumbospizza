@@ -25,7 +25,7 @@ const CONTENT_TYPE_BY_EXTENSION: Record<string, string> = {
   gif: 'image/gif',
 };
 
-type UploadFolder = 'products' | 'categories';
+type UploadFolder = 'products' | 'categories' | 'banners';
 
 function getSafeImageExtension(mimeType?: string, fileName?: string): string {
   const normalizedMime = mimeType?.toLowerCase().split(';')[0].trim();

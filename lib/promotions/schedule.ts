@@ -1,8 +1,13 @@
 import {
   getNowMinutesInTimeZone,
+  getDayOfWeekInTimeZone,
   parseOrdersTimeToMinutes,
   formatMinutesAsHHmm,
 } from '../order-acceptance-hours';
+
+// Живёт в order-acceptance-hours рядом с getNowMinutesInTimeZone: день недели
+// нужен не только акциям (баннеры главной берут его оттуда же, минуя движок акций).
+export { getDayOfWeekInTimeZone };
 
 export interface HappyHourScheduleFields {
   weekdayScheduleEnabled?: boolean;
@@ -15,12 +20,6 @@ export interface HappyHourScheduleFields {
 
 const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
 const DAY_NAMES_DE = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
-
-export function getDayOfWeekInTimeZone(timeZone: string, date: Date): number {
-  const weekday = new Intl.DateTimeFormat('en-US', { timeZone, weekday: 'short' }).format(date);
-  const map: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
-  return map[weekday] ?? date.getDay();
-}
 
 /** Lieferando-Modus: акция только в выбранные дни недели. */
 export function isOnScheduledWeekday(

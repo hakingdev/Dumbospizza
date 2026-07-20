@@ -63,6 +63,10 @@ auth_info*/
 *.mov
 *.mp4
 
+# сгенерированные рекламные креативы — исходники тяжёлые, на прод не идут:
+# готовый баннер заливается через админку в Supabase Storage
+ad-assets/
+
 # test / lint caches
 coverage/
 .vitest/

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { FeaturedProducts } from '../../components/featured-products'
 import { CategoryProducts } from '../../components/category-products'
 import { Hero } from '../../components/hero'
+import { HomeBannerSlider } from '../../components/home-banner-slider'
 import { ProductCard } from '../../components/product-card'
 import { Truck, Award, Clock, Shield, Heart } from 'lucide-react'
 import { useLanguage } from '../../lib/contexts/LanguageContext'
@@ -165,7 +166,8 @@ export default function Home() {
         }} 
       />
       <Hero />
-      
+      <HomeBannerSlider />
+
       {/* Categories Section — как на скрине: слева Kategorien, справа Valentinstag Specials */}
       <section id="menu" className="py-12 bg-white">
         <div className="container mx-auto px-4">

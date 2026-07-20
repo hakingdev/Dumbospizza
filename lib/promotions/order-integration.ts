@@ -1,6 +1,7 @@
 import { Promotion } from '../models/promotion.model';
 import { calculatePromotions } from './engine';
 import { buildBogoCatalog } from './bogo-catalog';
+import { buildGiftCatalog } from './gift-catalog';
 import { resolvePromotionCustomerContext } from './audience';
 import type { PromotionCalculationResult, PromotionCartItem } from './types';
 import { normalizeObjectId } from '../normalize-id';
@@ -38,13 +39,17 @@ export async function calculateOrderPromotions(
 ): Promise<PromotionCalculationResult> {
   const promotions = await Promotion.find({ enabled: true }).lean();
   const customerContext = await resolvePromotionCustomerContext(options.phoneNumber);
-  const bogoCatalog = await buildBogoCatalog(promotions as any);
+  const [bogoCatalog, giftCatalog] = await Promise.all([
+    buildBogoCatalog(promotions as any),
+    buildGiftCatalog(promotions as any),
+  ]);
   return calculatePromotions(cartItemsToPromotionItems(items), promotions as any, {
     channel: options.channel || 'web',
     promoCode: options.promoCode,
     customerContext,
     selectedBogoSecond: options.selectedBogoSecond,
     bogoCatalog,
+    giftCatalog,
     excludeMoneyDiscounts: options.excludeMoneyDiscounts,
   });
 }

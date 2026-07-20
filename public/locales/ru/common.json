@@ -415,7 +415,8 @@
     "rating": "рейтинг",
     "image_alt": "Вкусная пицца с доставкой",
     "badge_discount": "на первый заказ",
-    "badge_delivery": "доставка"
+    "badge_delivery": "доставка",
+    "cta_offers": "Смотреть акции"
   },
   "footer": {
     "company": "О компании",
