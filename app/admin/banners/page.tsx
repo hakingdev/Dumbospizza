@@ -71,7 +71,8 @@ export default function BannersPage() {
   }, []);
 
   const create = async () => {
-    if (!draft.title.trim() || !draft.image.trim() || saving) return;
+    // Заголовок необязателен — текст обычно уже нарисован на картинке.
+    if (!draft.image.trim() || saving) return;
     setSaving(true);
     try {
       const res = await fetch('/api/banners', {
@@ -178,7 +179,7 @@ export default function BannersPage() {
               type="text"
               value={draft.title}
               onChange={(e) => setDraft({ ...draft, title: e.target.value })}
-              placeholder="Заголовок (напр. 2+1 auf alle Pizzen)"
+              placeholder="Заголовок поверх картинки (пусто — только картинка)"
               className="w-full rounded-lg border px-3 py-2"
             />
             <input
@@ -230,7 +231,7 @@ export default function BannersPage() {
         <button
           type="button"
           onClick={create}
-          disabled={!draft.title.trim() || !draft.image.trim() || saving}
+          disabled={!draft.image.trim() || saving}
           className="mt-3 inline-flex items-center rounded-lg bg-primary-600 px-4 py-2 text-white hover:bg-primary-700 disabled:opacity-50"
         >
           <Plus className="mr-1 h-4 w-4" />
@@ -254,7 +255,7 @@ export default function BannersPage() {
               <div key={banner._id} className="flex flex-col gap-4 p-4 md:flex-row">
                 <SafeImage
                   src={banner.image}
-                  alt={banner.title}
+                  alt={banner.title || 'Баннер'}
                   className="h-24 w-full rounded-lg border object-cover md:w-44"
                 />
 

@@ -61,9 +61,8 @@ export async function POST(request: NextRequest) {
     await connectToDatabase();
     const data = await request.json();
 
-    if (!data?.title?.trim()) {
-      return NextResponse.json({ success: false, error: 'Title is required' }, { status: 400 });
-    }
+    // Заголовок необязателен: у баннера текст обычно уже нарисован на картинке,
+    // и подпись поверх дублировала бы его. Обязательна только сама картинка.
     if (!data?.image?.trim()) {
       return NextResponse.json({ success: false, error: 'Image is required' }, { status: 400 });
     }
@@ -76,7 +75,8 @@ export async function POST(request: NextRequest) {
     }
 
     const banner = new HomepageBanner({
-      title: data.title.trim(),
+      // Пусто, а не null: колонка title NOT NULL, миграция ради этого не нужна.
+      title: (data.title || '').trim(),
       subtitle: (data.subtitle || '').trim() || null,
       image: data.image.trim(),
       linkUrl: (data.linkUrl || '').trim() || null,

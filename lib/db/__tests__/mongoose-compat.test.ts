@@ -59,4 +59,14 @@ describe('toColumnValues — приведение дат (фикс 500 при с
     expect('unknownField' in out).toBe(false);
     expect('updatedAt' in out).toBe(false);
   });
+
+  /**
+   * Пропускается только undefined, не «всё ложное». На этом держится очистка
+   * текстовых полей: заголовок баннера стирают до пустого, и в UPDATE должно
+   * уйти '' — иначе старый текст молча останется в БД.
+   */
+  it("пустая строка и 0 доходят до UPDATE (пропускается только undefined)", () => {
+    const out = toColumnValues(model, { name: '', basePrice: 0, available: false });
+    expect(out).toEqual({ name: '', basePrice: 0, available: false });
+  });
 });

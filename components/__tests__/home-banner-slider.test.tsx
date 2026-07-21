@@ -80,6 +80,45 @@ describe('HomeBannerSlider', () => {
     expect(links[0]).toHaveAttribute('href', '/angebote');
   });
 
+  // Banner werden mit eingebranntem Text gerendert («AB 25 €» steht im Bild).
+  // Eine Überschrift obendrauf wäre doppelt, also ist der Titel optional — und
+  // ohne Text darf auch der Abdunkel-Verlauf nicht über dem Motiv liegen.
+  it('zeigt Banner ohne Titel als reines Bild — keine Überschrift, kein Verlauf', async () => {
+    mockBanners([
+      { _id: 'b3', title: '', subtitle: null, image: '/images/c.png', linkUrl: '/angebote', badgeText: null },
+      { _id: 'b4', title: '  ', subtitle: null, image: '/images/d.png', linkUrl: null, badgeText: null },
+    ]);
+    const { container } = render(<HomeBannerSlider />);
+
+    await waitFor(() => {
+      expect(container.querySelectorAll('img')).toHaveLength(2);
+    });
+    expect(container.querySelector('h3')).toBeNull();
+    expect(container.querySelector('[aria-hidden="true"]')).toBeNull();
+    // Der Link braucht trotzdem einen zugänglichen Namen (WCAG 2.4.4).
+    for (const img of Array.from(container.querySelectorAll('img'))) {
+      expect(img).toHaveAttribute('alt', 'Aktuelles Angebot');
+    }
+  });
+
+  it('nimmt ohne Titel den Badge als alt-Text und zeigt ihn weiter an', async () => {
+    mockBanners([
+      { _id: 'b5', title: '', subtitle: null, image: '/images/e.png', linkUrl: null, badgeText: '1 + 1 = 3' },
+      { _id: 'b6', title: '', subtitle: null, image: '/images/f.png', linkUrl: null, badgeText: 'AB 25 €' },
+    ]);
+    const { container } = render(<HomeBannerSlider />);
+
+    await waitFor(() => {
+      expect(container.querySelectorAll('img')).toHaveLength(2);
+    });
+    const images = Array.from(container.querySelectorAll('img'));
+    expect(images[0]).toHaveAttribute('alt', '1 + 1 = 3');
+    expect(images[1]).toHaveAttribute('alt', 'AB 25 €');
+    // Badge bleibt sichtbar — nur die Überschrift entfällt.
+    expect(screen.getByText('1 + 1 = 3')).toBeInTheDocument();
+    expect(container.querySelector('h3')).toBeNull();
+  });
+
   it('blendet die Sektion ohne Banner komplett aus', async () => {
     mockBanners([]);
     const { container } = render(<HomeBannerSlider />);

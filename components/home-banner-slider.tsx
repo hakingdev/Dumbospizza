@@ -18,37 +18,64 @@ export interface HomeBanner {
 
 const AUTOPLAY_DELAY_MS = 6000;
 
+/**
+ * Имя баннера для скринридера. Заголовок необязателен — баннеры рисуются с
+ * текстом внутри картинки, и подпись поверх дублировала бы его. Но alt пустым
+ * оставлять нельзя: баннер обычно ссылка, а ссылка без доступного имени
+ * читается просто как «ссылка» (WCAG 2.4.4).
+ */
+function bannerAltText(banner: HomeBanner): string {
+  return (
+    banner.title?.trim() ||
+    banner.badgeText?.trim() ||
+    banner.subtitle?.trim() ||
+    'Aktuelles Angebot'
+  );
+}
+
 /** Карточка баннера. Первая грузится eager — она попадает в LCP. */
 function BannerCard({ banner, isFirst }: { banner: HomeBanner; isFirst: boolean }) {
+  const title = banner.title?.trim();
+  const subtitle = banner.subtitle?.trim();
+  const badgeText = banner.badgeText?.trim();
+  const hasOverlayText = Boolean(title || subtitle || badgeText);
+
   const content = (
     <>
       <SafeImage
         src={banner.image}
-        alt={banner.title}
+        alt={bannerAltText(banner)}
         className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
         loading={isFirst ? 'eager' : 'lazy'}
         // React 18 mappt camelCase `fetchPriority` nicht auf das DOM-Attribut —
         // lowercase, sonst landet die Priorität gar nicht im HTML.
         {...({ fetchpriority: isFirst ? 'high' : 'auto' } as any)}
       />
-      {/* затемнение снизу — чтобы текст читался на любой картинке */}
-      <div
-        className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/25 to-transparent"
-        aria-hidden="true"
-      />
-      <div className="absolute inset-x-0 bottom-0 p-4 text-white sm:p-6">
-        {banner.badgeText && (
-          <span className="mb-2 inline-block rounded-full bg-yellow-400 px-3 py-1 text-xs font-bold text-yellow-900">
-            {banner.badgeText}
-          </span>
-        )}
-        <h3 className="text-lg font-extrabold leading-tight drop-shadow sm:text-2xl">
-          {banner.title}
-        </h3>
-        {banner.subtitle && (
-          <p className="mt-1 line-clamp-2 text-sm text-white/90 sm:text-base">{banner.subtitle}</p>
-        )}
-      </div>
+      {/* Затемнение и подписи — только если есть что показывать: у баннера без
+          текста градиент просто затемнял бы нижнюю треть готового макета. */}
+      {hasOverlayText && (
+        <>
+          <div
+            className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/25 to-transparent"
+            aria-hidden="true"
+          />
+          <div className="absolute inset-x-0 bottom-0 p-4 text-white sm:p-6">
+            {badgeText && (
+              <span className="mb-2 inline-block rounded-full bg-yellow-400 px-3 py-1 text-xs font-bold text-yellow-900">
+                {badgeText}
+              </span>
+            )}
+            {title && (
+              <h3 className="text-lg font-extrabold leading-tight drop-shadow sm:text-2xl">
+                {title}
+              </h3>
+            )}
+            {subtitle && (
+              <p className="mt-1 line-clamp-2 text-sm text-white/90 sm:text-base">{subtitle}</p>
+            )}
+          </div>
+        </>
+      )}
     </>
   );
 

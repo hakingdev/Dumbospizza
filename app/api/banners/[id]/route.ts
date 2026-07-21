@@ -41,9 +41,8 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       update.activeDaysOfWeek = parseActiveDays(data.activeDaysOfWeek);
     }
 
-    if (update.title !== undefined && !update.title) {
-      return NextResponse.json({ success: false, error: 'Title is required' }, { status: 400 });
-    }
+    // Заголовок необязателен: у баннера текст обычно уже нарисован на картинке,
+    // и подпись поверх дублировала бы его. Обязательна только сама картинка.
     if (update.image !== undefined && !update.image) {
       return NextResponse.json({ success: false, error: 'Image is required' }, { status: 400 });
     }
