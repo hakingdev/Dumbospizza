@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 
@@ -8,8 +8,13 @@ vi.mock('next/link', () => ({
 }));
 
 import CookieConsent from '../CookieConsent';
+import {
+  CONSENT_SETTINGS_EVENT,
+  CONSENT_STORAGE_KEY,
+  CONSENT_VERSION,
+  resetConsentCacheForTests,
+} from '../../lib/consent';
 
-const STORAGE_KEY = 'cookie-consent';
 const originalLocal = Object.getOwnPropertyDescriptor(window, 'localStorage');
 
 /** iOS mit «Alle Cookies blockieren»: schon der Property-Zugriff wirft. */
@@ -22,9 +27,21 @@ function blockStorage() {
   });
 }
 
+function storeDecision(analytics: boolean, marketing: boolean) {
+  window.localStorage.setItem(
+    CONSENT_STORAGE_KEY,
+    JSON.stringify({ version: CONSENT_VERSION, analytics, marketing, decidedAt: '' })
+  );
+}
+
+function storedDecision() {
+  return JSON.parse(window.localStorage.getItem(CONSENT_STORAGE_KEY) as string);
+}
+
 afterEach(() => {
   if (originalLocal) Object.defineProperty(window, 'localStorage', originalLocal);
   window.localStorage.clear();
+  resetConsentCacheForTests();
 });
 
 describe('CookieConsent', () => {
@@ -34,25 +51,65 @@ describe('CookieConsent', () => {
   });
 
   it('bleibt verborgen, wenn bereits entschieden wurde', () => {
-    window.localStorage.setItem(STORAGE_KEY, 'accepted');
+    storeDecision(true, true);
     render(<CookieConsent />);
     expect(screen.queryByText('Alle akzeptieren')).not.toBeInTheDocument();
   });
 
-  it('speichert die Zustimmung und schließt den Banner', async () => {
+  // Der alte Banner nannte weder Werbung noch Meta/TikTok/Google Ads — als
+  // informierte Einwilligung fürs Marketing taugt er nicht, also neu fragen.
+  it('fragt erneut, wenn nur die Alt-Einwilligung "accepted" vorliegt', () => {
+    window.localStorage.setItem(CONSENT_STORAGE_KEY, 'accepted');
+    render(<CookieConsent />);
+    expect(screen.getByText('Alle akzeptieren')).toBeInTheDocument();
+  });
+
+  it('speichert die Zustimmung für alle Kategorien', async () => {
     render(<CookieConsent />);
     await userEvent.click(screen.getByText('Alle akzeptieren'));
 
-    expect(window.localStorage.getItem(STORAGE_KEY)).toBe('accepted');
+    expect(storedDecision()).toMatchObject({ analytics: true, marketing: true });
     expect(screen.queryByText('Alle akzeptieren')).not.toBeInTheDocument();
   });
 
-  it('speichert die Ablehnung und schließt den Banner', async () => {
+  it('speichert die Ablehnung für alle Kategorien', async () => {
     render(<CookieConsent />);
-    await userEvent.click(screen.getByText('Ablehnen'));
+    await userEvent.click(screen.getByText('Alle ablehnen'));
 
-    expect(window.localStorage.getItem(STORAGE_KEY)).toBe('declined');
-    expect(screen.queryByText('Ablehnen')).not.toBeInTheDocument();
+    expect(storedDecision()).toMatchObject({ analytics: false, marketing: false });
+    expect(screen.queryByText('Alle ablehnen')).not.toBeInTheDocument();
+  });
+
+  it('startet mit deaktivierten Kategorien — kein pre-ticked Consent', async () => {
+    render(<CookieConsent />);
+    await userEvent.click(screen.getByText('Einstellungen'));
+
+    expect(screen.getByRole('checkbox', { name: /Statistik/ })).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: /Marketing/ })).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: /Notwendig/ })).toBeDisabled();
+  });
+
+  it('speichert eine granulare Auswahl', async () => {
+    render(<CookieConsent />);
+    await userEvent.click(screen.getByText('Einstellungen'));
+    await userEvent.click(screen.getByRole('checkbox', { name: /Statistik/ }));
+    await userEvent.click(screen.getByText('Auswahl speichern'));
+
+    expect(storedDecision()).toMatchObject({ analytics: true, marketing: false });
+  });
+
+  it('lässt sich über den Footer erneut öffnen — mit gespeicherter Auswahl', async () => {
+    storeDecision(true, false);
+    render(<CookieConsent />);
+    expect(screen.queryByText('Alle akzeptieren')).not.toBeInTheDocument();
+
+    await act(async () => {
+      window.dispatchEvent(new Event(CONSENT_SETTINGS_EVENT));
+    });
+
+    expect(await screen.findByText('Alle akzeptieren')).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: /Statistik/ })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: /Marketing/ })).not.toBeChecked();
   });
 
   // Regression: vorher warf window.localStorage.setItem VOR setVisible(false).

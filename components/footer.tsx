@@ -9,6 +9,7 @@ import { getCookie } from 'cookies-next'
 import { cookieName } from '../lib/i18n-config'
 import { DEFAULT_STORE_PHONE, phoneToTelHref } from '../lib/store-phone'
 import { formatOrderHoursTemplate, resolveOrderAcceptanceHours } from '../lib/order-acceptance-hours'
+import { openConsentSettings } from '../lib/consent'
 
 const DEFAULT_STORE_INFO = {
   address: 'Kurhausstraße 11A, 97688 Bad Kissingen',
@@ -170,6 +171,16 @@ export function Footer() {
                 <Link href="/widerrufsbelehrung" className="hover:text-white">
                   {t('footer.withdrawal', fallback('Widerrufsbelehrung', 'Widerrufsbelehrung'))}
                 </Link>
+              </li>
+              {/* Art. 7 Abs. 3 DSGVO: отозвать согласие должно быть так же легко, как дать. */}
+              <li>
+                <button
+                  type="button"
+                  onClick={openConsentSettings}
+                  className="text-left hover:text-white"
+                >
+                  {t('footer.cookieSettings', fallback('Настройки cookies', 'Cookie-Einstellungen'))}
+                </button>
               </li>
             </ul>
           </div>
