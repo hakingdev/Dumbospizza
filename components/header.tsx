@@ -9,6 +9,7 @@ import { loadTranslation } from '../lib/i18n'
 import { useCart } from '../lib/contexts/CartContext'
 import { CartModal } from './cart/CartModal'
 import { DEFAULT_STORE_PHONE, phoneToTelHref } from '../lib/store-phone'
+import { trackGoogleAdsPhoneCall } from '../lib/analytics/google-ads'
 import { formatOrderHoursTemplate, resolveOrderAcceptanceHours } from '../lib/order-acceptance-hours'
 
 export function Header() {
@@ -74,7 +75,7 @@ export function Header() {
           <div className="container mx-auto px-4">
             <div className="flex items-center justify-center text-center text-sm sm:justify-end sm:text-left">
               <div className="flex min-w-0 items-center justify-center gap-4 sm:justify-end">
-                <a href={phoneToTelHref(storeInfo.phone)} className="hidden items-center whitespace-nowrap transition-colors hover:text-primary-100 sm:flex">
+                <a href={phoneToTelHref(storeInfo.phone)} onClick={trackGoogleAdsPhoneCall} className="hidden items-center whitespace-nowrap transition-colors hover:text-primary-100 sm:flex">
                   <Phone className="mr-1 h-4 w-4 shrink-0" />
                   <span className="font-medium" translate="no">{storeInfo.phone}</span>
                 </a>
@@ -173,7 +174,7 @@ export function Header() {
                 <User className="h-5 w-5 mr-2" />
                 {t('nav.account', 'Mein Konto')}
               </Link>
-              <a href={phoneToTelHref(storeInfo.phone)} className="flex items-center text-primary-600 hover:text-primary-700 py-2 font-medium">
+              <a href={phoneToTelHref(storeInfo.phone)} onClick={trackGoogleAdsPhoneCall} className="flex items-center text-primary-600 hover:text-primary-700 py-2 font-medium">
                 <Phone className="h-5 w-5 mr-2" />
                 <span translate="no">{storeInfo.phone}</span>
               </a>

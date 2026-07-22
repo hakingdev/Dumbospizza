@@ -8,6 +8,7 @@ import { loadTranslation } from '../lib/i18n'
 import { getCookie } from 'cookies-next'
 import { cookieName } from '../lib/i18n-config'
 import { DEFAULT_STORE_PHONE, phoneToTelHref } from '../lib/store-phone'
+import { trackGoogleAdsPhoneCall } from '../lib/analytics/google-ads'
 import { formatOrderHoursTemplate, resolveOrderAcceptanceHours } from '../lib/order-acceptance-hours'
 import { openConsentSettings } from '../lib/consent'
 
@@ -204,7 +205,7 @@ export function Footer() {
               </li>
               <li className="flex min-w-0 items-center">
                 <Phone className="h-5 w-5 mr-2 flex-shrink-0" />
-                <a href={phoneToTelHref(storeInfo.phone)} className="min-w-0 break-words hover:text-white" translate="no">{storeInfo.phone}</a>
+                <a href={phoneToTelHref(storeInfo.phone)} onClick={trackGoogleAdsPhoneCall} className="min-w-0 break-words hover:text-white" translate="no">{storeInfo.phone}</a>
               </li>
               <li className="flex min-w-0 items-center">
                 <Mail className="h-5 w-5 mr-2 flex-shrink-0" />

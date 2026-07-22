@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { X, Clock, CheckCircle } from 'lucide-react';
+import { trackGoogleAdsPreOrderLead } from '../lib/analytics/google-ads';
 
 interface PreOrderModalProps {
   isOpen: boolean;
@@ -117,12 +118,10 @@ export default function PreOrderModal({ isOpen, onClose }: PreOrderModalProps) {
       if (response.ok && data.success) {
         // Track conversion events
         if (typeof window !== 'undefined') {
-          // Google Tag Manager / Google Ads
-          if (window.gtag) {
-            window.gtag('event', 'conversion', {
-              'send_to': 'AW-11384333898/wnsKCL2gwO8YEMrMvLQq',
-            });
-          }
+          // Google Ads: заявка на предзаказ — это ЛИД, а не покупка. Раньше
+          // здесь стояла метка покупки, и бесплатная заявка попадала в отчёт
+          // как оплаченный заказ (см. lib/analytics/google-ads.ts).
+          trackGoogleAdsPreOrderLead();
 
           // Facebook Pixel
           if (window.fbq) {

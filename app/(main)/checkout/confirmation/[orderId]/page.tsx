@@ -12,6 +12,7 @@ import OrderVatReceipt from '../../../../../components/checkout/OrderVatReceipt'
 import OrderVatReceiptModal from '../../../../../components/checkout/OrderVatReceiptModal';
 import { NoTranslate } from '../../../../../components/NoTranslate';
 import { trackMetaEvent } from '../../../../../lib/analytics/meta-pixel';
+import { trackGoogleAdsPurchase } from '../../../../../lib/analytics/google-ads';
 
 interface OrderConfirmationProps {
   params: {
@@ -96,6 +97,24 @@ export default function OrderConfirmationPage({ params }: OrderConfirmationProps
       },
       order.orderNumber
     );
+  }, [order]);
+
+  // Google Ads: конверсия «покупка» — единственное место, откуда она уходит.
+  // Раньше метка срабатывала на каждой загрузке любой страницы (см. шапку
+  // lib/analytics/google-ads.ts). transaction_id = номер заказа: Google сам
+  // отбрасывает дубли, sessionStorage-guard — как у Meta выше.
+  useEffect(() => {
+    if (!order?.orderNumber) return;
+    const sentKey = `googleAds:purchase:${order.orderNumber}`;
+    if (storageGet(sentKey, 'session')) return;
+    storageSet(sentKey, '1', 'session');
+    trackGoogleAdsPurchase({
+      value: order.total,
+      transactionId: order.orderNumber,
+      // Enhanced Conversions — gtag хеширует это в браузере перед отправкой.
+      email: order.email,
+      phone: order.phoneNumber,
+    });
   }, [order]);
 
   // После успешной онлайн-оплаты checkout редиректит сюда с ?paid=1 — тогда
