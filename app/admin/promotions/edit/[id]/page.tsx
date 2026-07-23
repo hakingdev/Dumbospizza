@@ -175,13 +175,14 @@ export default function EditPromotionPage() {
   }
 
   const showTargetSelection =
-    form.type === 'fixed_discount' ||
+    (form.type === 'fixed_discount' && form.scope === 'products') ||
     form.type === 'bogo' ||
     (form.type === 'percent_discount' && form.scope === 'products') ||
     (form.type === 'gratis_article' && form.gratisTrigger === 'buy_product');
 
   const showMinOrder =
     (form.type === 'percent_discount' && form.scope === 'order') ||
+    (form.type === 'fixed_discount' && form.scope === 'order') ||
     (form.type === 'gratis_article' && form.gratisTrigger === 'min_order');
 
   return (
@@ -216,26 +217,34 @@ export default function EditPromotionPage() {
           </div>
         </div>
 
+        {(form.type === 'percent_discount' || form.type === 'fixed_discount') && (
+          <div>
+            <label className="block text-sm font-medium mb-1">Gültig für</label>
+            <select value={form.scope} onChange={(e) => setForm({ ...form, scope: e.target.value })} className="w-full border rounded-md px-3 py-2">
+              <option value="order">Gesamte Bestellung (ab Mindestbestellwert)</option>
+              <option value="products">Ausgewählte Produkte</option>
+            </select>
+          </div>
+        )}
+
         {form.type === 'percent_discount' && (
-          <>
-            <div>
-              <label className="block text-sm font-medium mb-1">Gültig für</label>
-              <select value={form.scope} onChange={(e) => setForm({ ...form, scope: e.target.value })} className="w-full border rounded-md px-3 py-2">
-                <option value="order">Gesamte Bestellung</option>
-                <option value="products">Ausgewählte Produkte</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Prozent %</label>
-              <input type="number" min={1} max={100} value={form.percentValue} onChange={(e) => setForm({ ...form, percentValue: Number(e.target.value) })} className="w-full border rounded-md px-3 py-2" />
-            </div>
-          </>
+          <div>
+            <label className="block text-sm font-medium mb-1">Prozent %</label>
+            <input type="number" min={1} max={100} value={form.percentValue} onChange={(e) => setForm({ ...form, percentValue: Number(e.target.value) })} className="w-full border rounded-md px-3 py-2" />
+          </div>
         )}
 
         {form.type === 'fixed_discount' && (
           <div>
-            <label className="block text-sm font-medium mb-1">Rabatt €</label>
+            <label className="block text-sm font-medium mb-1">
+              {form.scope === 'order' ? 'Rabatt € auf die Bestellung' : 'Rabatt € pro Artikel'}
+            </label>
             <input type="number" step={0.01} value={form.fixedValue} onChange={(e) => setForm({ ...form, fixedValue: Number(e.target.value) })} className="w-full border rounded-md px-3 py-2" />
+            {form.scope === 'order' && (
+              <p className="text-xs text-gray-500 mt-1">
+                Fester Rabatt auf den Bestellwert (z. B. ab 30 € → 4 € Rabatt). Mindestbestellwert unten.
+              </p>
+            )}
           </div>
         )}
 
@@ -332,7 +341,10 @@ export default function EditPromotionPage() {
         )}
 
         {showMinOrder && (
-          <input type="number" step={0.01} placeholder="Mindestbestellwert €" value={form.minOrderAmount} onChange={(e) => setForm({ ...form, minOrderAmount: e.target.value })} className="w-full border rounded-md px-3 py-2" />
+          <div>
+            <label className="block text-sm font-medium mb-1">Mindestbestellwert €</label>
+            <input type="number" step={0.01} placeholder="z. B. 30" value={form.minOrderAmount} onChange={(e) => setForm({ ...form, minOrderAmount: e.target.value })} className="w-full border rounded-md px-3 py-2" />
+          </div>
         )}
 
         <div className="grid grid-cols-2 gap-4">

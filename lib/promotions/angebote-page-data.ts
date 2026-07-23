@@ -26,17 +26,36 @@ function formatEuro(amount: number): string {
 }
 
 export function getOfferParticipationFallback(p: PublicPromo): OfferParticipationFallback | null {
-  if (p.type !== 'gratis_article' || p.gratisTrigger !== 'min_order') return null;
+  const hasThreshold =
+    typeof p.minOrderAmount === 'number' && Number.isFinite(p.minOrderAmount) && p.minOrderAmount > 0;
+  const thresholdSuffix = hasThreshold
+    ? ` ab ${formatEuro(p.minOrderAmount as number)} Mindestbestellwert`
+    : ' ab Mindestbestellwert';
 
-  const threshold =
-    typeof p.minOrderAmount === 'number' && Number.isFinite(p.minOrderAmount) && p.minOrderAmount > 0
-      ? ` ab ${formatEuro(p.minOrderAmount)} Mindestbestellwert`
-      : ' ab Mindestbestellwert';
+  // Gratis-Artikel ab Mindestbestellwert — nicht an einzelne Produkte gebunden.
+  if (p.type === 'gratis_article' && p.gratisTrigger === 'min_order') {
+    return {
+      title: 'Gratis-Angebot',
+      description: `Dieses Angebot gilt${thresholdSuffix}. Es ist nicht an einzelne Produkte gebunden.`,
+    };
+  }
 
-  return {
-    title: 'Gratis-Angebot',
-    description: `Dieses Angebot gilt${threshold}. Es ist nicht an einzelne Produkte gebunden.`,
-  };
+  // Rabatt auf die GESAMTE Bestellung (Prozent oder fester €-Betrag) — gilt für den
+  // ganzen Warenkorb, deshalb gibt es keine einzelnen „teilnehmenden Produkte“.
+  if ((p.type === 'percent_discount' || p.type === 'fixed_discount') && p.scope === 'order') {
+    const value =
+      p.type === 'percent_discount'
+        ? `${Math.round(p.percentValue ?? 0)} %`
+        : formatEuro(p.fixedValue ?? 0);
+    return {
+      title: 'Rabatt auf die Bestellung',
+      description: `${value} Rabatt auf die gesamte Bestellung${
+        hasThreshold ? thresholdSuffix : ''
+      }. Gilt für alle Produkte im Warenkorb.`,
+    };
+  }
+
+  return null;
 }
 
 /**

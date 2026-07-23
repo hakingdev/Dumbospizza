@@ -120,6 +120,12 @@ function productMatchesPromoForBadge(
   const pid = String(productId);
   const cid = normalizeObjectId(categoryId);
 
+  // Rabatt auf die GESAMTE Bestellung (scope === 'order') hängt an keinem einzelnen
+  // Produkt. Ohne diese Sperre würde der Badge (z. B. „-4 €“) auf JEDER Produktkarte
+  // erscheinen, weil ein leeres Target als „alle Produkte“ gilt. Solche Angebote
+  // greifen ausschließlich über den Warenkorb-Gesamtwert.
+  if (promo.scope === 'order') return false;
+
   // Gratis-Artikel: баннер «… GRATIS» — это РЕКЛАМА бесплатного товара, поэтому
   // показываем его ТОЛЬКО на подарочных товарах (giftProductIds), а не на
   // qualifying-товарах. Пустой список подарков → НЕ показываем никому
@@ -256,7 +262,9 @@ function pickBestProductMechanicPerLine(
   const productPromos = promos.filter(
     (p) =>
       ((p.type === 'percent_discount' && p.scope === 'products') ||
-        p.type === 'fixed_discount' ||
+        // fixed_discount ohne scope === 'order' bleibt produktbezogen (Alt-Angebote
+        // haben kein scope → weiterhin € pro Artikel). Order-scope läuft unten separat.
+        (p.type === 'fixed_discount' && p.scope !== 'order') ||
         p.type === 'bogo') &&
       !(p.type === 'bogo' && pickerBogoIds.has(promoId(p)))
   );
@@ -495,14 +503,26 @@ export function calculatePromotions(
     appliedMap.set(item.promotionId, entry);
   }
 
+  // Rabatte auf die GESAMTE Bestellung (scope === 'order'): Prozent ODER fester
+  // €-Betrag, jeweils optional erst ab einem Mindestbestellwert
+  // (z. B. ab 30 € Bestellwert → 4 € Rabatt).
   let orderDiscountTotal = 0;
   for (const promo of active) {
-    if (promo.type !== 'percent_discount' || promo.scope !== 'order') continue;
+    if (promo.scope !== 'order') continue;
+    if (promo.type !== 'percent_discount' && promo.type !== 'fixed_discount') continue;
     if (promo.minOrderAmount && subtotal < promo.minOrderAmount) continue;
-    const minOk = !promo.minOrderAmount || subtotal >= promo.minOrderAmount;
-    if (!minOk) continue;
-    const amount = roundMoney(merchandiseAfterProduct * ((promo.percentValue || 0) / 100));
+
+    let amount = 0;
+    if (promo.type === 'percent_discount') {
+      amount = roundMoney(merchandiseAfterProduct * ((promo.percentValue || 0) / 100));
+    } else {
+      // Fester €-Betrag, gedeckelt auf den noch offenen Warenwert — nie mehr Rabatt,
+      // als die Bestellung wert ist (4 € Rabatt auf eine 3-€-Bestellung ergibt 3 €).
+      const remaining = Math.max(0, roundMoney(merchandiseAfterProduct - orderDiscountTotal));
+      amount = roundMoney(Math.min(promo.fixedValue || 0, remaining));
+    }
     if (amount <= 0) continue;
+
     orderDiscountTotal = roundMoney(orderDiscountTotal + amount);
     const entry: AppliedPromotionSummary = appliedMap.get(promoId(promo)) || {
       promotionId: promoId(promo),
