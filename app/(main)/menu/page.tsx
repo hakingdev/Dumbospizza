@@ -1,41 +1,185 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ProductCard } from '../../../components/product-card';
 import { useLanguage } from '../../../lib/contexts/LanguageContext';
 import { loadTranslation } from '../../../lib/i18n';
 
+/**
+ * Speisekarte: gruppiert nach Kategorie mit klebriger Kategorie-Leiste + Scroll-Spy.
+ * Kein Backend-Change nötig — /api/products liefert je Produkt die populierte
+ * Kategorie ({ name, slug, order }), daraus bauen wir Reihenfolge und Gruppen.
+ */
+
+interface CategoryRef {
+  _id?: string;
+  id?: string;
+  name?: string;
+  slug?: string;
+  order?: number;
+}
+
+interface ApiProduct {
+  _id: string;
+  name: string;
+  description: string;
+  basePrice: number;
+  image: string;
+  category: CategoryRef | string | null;
+  featured?: boolean;
+  valentinePromo?: boolean;
+}
+
+interface Group {
+  slug: string;
+  name: string;
+  order: number;
+  products: ApiProduct[];
+}
+
+/** Kategorie eines Produkts robust auflösen (populiertes Objekt ODER slug-String). */
+function readCategory(cat: ApiProduct['category']): { slug: string; name: string; order: number } {
+  if (cat && typeof cat === 'object') {
+    const slug = cat.slug || cat._id || cat.id || 'weitere';
+    return { slug, name: cat.name || slug, order: typeof cat.order === 'number' ? cat.order : 9999 };
+  }
+  if (typeof cat === 'string' && cat) return { slug: cat, name: cat, order: 9999 };
+  return { slug: 'weitere', name: 'Weitere', order: 100000 };
+}
+
+function groupByCategory(products: ApiProduct[]): Group[] {
+  const map = new Map<string, Group>();
+  for (const p of products) {
+    const { slug, name, order } = readCategory(p.category);
+    let g = map.get(slug);
+    if (!g) {
+      g = { slug, name, order, products: [] };
+      map.set(slug, g);
+    }
+    g.products.push(p);
+  }
+  const groups = Array.from(map.values());
+  // Kategorien nach order, dann Name; innerhalb: featured zuerst, sonst API-Reihenfolge (Name).
+  groups.sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
+  for (const g of groups) {
+    g.products.sort((a, b) => Number(!!b.featured) - Number(!!a.featured));
+  }
+  return groups;
+}
+
 export default function MenuPage() {
-  const [products, setProducts] = useState([]);
+  const [products, setProducts] = useState<ApiProduct[]>([]);
   const [loading, setLoading] = useState(true);
   const { language } = useLanguage();
   const [t, setT] = useState<any>(() => (k: string, fallback?: string) => fallback ?? k);
 
+  const [activeSlug, setActiveSlug] = useState<string>('');
+  const [headerH, setHeaderH] = useState(0);   // Höhe der klebrigen Site-Header
+  const [offset, setOffset] = useState(120);   // Header + Leiste (Anker-Versatz)
+
+  const barScrollRef = useRef<HTMLDivElement | null>(null);
+  const barWrapRef = useRef<HTMLDivElement | null>(null);
+  const sectionRefs = useRef<Map<string, HTMLElement>>(new Map());
+  const chipRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
+
   useEffect(() => {
-    fetchProducts();
+    (async () => {
+      try {
+        const res = await fetch('/api/products?available=true');
+        const data = await res.json();
+        if (data.success) setProducts(data.products || []);
+      } catch (e) {
+        console.error('Error:', e);
+      } finally {
+        setLoading(false);
+      }
+    })();
   }, []);
 
   useEffect(() => {
-    const loadTranslations = async () => {
+    (async () => {
       const { t: translation } = await loadTranslation(language);
       setT(() => translation);
-    };
-
-    loadTranslations();
+    })();
   }, [language]);
 
-  const fetchProducts = async () => {
-    try {
-      const response = await fetch('/api/products?available=true');
-      const data = await response.json();
-      if (data.success) {
-        setProducts(data.products);
+  const groups = useMemo(() => groupByCategory(products), [products]);
+
+  // Header- + Leistenhöhe messen → Sticky-top der Leiste und scroll-margin der Sektionen.
+  const measure = () => {
+    const header = document.querySelector('header');
+    const h = header ? Math.round(header.getBoundingClientRect().height) : 0;
+    const barH = barWrapRef.current ? Math.round(barWrapRef.current.getBoundingClientRect().height) : 0;
+    setHeaderH(h);
+    setOffset(h + barH + 12);
+  };
+
+  useLayoutEffect(() => {
+    if (loading || groups.length === 0) return;
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, groups.length]);
+
+  // Scroll-Spy: aktive Kategorie = die Sektion, die gerade unter der Leiste liegt.
+  // Bewusst per Scroll-Rechnung (nicht IntersectionObserver): so greift auch der
+  // Seitenanfang (→ erste Kategorie) und das Seitenende (→ letzte) sauber.
+  useEffect(() => {
+    if (loading || groups.length === 0) return;
+    let raf = 0;
+
+    const compute = () => {
+      raf = 0;
+      const line = offset + 1;
+      let current = groups[0].slug;
+      for (const g of groups) {
+        const el = sectionRefs.current.get(g.slug);
+        if (!el) continue;
+        if (el.getBoundingClientRect().top <= line) current = g.slug;
+        else break;
       }
-    } catch (error) {
-      console.error('Error:', error);
-    } finally {
-      setLoading(false);
+      setActiveSlug(current);
+    };
+    const onScroll = () => {
+      if (!raf) raf = requestAnimationFrame(compute);
+    };
+
+    compute();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      if (raf) cancelAnimationFrame(raf);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, groups, offset]);
+
+  // Aktiven Chip in der horizontalen Leiste zentrieren.
+  useEffect(() => {
+    const bar = barScrollRef.current;
+    const chip = activeSlug ? chipRefs.current.get(activeSlug) : null;
+    if (!bar || !chip) return;
+    const target = chip.offsetLeft - bar.clientWidth / 2 + chip.clientWidth / 2;
+    bar.scrollTo({ left: Math.max(0, target), behavior: 'smooth' });
+  }, [activeSlug]);
+
+  // Deep-Link (#slug) beim Laden anspringen.
+  useEffect(() => {
+    if (loading || groups.length === 0) return;
+    const hash = decodeURIComponent(window.location.hash.replace('#', ''));
+    if (hash && sectionRefs.current.has(hash)) {
+      requestAnimationFrame(() => scrollToSlug(hash, false));
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, groups.length]);
+
+  const scrollToSlug = (slug: string, smooth = true) => {
+    const el = sectionRefs.current.get(slug);
+    if (!el) return;
+    setActiveSlug(slug);
+    const y = el.getBoundingClientRect().top + window.scrollY - offset;
+    window.scrollTo({ top: y, behavior: smooth ? 'smooth' : 'auto' });
+    history.replaceState(null, '', `#${slug}`);
   };
 
   if (loading) {
@@ -47,30 +191,92 @@ export default function MenuPage() {
     );
   }
 
-  return (
-    <div className="container mx-auto px-4 py-12">
-      <h1 className="text-4xl font-bold mb-8">{t('menu.title', 'Unsere Speisekarte')}</h1>
-      
-      {products.length === 0 ? (
+  if (groups.length === 0) {
+    return (
+      <div className="container mx-auto px-4 py-12">
+        <h1 className="text-4xl font-bold mb-8">{t('menu.title', 'Unsere Speisekarte')}</h1>
         <div className="text-center py-20">
           <p className="text-xl text-gray-600 mb-6">{t('menu.empty', 'Die Speisekarte ist noch leer')}</p>
           <p className="text-gray-500">{t('menu.empty_hint', 'Hier erscheinen bald Gerichte.')}</p>
         </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {products.map((product: any) => (
-            <ProductCard key={product._id} product={{
-              id: product._id,
-              name: product.name,
-              description: product.description,
-              price: product.basePrice,
-              image: product.image,
-              category: product.category,
-              valentinePromo: product.valentinePromo
-            }} />
-          ))}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="container mx-auto px-4 pt-10 pb-4">
+        <h1 className="text-4xl font-bold">{t('menu.title', 'Unsere Speisekarte')}</h1>
+      </div>
+
+      {/* Klebrige Kategorie-Leiste — top wird per JS auf die Header-Höhe gesetzt */}
+      <div
+        ref={barWrapRef}
+        className="sticky z-40 border-b border-gray-200 bg-white/95 backdrop-blur-sm"
+        style={{ top: headerH }}
+      >
+        <div className="container mx-auto px-4">
+          <div
+            ref={barScrollRef}
+            className="scrollbar-hide flex gap-2 overflow-x-auto py-3"
+            role="tablist"
+            aria-label={t('menu.categories', 'Kategorien')}
+          >
+            {groups.map((g) => {
+              const active = g.slug === activeSlug;
+              return (
+                <button
+                  key={g.slug}
+                  ref={(el) => { if (el) chipRefs.current.set(g.slug, el); }}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => scrollToSlug(g.slug)}
+                  className={`shrink-0 whitespace-nowrap rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
+                    active
+                      ? 'bg-primary-600 text-white shadow-sm'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  {g.name}
+                  <span className={`ml-1.5 ${active ? 'text-white/70' : 'text-gray-400'}`}>{g.products.length}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
-      )}
+      </div>
+
+      <div className="container mx-auto px-4 py-8">
+        {groups.map((g) => (
+          <section
+            key={g.slug}
+            id={g.slug}
+            data-slug={g.slug}
+            ref={(el) => { if (el) sectionRefs.current.set(g.slug, el); }}
+            style={{ scrollMarginTop: offset }}
+            className="mb-12"
+          >
+            <h2 className="mb-6 text-2xl font-bold md:text-3xl">{g.name}</h2>
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
+              {g.products.map((product) => (
+                <ProductCard
+                  key={product._id}
+                  product={{
+                    id: product._id,
+                    name: product.name,
+                    description: product.description,
+                    price: product.basePrice,
+                    image: product.image,
+                    category: product.category,
+                    valentinePromo: product.valentinePromo,
+                  }}
+                />
+              ))}
+            </div>
+          </section>
+        ))}
+      </div>
     </div>
   );
 }
