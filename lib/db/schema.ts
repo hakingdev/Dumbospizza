@@ -47,6 +47,16 @@ export const categories = pgTable(
     icon: text('icon'),
     active: boolean('active').notNull().default(true),
     order: integer('order').notNull().default(0),
+    /**
+     * Подкатегории внутри категории (Pizza → Rund; MakiLove Sushi → Philadelphia, California).
+     * Плоский список меток, а НЕ дерево категорий: товар остаётся в своей категории,
+     * поэтому акции, Mews-синхронизация, чеки и НДС продолжают работать без изменений.
+     * id стабилен — переименование метки не отвязывает товары.
+     */
+    subcategories: jsonb('subcategories')
+      .$type<{ id: string; name: string; order: number }[]>()
+      .notNull()
+      .default([]),
     mewsProductTypeId: text('mews_product_type_id'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -67,6 +77,8 @@ export const products = pgTable(
     name: text('name').notNull(),
     description: text('description').notNull(),
     category: text('category').notNull(), // ref categories.id
+    /** id подкатегории из categories.subcategories той же категории (необязательно) */
+    subcategoryId: text('subcategory_id'),
     basePrice: doublePrecision('base_price').notNull(),
     image: text('image').default('/images/default-product.jpg'),
     available: boolean('available').notNull().default(true),

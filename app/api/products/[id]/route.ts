@@ -12,6 +12,7 @@ import { authOptions, isStaff } from '../../../../lib/auth';
 import { toRefId } from '../../../../lib/normalize-id';
 import { sanitizeProductInput } from '../../../../lib/products/sanitize';
 import { hydrateSizeVariationStates } from '../../../../lib/size-variation-sync';
+import { readSubcategories, resolveSubcategoryId } from '../../../../lib/categories/subcategories';
 
 async function isAuthorized() {
   const session = await getServerSession(authOptions);
@@ -84,6 +85,18 @@ export async function PUT(
       data.optionGroupIds = data.optionGroupIds.map(toRefId).filter(Boolean);
     }
 
+    // Метка подкатегории живёт внутри своей категории: при смене категории
+    // (или присланной метке) сверяем её со списком подкатегорий цели.
+    if ('subcategoryId' in data || data.category != null) {
+      const existing = await Product.findById(params.id);
+      if (!existing) {
+        return NextResponse.json({ success: false, error: 'Product not found' }, { status: 404 });
+      }
+      const categoryId = (data.category as string) ?? toRefId(existing.category);
+      const categoryDoc = categoryId ? await Category.findById(String(categoryId)) : null;
+      const wanted = 'subcategoryId' in data ? data.subcategoryId : existing.subcategoryId;
+      data.subcategoryId = resolveSubcategoryId(readSubcategories(categoryDoc), wanted);
+    }
 
     const product = await Product.findByIdAndUpdate(
       params.id,

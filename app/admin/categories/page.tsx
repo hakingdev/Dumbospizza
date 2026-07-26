@@ -5,21 +5,26 @@ import { Plus, Edit, Eye, EyeOff, Trash2, Save, X, Loader2 } from 'lucide-react'
 import Link from 'next/link';
 import ImageUpload from '../../../components/ImageUpload';
 import { SafeImage } from '../../../components/SafeImage';
+import SubcategoriesEditor from '../../../components/admin/SubcategoriesEditor';
+import { readSubcategories, type Subcategory } from '../../../lib/categories/subcategories';
+
+const emptyForm = {
+  name: '',
+  slug: '',
+  description: '',
+  image: '',
+  icon: '',
+  active: true,
+  order: 0,
+  subcategories: [] as Subcategory[]
+};
 
 export default function CategoriesPage() {
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);
-  const [formData, setFormData] = useState({
-    name: '',
-    slug: '',
-    description: '',
-    image: '',
-    icon: '',
-    active: true,
-    order: 0
-  });
+  const [formData, setFormData] = useState(emptyForm);
 
   useEffect(() => {
     fetchCategories();
@@ -40,15 +45,7 @@ export default function CategoriesPage() {
   };
 
   const handleAdd = () => {
-    setFormData({
-      name: '',
-      slug: '',
-      description: '',
-      image: '',
-      icon: '',
-      active: true,
-      order: categories.length
-    });
+    setFormData({ ...emptyForm, order: categories.length });
     setIsAdding(true);
     setIsEditing(null);
   };
@@ -61,7 +58,8 @@ export default function CategoriesPage() {
       image: category.image || '',
       icon: category.icon || '',
       active: category.active !== false,
-      order: category.order || 0
+      order: category.order || 0,
+      subcategories: readSubcategories(category)
     });
     setIsEditing(category._id);
     setIsAdding(false);
@@ -85,15 +83,7 @@ export default function CategoriesPage() {
         await fetchCategories();
         setIsAdding(false);
         setIsEditing(null);
-        setFormData({
-          name: '',
-          slug: '',
-          description: '',
-          image: '',
-          icon: '',
-          active: true,
-          order: 0
-        });
+        setFormData(emptyForm);
       }
     } catch (error) {
       console.error('Error:', error);
@@ -239,6 +229,13 @@ export default function CategoriesPage() {
               </label>
             </div>
 
+            <div className="col-span-12 border-t pt-4">
+              <SubcategoriesEditor
+                value={formData.subcategories}
+                onChange={(subcategories) => setFormData({ ...formData, subcategories })}
+              />
+            </div>
+
             <div className="col-span-12">
               <button
                 onClick={handleSave}
@@ -259,6 +256,7 @@ export default function CategoriesPage() {
             <tr>
               <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Название</th>
               <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Slug</th>
+              <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Подкатегории</th>
               <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Порядок</th>
               <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Статус</th>
               <th className="px-4 sm:px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Действия</th>
@@ -283,6 +281,9 @@ export default function CategoriesPage() {
                   </div>
                 </td>
                 <td className="px-4 sm:px-6 py-4 text-sm text-gray-500">{category.slug}</td>
+                <td className="px-4 sm:px-6 py-4 text-sm text-gray-500">
+                  {readSubcategories(category).map((s) => s.name).join(', ') || '—'}
+                </td>
                 <td className="px-4 sm:px-6 py-4 text-sm">{category.order || 0}</td>
                 <td className="px-4 sm:px-6 py-4">
                   <span className={`px-2 py-1 text-xs rounded ${

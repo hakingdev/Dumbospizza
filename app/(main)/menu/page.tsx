@@ -4,11 +4,19 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ProductCard } from '../../../components/product-card';
 import { useLanguage } from '../../../lib/contexts/LanguageContext';
 import { loadTranslation } from '../../../lib/i18n';
+import {
+  countBySubcategory,
+  groupBySubcategory,
+  readSubcategories,
+  type Subcategory,
+} from '../../../lib/categories/subcategories';
+import SubcategoryFilter from '../../../components/SubcategoryFilter';
 
 /**
  * Speisekarte: gruppiert nach Kategorie mit klebriger Kategorie-Leiste + Scroll-Spy.
  * Kein Backend-Change nötig — /api/products liefert je Produkt die populierte
- * Kategorie ({ name, slug, order }), daraus bauen wir Reihenfolge und Gruppen.
+ * Kategorie ({ name, slug, order, subcategories }), daraus bauen wir Reihenfolge,
+ * Gruppen und — innerhalb einer Kategorie — die Unterkategorie-Blöcke.
  */
 
 interface CategoryRef {
@@ -17,6 +25,7 @@ interface CategoryRef {
   name?: string;
   slug?: string;
   order?: number;
+  subcategories?: Subcategory[];
 }
 
 interface ApiProduct {
@@ -26,6 +35,7 @@ interface ApiProduct {
   basePrice: number;
   image: string;
   category: CategoryRef | string | null;
+  subcategoryId?: string | null;
   featured?: boolean;
   valentinePromo?: boolean;
 }
@@ -34,26 +44,37 @@ interface Group {
   slug: string;
   name: string;
   order: number;
+  subcategories: Subcategory[];
   products: ApiProduct[];
 }
 
 /** Kategorie eines Produkts robust auflösen (populiertes Objekt ODER slug-String). */
-function readCategory(cat: ApiProduct['category']): { slug: string; name: string; order: number } {
+function readCategory(cat: ApiProduct['category']): {
+  slug: string;
+  name: string;
+  order: number;
+  subcategories: Subcategory[];
+} {
   if (cat && typeof cat === 'object') {
     const slug = cat.slug || cat._id || cat.id || 'weitere';
-    return { slug, name: cat.name || slug, order: typeof cat.order === 'number' ? cat.order : 9999 };
+    return {
+      slug,
+      name: cat.name || slug,
+      order: typeof cat.order === 'number' ? cat.order : 9999,
+      subcategories: readSubcategories(cat),
+    };
   }
-  if (typeof cat === 'string' && cat) return { slug: cat, name: cat, order: 9999 };
-  return { slug: 'weitere', name: 'Weitere', order: 100000 };
+  if (typeof cat === 'string' && cat) return { slug: cat, name: cat, order: 9999, subcategories: [] };
+  return { slug: 'weitere', name: 'Weitere', order: 100000, subcategories: [] };
 }
 
 function groupByCategory(products: ApiProduct[]): Group[] {
   const map = new Map<string, Group>();
   for (const p of products) {
-    const { slug, name, order } = readCategory(p.category);
+    const { slug, name, order, subcategories } = readCategory(p.category);
     let g = map.get(slug);
     if (!g) {
-      g = { slug, name, order, products: [] };
+      g = { slug, name, order, subcategories, products: [] };
       map.set(slug, g);
     }
     g.products.push(p);
@@ -74,6 +95,8 @@ export default function MenuPage() {
   const [t, setT] = useState<any>(() => (k: string, fallback?: string) => fallback ?? k);
 
   const [activeSlug, setActiveSlug] = useState<string>('');
+  // выбранная подкатегория внутри каждой категории: null — все, '' — без метки
+  const [activeSubs, setActiveSubs] = useState<Record<string, string | null>>({});
   const [headerH, setHeaderH] = useState(0);   // Höhe der klebrigen Site-Header
   const [offset, setOffset] = useState(120);   // Header + Leiste (Anker-Versatz)
 
@@ -257,23 +280,45 @@ export default function MenuPage() {
             style={{ scrollMarginTop: offset }}
             className="mb-12"
           >
-            <h2 className="mb-6 text-2xl font-bold md:text-3xl">{g.name}</h2>
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
-              {g.products.map((product) => (
-                <ProductCard
-                  key={product._id}
-                  product={{
-                    id: product._id,
-                    name: product.name,
-                    description: product.description,
-                    price: product.basePrice,
-                    image: product.image,
-                    category: product.category,
-                    valentinePromo: product.valentinePromo,
-                  }}
-                />
+            <h2 className="mb-4 text-2xl font-bold md:text-3xl">{g.name}</h2>
+
+            <SubcategoryFilter
+              subcategories={g.subcategories}
+              counts={countBySubcategory(g.products, g.subcategories, (p) => p.subcategoryId)}
+              value={activeSubs[g.slug] ?? null}
+              onChange={(id) => setActiveSubs((prev) => ({ ...prev, [g.slug]: id }))}
+              allLabel={t('category.all', 'Alle')}
+              restLabel={t('category.other', 'Weitere')}
+            />
+
+            {groupBySubcategory(g.products, g.subcategories, (p) => p.subcategoryId)
+              .filter((sub) => {
+                const active = activeSubs[g.slug] ?? null;
+                return active === null || (sub.id ?? '') === active;
+              })
+              .map((sub) => (
+                <div key={sub.id || 'ohne'} className="mb-8 last:mb-0">
+                  {sub.name && (
+                    <h3 className="mb-4 text-lg font-semibold text-gray-700 md:text-xl">{sub.name}</h3>
+                  )}
+                  <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
+                    {sub.products.map((product) => (
+                      <ProductCard
+                        key={product._id}
+                        product={{
+                          id: product._id,
+                          name: product.name,
+                          description: product.description,
+                          price: product.basePrice,
+                          image: product.image,
+                          category: product.category,
+                          valentinePromo: product.valentinePromo,
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
               ))}
-            </div>
           </section>
         ))}
       </div>

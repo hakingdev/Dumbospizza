@@ -1,6 +1,13 @@
 import { createModel } from '../db/mongoose-compat';
 import { categories } from '../db/schema';
 
+/** Подкатегория внутри категории — метка для группировки товаров (Pizza → Rund). */
+export interface ISubcategory {
+  id: string;
+  name: string;
+  order: number;
+}
+
 export interface ICategory {
   name: string;
   slug: string;
@@ -8,6 +15,7 @@ export interface ICategory {
   icon?: string;
   active: boolean;
   order?: number;
+  subcategories?: ISubcategory[];
   mewsProductTypeId?: string;
   createdAt: Date;
   updatedAt: Date;

@@ -14,6 +14,8 @@ export interface IProduct {
   name: string;
   description: string;
   category: string;
+  /** id подкатегории из categories.subcategories (та же категория) */
+  subcategoryId?: string | null;
   basePrice: number;
   image: string;
   available: boolean;

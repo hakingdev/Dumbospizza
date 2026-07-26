@@ -6,6 +6,7 @@ import { getMewsPosEnabled } from '../../../lib/settings';
 import { fetchMewsPosCategories } from '../../../lib/mews-pos/sync';
 import { getServerSession } from 'next-auth';
 import { authOptions, isStaff } from '../../../lib/auth';
+import { sanitizeSubcategories } from '../../../lib/categories/subcategories';
 
 async function isAuthorized() {
   const session = await getServerSession(authOptions);
@@ -56,7 +57,10 @@ export async function POST(request: NextRequest) {
         .replace(/[^a-z0-9]+/g, '-')
         .replace(/^-|-$/g, '');
     }
-    
+
+    // Подкатегории приходят из формы без id — проставляем и нормализуем порядок.
+    data.subcategories = sanitizeSubcategories(data.subcategories);
+
     const category = new Category(data);
     await category.save();
     

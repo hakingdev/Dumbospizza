@@ -8,6 +8,7 @@ import ImageUpload from '../../../../components/ImageUpload';
 import StatusModal from '../../../../components/admin/StatusModal';
 import ProductSizesEditor from '../../../../components/admin/ProductSizesEditor';
 import ProductOptionGroupsEditor from '../../../../components/admin/ProductOptionGroupsEditor';
+import ProductSubcategorySelect from '../../../../components/admin/ProductSubcategorySelect';
 import VatRateSelector from '../../../../components/admin/VatRateSelector';
 import { FOOD_VAT_RATE } from '../../../../lib/orders/tax';
 
@@ -23,6 +24,7 @@ export default function NewProductPage() {
     name: '',
     description: '',
     category: '',
+    subcategoryId: null as string | null,
     basePrice: 0,
     taxRate: FOOD_VAT_RATE,
     available: true,
@@ -182,7 +184,7 @@ export default function NewProductPage() {
                 <label className="block text-sm font-medium mb-2">Категория</label>
                 <select
                   value={product.category}
-                  onChange={(e) => setProduct({...product, category: e.target.value})}
+                  onChange={(e) => setProduct({...product, category: e.target.value, subcategoryId: null})}
                   className="w-full px-4 py-2 border rounded-lg"
                   required
                 >
@@ -203,6 +205,13 @@ export default function NewProductPage() {
                   )}
                 </select>
               </div>
+
+              <ProductSubcategorySelect
+                categories={categories}
+                category={product.category}
+                value={product.subcategoryId}
+                onChange={(subcategoryId) => setProduct({ ...product, subcategoryId })}
+              />
 
               {(product.sizes as any[]).length === 0 ? (
                 <div>

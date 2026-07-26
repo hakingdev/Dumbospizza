@@ -2,14 +2,18 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Plus, Search, Edit, Eye, EyeOff, Trash2, Loader2 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Plus, Search, Edit, Eye, EyeOff, Trash2, Loader2, Copy } from 'lucide-react';
+import { matchCategory, readSubcategories } from '../../../lib/categories/subcategories';
 
 export default function ProductsPage() {
+  const router = useRouter();
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeCategory, setActiveCategory] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchProducts();
@@ -52,6 +56,30 @@ export default function ProductsPage() {
       fetchProducts();
     } catch (error) {
       console.error('Error:', error);
+    }
+  };
+
+  /**
+   * Копия создаётся скрытой (см. API) и сразу открывается в редакторе:
+   * правим что нужно и включаем «Доступен для заказа».
+   */
+  const duplicateProduct = async (productId: string) => {
+    if (duplicatingId) return;
+    setDuplicatingId(productId);
+    try {
+      const response = await fetch(`/api/products/${productId}/duplicate`, { method: 'POST' });
+      const data = await response.json().catch(() => ({}));
+      const newId = data?.product?._id || data?.product?.id;
+      if (response.ok && data?.success && newId) {
+        router.push(`/admin/products/${newId}/edit`);
+        return;
+      }
+      alert(data?.error || `Не удалось скопировать продукт (код ${response.status})`);
+    } catch (error) {
+      console.error('Error:', error);
+      alert('Нет связи с сервером. Повторите попытку.');
+    } finally {
+      setDuplicatingId(null);
     }
   };
 
@@ -181,6 +209,15 @@ export default function ProductsPage() {
                     <span className="px-2 py-1 text-xs rounded bg-gray-100">
                       {productCategory}
                     </span>
+                    {(() => {
+                      const cat = matchCategory(categories, product.category);
+                      const sub = readSubcategories(cat).find((s) => s.id === product.subcategoryId);
+                      return sub ? (
+                        <span className="ml-1 px-2 py-1 text-xs rounded bg-primary-50 text-primary-700">
+                          {sub.name}
+                        </span>
+                      ) : null;
+                    })()}
                   </td>
                   <td className="px-4 sm:px-6 py-4 text-sm text-gray-900">
                     €{productPrice.toFixed(2)}
@@ -207,6 +244,18 @@ export default function ProductsPage() {
                       >
                         <Edit className="h-5 w-5" />
                       </Link>
+                      <button
+                        onClick={() => duplicateProduct(productId)}
+                        disabled={duplicatingId !== null}
+                        className="text-gray-600 hover:text-primary-600 disabled:opacity-40"
+                        title="Копировать продукт"
+                      >
+                        {duplicatingId === productId ? (
+                          <Loader2 className="h-5 w-5 animate-spin" />
+                        ) : (
+                          <Copy className="h-5 w-5" />
+                        )}
+                      </button>
                       <button
                         onClick={() => deleteProduct(productId)}
                         className="text-gray-600 hover:text-red-600"

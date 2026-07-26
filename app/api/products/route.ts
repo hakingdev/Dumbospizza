@@ -8,6 +8,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions, isStaff } from '../../../lib/auth';
 import { sanitizeProductInput } from '../../../lib/products/sanitize';
 import { hydrateSizeVariationStates } from '../../../lib/size-variation-sync';
+import { readSubcategories, resolveSubcategoryId } from '../../../lib/categories/subcategories';
 
 async function isAuthorized() {
   const session = await getServerSession(authOptions);
@@ -98,6 +99,10 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    // Метка подкатегории имеет смысл только внутри своей категории — чужую снимаем.
+    const categoryDoc = await Category.findById(String(data.category));
+    data.subcategoryId = resolveSubcategoryId(readSubcategories(categoryDoc), data.subcategoryId);
 
     const { Product } = await import('../../../lib/models/product.model');
     

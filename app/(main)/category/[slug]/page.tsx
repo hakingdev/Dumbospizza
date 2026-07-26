@@ -7,6 +7,13 @@ import { ChevronLeft } from 'lucide-react';
 import Link from 'next/link';
 import { useLanguage } from '../../../../lib/contexts/LanguageContext';
 import { loadTranslation } from '../../../../lib/i18n';
+import {
+  countBySubcategory,
+  groupBySubcategory,
+  readSubcategories,
+  type Subcategory,
+} from '../../../../lib/categories/subcategories';
+import SubcategoryFilter from '../../../../components/SubcategoryFilter';
 
 // useParams() liefert das URL-Segment ENKODIERT (z. B. "getr%C3%A4nke" für "getränke").
 // Dekodieren, damit Anzeige korrekt ist und der Vergleich mit dem DB-slug ("getränke") greift.
@@ -24,6 +31,9 @@ export default function CategoryPage() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [categoryName, setCategoryName] = useState<string>(slug);
+  const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
+  // null — показаны все; '' — только товары без подкатегории
+  const [activeSub, setActiveSub] = useState<string | null>(null);
   const { language } = useLanguage();
   const [t, setT] = useState<any>(() => (k: string, fallback?: string) => fallback ?? k);
 
@@ -52,6 +62,7 @@ export default function CategoryPage() {
           const match = (data.categories || []).find((cat: any) => cat.slug === slug);
           if (match) {
             setCategoryName(match.name);
+            setSubcategories(readSubcategories(match));
           }
         }
       } catch (error) {
@@ -90,23 +101,41 @@ export default function CategoryPage() {
       
       <h1 className="mb-8 break-words text-4xl font-bold leading-tight">{categoryTitle}</h1>
       
+      <SubcategoryFilter
+        subcategories={subcategories}
+        counts={countBySubcategory(products as any[], subcategories, (p: any) => p.subcategoryId)}
+        value={activeSub}
+        onChange={setActiveSub}
+        allLabel={t('category.all', 'Alle')}
+        restLabel={t('category.other', 'Weitere')}
+      />
+
       {products.length === 0 ? (
         <div className="text-center py-20">
           <p className="text-xl text-gray-600">{t('category.empty', 'In dieser Kategorie gibt es noch keine Produkte')}</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {products.map((product: any) => (
-            <ProductCard key={product._id} product={{
-              id: product._id,
-              name: product.name,
-              description: product.description,
-              price: product.basePrice,
-              image: product.image,
-              category: product.category
-            }} />
-          ))}
-        </div>
+        groupBySubcategory(products as any[], subcategories, (p: any) => p.subcategoryId)
+          .filter((sub) => activeSub === null || (sub.id ?? '') === activeSub)
+          .map((sub) => (
+            <div key={sub.id || 'ohne'} className="mb-10 last:mb-0">
+              {sub.name && (
+                <h2 className="mb-4 text-xl font-semibold text-gray-700 md:text-2xl">{sub.name}</h2>
+              )}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                {sub.products.map((product: any) => (
+                  <ProductCard key={product._id} product={{
+                    id: product._id,
+                    name: product.name,
+                    description: product.description,
+                    price: product.basePrice,
+                    image: product.image,
+                    category: product.category
+                  }} />
+                ))}
+              </div>
+            </div>
+          ))
       )}
     </div>
   );

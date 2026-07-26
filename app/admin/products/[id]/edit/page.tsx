@@ -8,8 +8,10 @@ import ImageUpload from '../../../../../components/ImageUpload';
 import StatusModal from '../../../../../components/admin/StatusModal';
 import ProductSizesEditor from '../../../../../components/admin/ProductSizesEditor';
 import ProductOptionGroupsEditor from '../../../../../components/admin/ProductOptionGroupsEditor';
+import ProductSubcategorySelect from '../../../../../components/admin/ProductSubcategorySelect';
 import VatRateSelector from '../../../../../components/admin/VatRateSelector';
 import { FOOD_VAT_RATE } from '../../../../../lib/orders/tax';
+import { matchCategory } from '../../../../../lib/categories/subcategories';
 
 export default function EditProductPage() {
   const router = useRouter();
@@ -151,6 +153,13 @@ export default function EditProductPage() {
     return <div>Продукт не найден</div>;
   }
 
+  // GET отдаёт category populate-объектом, а <option> хранит слаг — без приведения
+  // селект показывал бы первую категорию списка вместо реальной.
+  const selectedCategory = matchCategory(categories, product.category);
+  const categorySelectValue = selectedCategory
+    ? selectedCategory.slug || selectedCategory.name?.toLowerCase() || ''
+    : '';
+
   return (
     <div className="max-w-4xl">
       <StatusModal
@@ -194,8 +203,8 @@ export default function EditProductPage() {
               <div>
                 <label className="block text-sm font-medium mb-2">Категория</label>
                 <select
-                  value={product.category}
-                  onChange={(e) => setProduct({...product, category: e.target.value})}
+                  value={categorySelectValue}
+                  onChange={(e) => setProduct({...product, category: e.target.value, subcategoryId: null})}
                   className="w-full px-4 py-2 border rounded-lg"
                 >
                   {categories.map((cat: any) => (
@@ -212,6 +221,13 @@ export default function EditProductPage() {
                   )}
                 </select>
               </div>
+
+              <ProductSubcategorySelect
+                categories={categories}
+                category={product.category}
+                value={product.subcategoryId}
+                onChange={(subcategoryId) => setProduct({ ...product, subcategoryId })}
+              />
 
               {(!product.sizes || product.sizes.length === 0) ? (
                 <div>
