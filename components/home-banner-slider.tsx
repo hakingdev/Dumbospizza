@@ -199,21 +199,29 @@ export function HomeBannerSlider() {
           onKeyDown={onKeyDown}
         >
           <div className="overflow-hidden" ref={emblaRef}>
-            <div className="flex gap-4">
+            {/* Расстояние между слайдами — pl-4 у каждого слайда, а не gap у
+                контейнера. При loop Embla переставляет слайды сдвигом на ширину
+                контейнера, и CSS-gap на стыке «последний → первый» не
+                существует: один переход шёл вплотную, без отступа. Отрицательный
+                -ml-4 съедает лишний padding у первого слайда. */}
+            <div className="-ml-4 flex">
               {banners.map((banner, i) => (
                 <div
                   key={banner._id}
-                  // 16:9 на всех брейкпоинтах — ровно в том формате, в котором
-                  // баннеры и рисуются (1600×900). Раньше слайд был 3:2 на
-                  // мобильном и 2:1 от sm: object-cover подгонял картинку под
-                  // чужую пропорцию и срезал по 7.8% слева и справа — вместе с
-                  // вёрстанным в макет заголовком («AB 25 €» терял начало).
-                  className="aspect-video min-w-0 flex-[0_0_88%] sm:flex-[0_0_70%] lg:flex-[0_0_55%]"
+                  className="min-w-0 flex-[0_0_88%] pl-4 sm:flex-[0_0_70%] lg:flex-[0_0_55%]"
                   role="group"
                   aria-roledescription="slide"
                   aria-label={`${i + 1} von ${banners.length}`}
                 >
-                  <BannerCard banner={banner} isFirst={i === 0} />
+                  {/* 16:9 — ровно в том формате, в котором баннеры и рисуются
+                      (1600×900). Раньше слайд был 3:2 на мобильном и 2:1 от sm:
+                      object-cover подгонял картинку под чужую пропорцию и срезал
+                      по 7.8% слева и справа — вместе с вёрстанным в макет
+                      заголовком («AB 25 €» терял начало). Пропорция висит на
+                      внутреннем блоке, чтобы pl-4 её не искажал. */}
+                  <div className="aspect-video">
+                    <BannerCard banner={banner} isFirst={i === 0} />
+                  </div>
                 </div>
               ))}
             </div>
