@@ -46,7 +46,7 @@ export interface ModelConfig {
   preSave?: (doc: any, isNew: boolean) => Promise<void> | void;
 }
 
-interface ModelRef {
+export interface ModelRef {
   table: AnyTable;
   columns: Record<string, PgColumn>;
   colKeys: string[];
@@ -86,11 +86,32 @@ function leafCondition(col: PgColumn, val: any): SQL | undefined {
     for (const [op, v] of Object.entries(val)) {
       switch (op) {
         case '$in':
-          conds.push(inArray(col, v as any[]));
+        case '$nin': {
+          // NULL внутри списка: в SQL сравнение с NULL даёт UNKNOWN, поэтому
+          // `col NOT IN (NULL, '')` не истинно НИКОГДА и молча отсекает все
+          // строки (так список SMS-получателей и рассылки всегда был пуст).
+          // Mongo-семантику воспроизводим явными IS (NOT) NULL.
+          const list = Array.isArray(v) ? v : [v];
+          const values = list.filter((x) => x !== null && x !== undefined);
+          const withNull = values.length !== list.length;
+          if (op === '$in') {
+            // {$in:[null,'a']} → col = 'a' OR col IS NULL; {$in:[]} → ничего.
+            const parts = [
+              values.length ? inArray(col, values) : undefined,
+              withNull ? isNull(col) : undefined,
+            ].filter(Boolean) as SQL[];
+            conds.push(parts.length ? or(...parts) : sql`false`);
+          } else {
+            // {$nin:[null,'']} → col <> '' AND col IS NOT NULL. Без null в списке
+            // Mongo пропускает и отсутствующее поле → OR IS NULL.
+            conds.push(
+              withNull
+                ? and(notInArray(col, values), isNotNull(col))
+                : or(notInArray(col, values), isNull(col))
+            );
+          }
           break;
-        case '$nin':
-          conds.push(notInArray(col, v as any[]));
-          break;
+        }
         case '$gte':
           conds.push(gte(col, v as any));
           break;
@@ -126,7 +147,8 @@ function leafCondition(col: PgColumn, val: any): SQL | undefined {
   return eq(col, val);
 }
 
-function buildWhere(model: ModelRef, query: AnyRecord = {}): SQL | undefined {
+/** Экспорт для тестов: сборка WHERE из Mongo-подобного фильтра. */
+export function buildWhere(model: ModelRef, query: AnyRecord = {}): SQL | undefined {
   const conds: (SQL | undefined)[] = [];
   for (const [key, val] of Object.entries(query)) {
     if (key === '$or') {
