@@ -138,6 +138,65 @@ const initialState: CartState = {
   },
 };
 
+/**
+ * Активен ли скидочный КОД (Gutschein-/Aktionscode), введённый клиентом.
+ *
+ * Правило «ENTWEDER Code ODER Punkte»: код и списание Treuepunkte не
+ * комбинируются — клиент выбирает одно из двух. Код имеет приоритет
+ * (он применяется последним действием пользователя), поэтому при активном
+ * коде списание баллов принудительно обнуляется — см. calculateTotals.
+ */
+export function isDiscountCodeActive(
+  state: Pick<CartState, 'couponCode' | 'promotionPromoCode'>
+): boolean {
+  return !!state.couponCode || !!state.promotionPromoCode;
+}
+
+/**
+ * Сколько баллов реально списывается с учётом приоритета «код > баллы».
+ * Единственный источник истины для всех проверок на клиенте.
+ */
+export function effectiveLoyaltyPoints(
+  state: Pick<CartState, 'couponCode' | 'promotionPromoCode' | 'loyaltyPointsToRedeem'>
+): number {
+  return isDiscountCodeActive(state) ? 0 : state.loyaltyPointsToRedeem || 0;
+}
+
+/**
+ * Подавлены ли ДЕНЕЖНЫЕ акции (percent/fixed/bogo) для текущей корзины.
+ *
+ * Иерархия скидок — ровно одна «денежная» скидка на заказ:
+ *   Gutscheincode  >  Treuepunkte  >  automatisches Angebot
+ * Купон подавляет акции (как и раньше), списание баллов — тоже: «ODER Angebot
+ * ODER Punkte». Gratis-Artikel не денежная скидка и остаётся всегда.
+ */
+export function areMoneyPromotionsSuppressed(
+  state: Pick<CartState, 'couponCode' | 'promotionPromoCode' | 'loyaltyPointsToRedeem'>
+): boolean {
+  return !!state.couponCode || effectiveLoyaltyPoints(state) > 0;
+}
+
+/** Free delivery for orders >= 30 euros */
+const FREE_DELIVERY_THRESHOLD = 30;
+
+/**
+ * Сумма заказа, от которой считается лимит списания баллов.
+ *
+ * Баллы ВЫТЕСНЯЮТ денежные акции, поэтому база — заказ БЕЗ них (иначе скидка
+ * акции занижала бы лимит и могла ложно «не дотянуть» до minOrderToRedeem).
+ * Та же формула, что на сервере в /api/orders.
+ */
+export function loyaltyRedeemBaseAmount(state: CartState): number {
+  const subtotal = state.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const fee =
+    state.deliveryType === 'pickup'
+      ? 0
+      : subtotal >= FREE_DELIVERY_THRESHOLD
+        ? 0
+        : state.deliveryFee;
+  return Math.max(subtotal + fee - (state.couponDiscount || 0), 0);
+}
+
 // Helper function to calculate cart totals
 const calculateTotals = (state: CartState): Partial<CartState> => {
   const subtotal = state.items.reduce(
@@ -147,18 +206,25 @@ const calculateTotals = (state: CartState): Partial<CartState> => {
 
   const tax = 0;
 
-  const loyaltyPointsDiscount = state.loyaltyPointsToRedeem * 1; // 1 балл = 1 € (pointValueEuro)
+  // «ENTWEDER Code ODER Punkte»: при активном Gutschein-/Aktionscode баллы не
+  // списываются. Инвариант держим здесь (а не в отдельных case'ах), потому что
+  // calculateTotals проходит и по всем действиям, и по гидрации из localStorage —
+  // старая корзина с обеими скидками нормализуется сама.
+  const loyaltyPointsToRedeem = effectiveLoyaltyPoints(state);
+  const loyaltyPointsDiscount = loyaltyPointsToRedeem * 1; // 1 балл = 1 € (pointValueEuro)
   const couponDiscount = state.couponDiscount || 0;
-  // Купон и денежная акция не комбинируются: при активном купоне денежные акции
-  // (включая BOGO-награду) не учитываем в total — Gratis-Artikel не даёт скидки и так.
-  // (Серверный расчёт уже подавляет их; это убирает мгновенный двойной вычет в UI
-  //  до возврата пересчёта.)
-  const couponActive = !!state.couponCode;
-  const bogoSecondTotal = couponActive ? 0 : getBogoPickerMerchandise(state.promotionCalculation);
-  const promotionDiscount = couponActive ? 0 : getAppliedPromotionDiscount(state.promotionCalculation);
+  // Денежная акция не комбинируется ни с купоном, ни со списанием баллов: тогда
+  // акции (включая BOGO-награду) не учитываем в total — Gratis-Artikel не даёт
+  // скидки и так. (Серверный расчёт уже подавляет их; это убирает мгновенный
+  //  двойной вычет в UI до возврата пересчёта.)
+  const moneyPromotionsOff = areMoneyPromotionsSuppressed(state);
+  const bogoSecondTotal = moneyPromotionsOff
+    ? 0
+    : getBogoPickerMerchandise(state.promotionCalculation);
+  const promotionDiscount = moneyPromotionsOff
+    ? 0
+    : getAppliedPromotionDiscount(state.promotionCalculation);
 
-  // Free delivery for orders >= 30 euros
-  const FREE_DELIVERY_THRESHOLD = 30;
   const merchandiseForDelivery = subtotal + bogoSecondTotal;
   const effectiveDeliveryFee =
     state.deliveryType === 'delivery' && merchandiseForDelivery >= FREE_DELIVERY_THRESHOLD
@@ -180,6 +246,7 @@ const calculateTotals = (state: CartState): Partial<CartState> => {
   return {
     subtotal,
     tax,
+    loyaltyPointsToRedeem,
     loyaltyPointsDiscount,
     deliveryFee: effectiveDeliveryFee,
     total,
@@ -524,10 +591,11 @@ export function cartReducer(state: CartState, action: CartAction): CartState {
           selectedFreeGifts = fromResolvedGifts;
         }
 
-        if (state.couponCode) {
-          // Купон подавляет денежные акции (BOGO) → bogoSecondItems приходит пустым.
-          // НЕ затираем выбор второго товара (вместе с привязкой к пицце), чтобы он
-          // вернулся после удаления купона.
+        if (areMoneyPromotionsSuppressed(state)) {
+          // Купон ИЛИ списанные баллы подавляют денежные акции (BOGO) →
+          // bogoSecondItems приходит пустым. НЕ затираем выбор второго товара
+          // (вместе с привязкой к пицце), чтобы он вернулся после снятия
+          // купона/баллов.
           selectedBogoSecond = state.selectedBogoSecond;
         } else {
           // Сверяем выбор клиента с движком (источник истины), СОХРАНЯЯ привязку каждой
@@ -811,8 +879,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         selectedFreeGifts: Object.entries(state.selectedFreeGifts).map(
           ([promotionId, productId]) => ({ promotionId, productId })
         ),
-        // Купон активен → денежные акции подавляются (несовместимы с купоном).
-        couponActive: !!state.couponCode,
+        // Купон ИЛИ списание баллов → денежные акции подавляются (одна скидка на заказ).
+        excludeMoneyDiscounts: areMoneyPromotionsSuppressed(state),
       });
       // Inzwischen wurde eine neuere Neuberechnung gestartet → dieses Ergebnis verwerfen.
       if (isStale()) return;
@@ -833,6 +901,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     state.selectedBogoSecond,
     state.selectedFreeGifts,
     state.couponCode,
+    state.loyaltyPointsToRedeem,
   ]);
 
   useEffect(() => {

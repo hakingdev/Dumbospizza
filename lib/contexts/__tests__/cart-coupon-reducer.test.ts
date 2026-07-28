@@ -100,6 +100,123 @@ describe('cartReducer / купон и промокод не трогают со�
   });
 });
 
+/**
+ * «ENTWEDER Code ODER Punkte»: Gutschein-/Aktionscode и списание Treuepunkte
+ * взаимоисключающие. Приоритет у кода (последнее осознанное действие клиента),
+ * баллы при активном коде обнуляются.
+ */
+describe('cartReducer / код и Treuepunkte не комбинируются', () => {
+  const withPoints = () =>
+    baseState({
+      items: [{ id: 'reg', productId: 'reg', name: 'Pizza', price: 20, quantity: 1 }],
+      loyaltyPointsToRedeem: 5,
+      loyaltyPointsDiscount: 5,
+    });
+
+  it('APPLY_COUPON снимает списанные баллы (двойной скидки нет)', () => {
+    const next = cartReducer(withPoints(), {
+      type: 'APPLY_COUPON',
+      payload: { code: 'TEAM', discount: 4 },
+    });
+    expect(next.loyaltyPointsToRedeem).toBe(0);
+    expect(next.loyaltyPointsDiscount).toBe(0);
+    expect(next.total).toBeCloseTo(20 - 4, 2); // только купон
+  });
+
+  it('SET_PROMOTION_PROMO_CODE (Aktionscode) тоже снимает баллы', () => {
+    const next = cartReducer(withPoints(), {
+      type: 'SET_PROMOTION_PROMO_CODE',
+      payload: 'TEAM',
+    });
+    expect(next.loyaltyPointsToRedeem).toBe(0);
+    expect(next.loyaltyPointsDiscount).toBe(0);
+  });
+
+  it('SET_LOYALTY_POINTS при активном купоне игнорируется', () => {
+    const state = baseState({
+      items: [{ id: 'reg', productId: 'reg', name: 'Pizza', price: 20, quantity: 1 }],
+      couponCode: 'TEAM',
+      couponDiscount: 4,
+    });
+    const next = cartReducer(state, { type: 'SET_LOYALTY_POINTS', payload: 5 });
+    expect(next.loyaltyPointsToRedeem).toBe(0);
+    expect(next.total).toBeCloseTo(20 - 4, 2);
+  });
+
+  it('после REMOVE_COUPON баллы снова можно списать', () => {
+    const state = baseState({
+      items: [{ id: 'reg', productId: 'reg', name: 'Pizza', price: 20, quantity: 1 }],
+      couponCode: 'TEAM',
+      couponDiscount: 4,
+    });
+    const removed = cartReducer(state, { type: 'REMOVE_COUPON' });
+    const next = cartReducer(removed, { type: 'SET_LOYALTY_POINTS', payload: 5 });
+    expect(next.loyaltyPointsToRedeem).toBe(5);
+    expect(next.total).toBeCloseTo(20 - 5, 2);
+  });
+
+  it('баллы подавляют денежную акцию (ODER Angebot ODER Punkte)', () => {
+    const state = baseState({
+      items: [{ id: 'reg', productId: 'reg', name: 'Pizza', price: 20, quantity: 1 }],
+      promotionCalculation: calc({
+        orderDiscountTotal: 3,
+        promotionDiscountTotal: 3,
+        appliedPromotions: [
+          { promotionId: 'p1', promotionName: 'Rabatt', promotionType: 'percent_discount', savedAmount: 3 },
+        ],
+      }),
+    });
+    // без баллов скидка акции действует
+    expect(cartReducer(state, { type: 'SET_LOYALTY_POINTS', payload: 0 }).total).toBeCloseTo(17, 2);
+    // с баллами акция подавлена: −5 € баллами вместо −3 € акции
+    const withPoints = cartReducer(state, { type: 'SET_LOYALTY_POINTS', payload: 5 });
+    expect(withPoints.loyaltyPointsToRedeem).toBe(5);
+    expect(withPoints.total).toBeCloseTo(15, 2);
+  });
+
+  it('снятие баллов возвращает скидку акции', () => {
+    const state = baseState({
+      items: [{ id: 'reg', productId: 'reg', name: 'Pizza', price: 20, quantity: 1 }],
+      loyaltyPointsToRedeem: 5,
+      promotionCalculation: calc({
+        orderDiscountTotal: 3,
+        promotionDiscountTotal: 3,
+        appliedPromotions: [
+          { promotionId: 'p1', promotionName: 'Rabatt', promotionType: 'percent_discount', savedAmount: 3 },
+        ],
+      }),
+    });
+    const next = cartReducer(state, { type: 'SET_LOYALTY_POINTS', payload: 0 });
+    expect(next.total).toBeCloseTo(17, 2);
+  });
+
+  it('баллы активны → выбор BOGO-награды сохраняется (вернётся после снятия баллов)', () => {
+    const state = baseState({
+      loyaltyPointsToRedeem: 5,
+      selectedBogoSecond: { promo1: [{ itemId: 'A', productId: 'p2' }] },
+    });
+    const next = cartReducer(state, {
+      type: 'SET_PROMOTION_CALCULATION',
+      payload: calc({ bogoSecondItems: [] }),
+    });
+    expect(next.selectedBogoSecond).toEqual({ promo1: [{ itemId: 'A', productId: 'p2' }] });
+  });
+
+  it('корзина из localStorage с обеими скидками нормализуется при пересчёте', () => {
+    // старый сохранённый state: и купон, и баллы одновременно
+    const legacy = baseState({
+      items: [{ id: 'reg', productId: 'reg', name: 'Pizza', price: 20, quantity: 1 }],
+      couponCode: 'TEAM',
+      couponDiscount: 4,
+      loyaltyPointsToRedeem: 5,
+      loyaltyPointsDiscount: 5,
+    });
+    const next = cartReducer(legacy, { type: 'SET_DELIVERY_TYPE', payload: 'pickup' });
+    expect(next.loyaltyPointsToRedeem).toBe(0);
+    expect(next.total).toBeCloseTo(20 - 4, 2);
+  });
+});
+
 describe('cartReducer / SET_PROMOTION_CALCULATION — сохранение выбора', () => {
   it('купон активен → BOGO подавлен (пустой bogoSecondItems), но выбор второго товара сохраняется', () => {
     const state = baseState({

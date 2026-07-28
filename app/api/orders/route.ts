@@ -36,6 +36,9 @@ import { getLoyaltyRules, computeMaxRedeemablePoints } from '../../../lib/loyalt
 import { hydrateSizeVariationStates } from '../../../lib/size-variation-sync';
 import { hasConfiguredRegularSizes } from '../../../lib/product-pricing';
 
+/** Бесплатная доставка от 30 € (та же граница, что в корзине на клиенте). */
+const FREE_DELIVERY_THRESHOLD = 30;
+
 function normalizeSizeKey(value: unknown): string {
   return String(value || '')
     .trim()
@@ -297,13 +300,39 @@ export async function POST(request: NextRequest) {
 
     const promotionItems = Array.isArray(orderData.items) ? orderData.items : [];
 
+    // --- Решение о списании баллов (нужно ДО расчёта акций) ---
+    // Иерархия скидок, ровно одна на заказ: Code > Treuepunkte > Angebot.
+    // Баллы вытесняют денежные акции, поэтому «будут ли баллы» надо знать заранее.
+    // База считается по сценарию БЕЗ акций (они подавлены) — та же формула, что
+    // в клиентском loyaltyRedeemBaseAmount, поэтому клиент и сервер не расходятся.
+    const customerSession = getCustomerSession(request);
+    const requestedPoints = Number(orderData.loyaltyPointsToRedeem) || 0;
+    const discountCodeActive = couponDiscount > 0 || !!promotionPromoCode;
+    let loyaltyRules: Awaited<ReturnType<typeof getLoyaltyRules>> | null = null;
+    let loyaltyBalance = 0;
+    let pointsIntended = false;
+    if (customerSession && requestedPoints > 0 && !discountCodeActive) {
+      loyaltyRules = await getLoyaltyRules();
+      loyaltyBalance = await getBalance(customerSession.userId);
+      const feeWithoutPromotions =
+        orderData.deliveryType === 'pickup'
+          ? 0
+          : calculatedSubtotal >= FREE_DELIVERY_THRESHOLD
+            ? 0
+            : orderData.deliveryFee || 0;
+      const baseAmount = Math.max(calculatedSubtotal + feeWithoutPromotions - couponDiscount, 0);
+      pointsIntended =
+        computeMaxRedeemablePoints(loyaltyBalance, baseAmount, loyaltyRules) > 0;
+    }
+
     let promotionCalc = await calculateOrderPromotions(promotionItems, {
       channel: orderData.channel === 'app' ? 'app' : 'web',
       promoCode: promotionPromoCode || undefined,
       phoneNumber: orderData.phoneNumber,
       selectedBogoSecond,
-      // AC #7: при активном купоне денежные акции не комбинируем (никогда обе скидки).
-      excludeMoneyDiscounts: couponDiscount > 0,
+      // AC #7: при активном купоне ИЛИ списании баллов денежные акции не
+      // комбинируем (никогда две денежные скидки).
+      excludeMoneyDiscounts: couponDiscount > 0 || pointsIntended,
     });
 
     const giftProductIds = new Set<string>();
@@ -346,7 +375,6 @@ export async function POST(request: NextRequest) {
       0
     );
     const merchandiseSubtotal = calculatedSubtotal + bogoMerchandise;
-    const FREE_DELIVERY_THRESHOLD = 30;
     const effectiveDeliveryFee =
       orderData.deliveryType === 'delivery' && merchandiseSubtotal >= FREE_DELIVERY_THRESHOLD
         ? 0
@@ -393,14 +421,18 @@ export async function POST(request: NextRequest) {
     );
     let loyaltyPointsUsed = 0;
     let loyaltyPointsDiscount = 0;
-    const customerSession = getCustomerSession(request);
-    const requestedPoints = Number(orderData.loyaltyPointsToRedeem) || 0;
-    if (customerSession && requestedPoints > 0) {
-      const rules = await getLoyaltyRules();
-      const balance = await getBalance(customerSession.userId);
-      const maxRedeemable = computeMaxRedeemablePoints(balance, amountBeforePoints, rules);
+    // Решение (pointsIntended) принято выше — при активном коде баллы не
+    // списываются вовсе (код выигрывает, баланс клиента не трогаем), а при
+    // списании баллов денежные акции уже подавлены, т.е. amountBeforePoints
+    // равен базе из pointsIntended-проверки → maxRedeemable > 0.
+    if (pointsIntended && loyaltyRules) {
+      const maxRedeemable = computeMaxRedeemablePoints(
+        loyaltyBalance,
+        amountBeforePoints,
+        loyaltyRules
+      );
       loyaltyPointsUsed = Math.min(requestedPoints, maxRedeemable);
-      loyaltyPointsDiscount = loyaltyPointsUsed * rules.pointValueEuro;
+      loyaltyPointsDiscount = loyaltyPointsUsed * loyaltyRules.pointValueEuro;
     }
 
     const calculatedTotal = Math.max(amountBeforePoints - loyaltyPointsDiscount, 0);

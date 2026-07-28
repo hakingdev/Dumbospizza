@@ -7,33 +7,33 @@ import PromoConflictDialog, { PROMO_CONFLICT_MESSAGE } from '../PromoConflictDia
 describe('PromoConflictDialog', () => {
   it('не рендерится, когда закрыт', () => {
     render(
-      <PromoConflictDialog open={false} onKeepAngebot={() => {}} onApplyPromoCode={() => {}} />
+      <PromoConflictDialog open={false} onKeep={() => {}} onApply={() => {}} />
     );
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('показывает текст ТЗ и обе кнопки выбора', () => {
     render(
-      <PromoConflictDialog open onKeepAngebot={() => {}} onApplyPromoCode={() => {}} />
+      <PromoConflictDialog open onKeep={() => {}} onApply={() => {}} />
     );
     expect(screen.getByText(PROMO_CONFLICT_MESSAGE)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Angebot behalten' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Promo-Code anwenden' })).toBeInTheDocument();
   });
 
-  it('«Angebot behalten» вызывает onKeepAngebot', async () => {
+  it('«Angebot behalten» вызывает onKeep', async () => {
     const onKeep = vi.fn();
     const onApply = vi.fn();
-    render(<PromoConflictDialog open onKeepAngebot={onKeep} onApplyPromoCode={onApply} />);
+    render(<PromoConflictDialog open onKeep={onKeep} onApply={onApply} />);
     await userEvent.click(screen.getByRole('button', { name: 'Angebot behalten' }));
     expect(onKeep).toHaveBeenCalledTimes(1);
     expect(onApply).not.toHaveBeenCalled();
   });
 
-  it('«Promo-Code anwenden» вызывает onApplyPromoCode', async () => {
+  it('«Promo-Code anwenden» вызывает onApply', async () => {
     const onKeep = vi.fn();
     const onApply = vi.fn();
-    render(<PromoConflictDialog open onKeepAngebot={onKeep} onApplyPromoCode={onApply} />);
+    render(<PromoConflictDialog open onKeep={onKeep} onApply={onApply} />);
     await userEvent.click(screen.getByRole('button', { name: 'Promo-Code anwenden' }));
     expect(onApply).toHaveBeenCalledTimes(1);
     expect(onKeep).not.toHaveBeenCalled();

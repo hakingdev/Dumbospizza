@@ -34,8 +34,11 @@ export async function POST(request: NextRequest) {
       typeof body.promoCode === 'string' ? body.promoCode.trim().toUpperCase() : undefined;
     const phoneNumber =
       typeof body.phoneNumber === 'string' ? body.phoneNumber.trim() : undefined;
-    // Активен купон → денежные акции (percent/fixed/bogo) не комбинируем; Gratis остаётся.
-    const couponActive = body.couponActive === true;
+    // Активен купон ИЛИ списаны Treuepunkte → денежные акции (percent/fixed/bogo)
+    // не комбинируем; Gratis остаётся. `couponActive` — легаси-имя того же флага
+    // (его ещё может слать мобильное приложение).
+    const excludeMoneyDiscounts =
+      body.excludeMoneyDiscounts === true || body.couponActive === true;
     const parseSelections = (arr: unknown) =>
       Array.isArray(arr)
         ? arr.filter(
@@ -80,12 +83,13 @@ export async function POST(request: NextRequest) {
       selectedBogoSecond,
       bogoCatalog,
       giftCatalog,
-      excludeMoneyDiscounts: couponActive,
+      excludeMoneyDiscounts,
     });
 
-    // Доступна ли денежная акция (для подсказки о конфликте, когда купон активен).
-    // Если купон не активен — она уже отражена в calculation; иначе считаем отдельным проходом.
-    const moneyPromotionAvailable = couponActive
+    // Доступна ли денежная акция (для подсказки о конфликте, когда активен купон
+    // или списаны баллы). Если акции не подавлены — она уже отражена в calculation;
+    // иначе считаем отдельным проходом.
+    const moneyPromotionAvailable = excludeMoneyDiscounts
       ? hasActiveMoneyDiscount(
           calculatePromotions(items, promotions as any, {
             channel,

@@ -3,7 +3,7 @@ import { useLanguage } from '../../lib/contexts/LanguageContext';
 import { loadTranslation } from '../../lib/i18n';
 import { validateCoupon, validatePromotionCode } from '../../lib/api-client';
 import { Loader2, CheckCircle, XCircle } from 'lucide-react';
-import PromoConflictDialog from './PromoConflictDialog';
+import PromoConflictDialog, { type PromoConflictKind } from './PromoConflictDialog';
 import { NoTranslate } from '../NoTranslate';
 
 interface CouponInputProps {
@@ -16,6 +16,11 @@ interface CouponInputProps {
   angebotConflictActive?: boolean;
   /** Название конфликтующей акции (для диалога). */
   angebotName?: string;
+  /**
+   * Сколько Treuepunkte уже списано. Правило «ENTWEDER Code ODER Punkte»:
+   * применение кода снимет баллы, поэтому спрашиваем клиента.
+   */
+  appliedLoyaltyPoints?: number;
   /** Controlled: применённый код из источника истины (CartContext, после hydration). */
   appliedCode?: string;
   /** Controlled: сумма скидки купона (€) из CartContext. */
@@ -32,6 +37,7 @@ export default function CouponInput({
   onPromotionCodeRemoved,
   angebotConflictActive = false,
   angebotName,
+  appliedLoyaltyPoints = 0,
   appliedCode,
   appliedDiscount = 0,
   appliedDiscountType,
@@ -43,8 +49,12 @@ export default function CouponInput({
   const [error, setError] = useState<string | null>(null);
   const [appliedCoupon, setAppliedCoupon] = useState<any>(null);
   const [appliedPromotionCode, setAppliedPromotionCode] = useState<string | null>(null);
-  // Купон, прошедший валидацию, но ожидающий решения по конфликту с акцией.
+  // Купон, прошедший валидацию, но ожидающий решения по конфликту с акцией/баллами.
   const [pendingCoupon, setPendingCoupon] = useState<any>(null);
+  // Промокод акции, ожидающий решения по конфликту с баллами.
+  const [pendingPromotionCode, setPendingPromotionCode] = useState<string | null>(null);
+  // Что именно конфликтует с кодом: Angebot или списанные Treuepunkte.
+  const [conflictKind, setConflictKind] = useState<PromoConflictKind>('coupon-vs-angebot');
   // Счётчик запросов: ответ от устаревшего submit не должен перезаписывать новый state.
   const reqSeq = useRef(0);
 
@@ -70,6 +80,9 @@ export default function CouponInput({
     }
   };
 
+  // Списаны баллы → любой код (Gutschein или Aktionscode) конфликтует с ними.
+  const pointsConflictActive = appliedLoyaltyPoints > 0;
+
   // Купон найден, но точно невалиден → показываем конкретную ошибку и НЕ пробуем промокод.
   const STOP_REASONS = ['expired', 'inactive', 'usage_limit', 'min_order', 'not_started'];
 
@@ -86,9 +99,15 @@ export default function CouponInput({
       if (seq !== reqSeq.current) return; // устаревший ответ — игнорируем
 
       if (couponRes.success) {
-        // Валидный купон: при конфликте с денежной акцией — диалог выбора,
-        // иначе применяем. Никогда не показываем здесь «expired».
+        // Валидный купон: при конфликте с баллами или с денежной акцией — диалог
+        // выбора, иначе применяем. Никогда не показываем здесь «expired».
+        if (pointsConflictActive) {
+          setConflictKind('coupon-vs-points');
+          setPendingCoupon(couponRes.coupon);
+          return;
+        }
         if (angebotConflictActive) {
+          setConflictKind('coupon-vs-angebot');
           setPendingCoupon(couponRes.coupon);
           return;
         }
@@ -108,6 +127,12 @@ export default function CouponInput({
       if (seq !== reqSeq.current) return; // устаревший ответ
 
       if (promoRes?.success) {
+        // Аktionscode — тоже «Code»: с уже списанными баллами не комбинируется.
+        if (pointsConflictActive) {
+          setConflictKind('coupon-vs-points');
+          setPendingPromotionCode(promoRes.promotionCode.code);
+          return;
+        }
         setAppliedCoupon(null);
         setAppliedPromotionCode(promoRes.promotionCode.code);
         onPromotionCodeApplied?.(promoRes.promotionCode.code);
@@ -133,19 +158,30 @@ export default function CouponInput({
     onPromotionCodeRemoved?.();
   };
 
-  // Конфликт: пользователь решил применить промокод вместо акции.
+  // Конфликт: пользователь решил применить код вместо акции / вместо баллов.
+  // Баллы снимает CartContext (инвариант «ENTWEDER Code ODER Punkte»).
   const handleApplyPendingCoupon = () => {
     const coupon = pendingCoupon;
+    const promotionCode = pendingPromotionCode;
     setPendingCoupon(null);
-    if (!coupon) return;
-    setAppliedCoupon(coupon);
-    setAppliedPromotionCode(null);
-    onCouponApplied(coupon);
+    setPendingPromotionCode(null);
+    if (coupon) {
+      setAppliedCoupon(coupon);
+      setAppliedPromotionCode(null);
+      onCouponApplied(coupon);
+      return;
+    }
+    if (promotionCode) {
+      setAppliedCoupon(null);
+      setAppliedPromotionCode(promotionCode);
+      onPromotionCodeApplied?.(promotionCode);
+    }
   };
 
-  // Конфликт: пользователь решил оставить акцию — купон не применяется.
+  // Конфликт: пользователь решил оставить акцию / баллы — код не применяется.
   const handleKeepAngebot = () => {
     setPendingCoupon(null);
+    setPendingPromotionCode(null);
     setCouponCode('');
   };
 
@@ -213,11 +249,13 @@ export default function CouponInput({
       )}
 
       <PromoConflictDialog
-        open={!!pendingCoupon}
+        open={!!pendingCoupon || !!pendingPromotionCode}
+        kind={conflictKind}
         angebotName={angebotName}
-        promoCode={pendingCoupon?.code}
-        onKeepAngebot={handleKeepAngebot}
-        onApplyPromoCode={handleApplyPendingCoupon}
+        appliedPoints={appliedLoyaltyPoints}
+        promoCode={pendingCoupon?.code || pendingPromotionCode || undefined}
+        onKeep={handleKeepAngebot}
+        onApply={handleApplyPendingCoupon}
       />
     </div>
   );

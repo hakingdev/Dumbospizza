@@ -267,6 +267,7 @@ export default function CartPage() {
                 onPromotionCodeRemoved={() => setPromotionPromoCode(undefined)}
                 angebotConflictActive={state.moneyPromotionAvailable}
                 angebotName={conflictAngebotName}
+                appliedLoyaltyPoints={state.loyaltyPointsToRedeem || 0}
               />
 
               {/* Купон активен, но появилась денежная акция — выбор пользователя */}

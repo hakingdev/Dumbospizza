@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Star, Loader2 } from 'lucide-react';
 import { NoTranslate } from '../NoTranslate';
+import PromoConflictDialog from '../cart/PromoConflictDialog';
 
 interface LoyaltyRules {
   redeemMaxShare: number;
@@ -17,6 +18,17 @@ interface LoyaltyRedeemProps {
   appliedPoints: number;
   /** Применить/убрать баллы. */
   onChange: (points: number) => void;
+  /** Активен Gutschein-/Aktionscode — баллы с ним не комбинируются. */
+  codeActive?: boolean;
+  /** Активный код (для подсказки). */
+  activeCode?: string;
+  /**
+   * Для корзины доступна ДЕНЕЖНАЯ акция (Rabatt/2+1). Баллы её подавляют, поэтому
+   * перед списанием спрашиваем клиента: «ODER Angebot ODER Punkte».
+   */
+  angebotAvailable?: boolean;
+  /** Название конфликтующей акции (для диалога). */
+  angebotName?: string;
   /** Подпись (i18n) с фолбэками. */
   t: (key: string, fallback?: string) => string;
 }
@@ -33,12 +45,18 @@ export default function LoyaltyRedeem({
   orderAmountBeforePoints,
   appliedPoints,
   onChange,
+  codeActive = false,
+  activeCode,
+  angebotAvailable = false,
+  angebotName,
   t,
 }: LoyaltyRedeemProps) {
   const [loading, setLoading] = useState(true);
   const [balance, setBalance] = useState(0);
   const [rules, setRules] = useState<LoyaltyRules | null>(null);
   const [input, setInput] = useState('');
+  // Баллы, ожидающие решения по конфликту с акцией.
+  const [pendingPoints, setPendingPoints] = useState<number | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -66,7 +84,7 @@ export default function LoyaltyRedeem({
 
   // Если корзина изменилась и применено больше, чем теперь допустимо — поджать.
   useEffect(() => {
-    if (rules && appliedPoints > max) {
+    if (!codeActive && rules && appliedPoints > max) {
       onChange(max);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -79,7 +97,15 @@ export default function LoyaltyRedeem({
     const raw = Number(input.replace(',', '.'));
     if (!raw || Number.isNaN(raw)) return;
     const clamped = Math.max(0, Math.min(raw, max));
-    onChange(Math.floor(clamped * 100) / 100);
+    const points = Math.floor(clamped * 100) / 100;
+    if (points <= 0) return;
+    // «ODER Angebot ODER Punkte»: списание вытеснит денежную акцию — спрашиваем.
+    if (angebotAvailable) {
+      setPendingPoints(points);
+      setInput('');
+      return;
+    }
+    onChange(points);
     setInput('');
   };
 
@@ -97,20 +123,50 @@ export default function LoyaltyRedeem({
         </span>
       </div>
 
-      {appliedPoints > 0 ? (
-        <div className="flex items-center justify-between rounded-md bg-white px-3 py-2 text-sm">
-          <span className="text-green-700">
-            <NoTranslate>−{appliedPoints.toFixed(2)}</NoTranslate> {t('checkout.loyalty_points', 'Punkte')} (
-            <NoTranslate>{(appliedPoints * rules.pointValueEuro).toFixed(2)} €</NoTranslate>)
-          </span>
-          <button
-            type="button"
-            onClick={() => onChange(0)}
-            className="text-sm font-medium text-red-600 hover:text-red-700"
-          >
-            {t('checkout.loyalty_remove', 'Entfernen')}
-          </button>
-        </div>
+      {codeActive ? (
+        // «ENTWEDER Code ODER Punkte»: пока применён Gutschein-/Aktionscode,
+        // баллы списать нельзя — объясняем это вместо молчаливого исчезновения.
+        <p className="text-xs text-gray-600">
+          {t(
+            'checkout.loyalty_code_conflict',
+            'Punkte können nicht zusammen mit einem Gutscheincode eingelöst werden.'
+          )}
+          {activeCode ? (
+            <>
+              {' '}
+              <NoTranslate>({activeCode})</NoTranslate>
+            </>
+          ) : null}{' '}
+          {t(
+            'checkout.loyalty_code_conflict_hint',
+            'Entfernen Sie den Code oben, um Ihre Punkte zu nutzen.'
+          )}
+        </p>
+      ) : appliedPoints > 0 ? (
+        <>
+          <div className="flex items-center justify-between rounded-md bg-white px-3 py-2 text-sm">
+            <span className="text-green-700">
+              <NoTranslate>−{appliedPoints.toFixed(2)}</NoTranslate> {t('checkout.loyalty_points', 'Punkte')} (
+              <NoTranslate>{(appliedPoints * rules.pointValueEuro).toFixed(2)} €</NoTranslate>)
+            </span>
+            <button
+              type="button"
+              onClick={() => onChange(0)}
+              className="text-sm font-medium text-red-600 hover:text-red-700"
+            >
+              {t('checkout.loyalty_remove', 'Entfernen')}
+            </button>
+          </div>
+          {angebotAvailable && (
+            // Акция подавлена баллами — говорим об этом прямо, иначе «Angebot исчез».
+            <p className="mt-1.5 text-xs text-amber-700">
+              {t(
+                'checkout.loyalty_angebot_suppressed',
+                'Aktuelle Angebote sind mit Punkten nicht kombinierbar. Entfernen Sie die Punkte, um das Angebot zu nutzen.'
+              )}
+            </p>
+          )}
+        </>
       ) : minNotReached ? (
         <p className="text-xs text-gray-500">
           {t('checkout.loyalty_min_order', 'Punkte einlösbar ab')} <NoTranslate>{rules.minOrderToRedeem} €</NoTranslate>.
@@ -149,10 +205,25 @@ export default function LoyaltyRedeem({
           </button>
         </div>
       )}
-      <p className="mt-1.5 text-xs text-gray-400">
-        {t('checkout.loyalty_hint', 'Bis zu')} <NoTranslate>{Math.round(rules.redeemMaxShare * 100)}%</NoTranslate>{' '}
-        {t('checkout.loyalty_hint_2', 'des Bestellwerts · 1 Punkt = 1 €')}
-      </p>
+      {!codeActive && (
+        <p className="mt-1.5 text-xs text-gray-400">
+          {t('checkout.loyalty_hint', 'Bis zu')} <NoTranslate>{Math.round(rules.redeemMaxShare * 100)}%</NoTranslate>{' '}
+          {t('checkout.loyalty_hint_2', 'des Bestellwerts · 1 Punkt = 1 €')}
+        </p>
+      )}
+
+      <PromoConflictDialog
+        open={pendingPoints !== null}
+        kind="points-vs-angebot"
+        angebotName={angebotName}
+        appliedPoints={pendingPoints || 0}
+        onKeep={() => setPendingPoints(null)}
+        onApply={() => {
+          const points = pendingPoints;
+          setPendingPoints(null);
+          if (points) onChange(points);
+        }}
+      />
     </div>
   );
 }

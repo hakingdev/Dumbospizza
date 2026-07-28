@@ -5,7 +5,7 @@ import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ChevronLeft, CreditCard, Truck, Check, Landmark, Loader2, Wallet } from 'lucide-react'
-import { useCart } from '../../../lib/contexts/CartContext'
+import { useCart, loyaltyRedeemBaseAmount } from '../../../lib/contexts/CartContext'
 import { storageSet } from '../../../lib/safe-storage'
 import CouponInput from '../../../components/cart/CouponInput'
 import { getConflictingPromotions } from '../../../lib/promotions/coupon-conflict'
@@ -1507,14 +1507,19 @@ export default function CheckoutPage() {
                 onPromotionCodeRemoved={() => setPromotionPromoCode(undefined)}
                 angebotConflictActive={state.moneyPromotionAvailable}
                 angebotName={getConflictingPromotions(state.promotionCalculation)[0]?.promotionName || undefined}
+                appliedLoyaltyPoints={state.loyaltyPointsToRedeem || 0}
               />
             </div>
 
             {/* Treuepunkte einlösen — только для авторизованных клиентов с балансом */}
             <LoyaltyRedeem
-              orderAmountBeforePoints={state.total + state.loyaltyPointsDiscount}
+              orderAmountBeforePoints={loyaltyRedeemBaseAmount(state)}
               appliedPoints={state.loyaltyPointsToRedeem || 0}
               onChange={setLoyaltyPoints}
+              codeActive={!!state.couponCode || !!state.promotionPromoCode}
+              activeCode={state.couponCode || state.promotionPromoCode}
+              angebotAvailable={state.moneyPromotionAvailable}
+              angebotName={getConflictingPromotions(state.promotionCalculation)[0]?.promotionName || undefined}
               t={t}
             />
 
