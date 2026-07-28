@@ -102,7 +102,12 @@ export default function PromotionOfferManager() {
         return next;
       });
       setOpen('bogo');
-    } else if (pendingGift.length > 0) setOpen('gift');
+    } else if (pendingGift.length > 0) {
+      // Уже выбранные подарки предзаполняем: модалка требует выбор для КАЖДОГО
+      // оффера, иначе «Gratis-Produkt übernehmen» останется заблокированной.
+      setGiftSlot((s) => ({ ...state.selectedFreeGifts, ...s }));
+      setOpen('gift');
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onCartPage, open, pendingBogo.length, pendingGift.length, state.promotionCalculation]);
 
@@ -157,7 +162,9 @@ export default function PromotionOfferManager() {
         onClose={() => {
           giftOffers.forEach((o) => {
             dismissed.current.add(o.promotionId);
-            declineFreeGift(o.promotionId);
+            // declineFreeGift СТИРАЕТ выбор — отказываемся только от того,
+            // что ещё не выбрано, иначе клик мимо окна удалял чужой подарок.
+            if (!state.selectedFreeGifts[o.promotionId]) declineFreeGift(o.promotionId);
           });
           handledCalc.current = state.promotionCalculation;
           setGiftSlot({});

@@ -43,6 +43,9 @@ export default function CartPage() {
   const needsGiftSelection = giftOffers.some(
     (offer) => !state.selectedFreeGifts[offer.promotionId] && !state.declinedFreeGifts[offer.promotionId]
   );
+  // Кнопка выбора нужна и после отказа («Nein, danke» или клик мимо модалки):
+  // иначе подарок исчезает без следа и вернуть его нечем.
+  const canPickGift = giftOffers.some((offer) => !state.selectedFreeGifts[offer.promotionId]);
   // оффер присутствует только когда есть незаполненный слот награды (движок так решает)
   const needsBogoSelection = bogoOffers.length > 0;
 
@@ -67,6 +70,14 @@ export default function CartPage() {
     loadTranslations();
   }, [language]);
 
+  const openGiftModal = () => {
+    // Уже сделанный выбор предзаполняем: модалка требует выбор для КАЖДОГО
+    // оффера, иначе «Gratis-Produkt übernehmen» останется заблокированной,
+    // когда часть подарков уже выбрана.
+    setGiftSlot({ ...state.selectedFreeGifts });
+    setShowGiftModal(true);
+  };
+
   useEffect(() => {
     // Gratis-Artikel einmal anbieten; BOGO — по кнопке/попапу на меню.
     if (giftOffers.length > 0 && needsGiftSelection) {
@@ -87,7 +98,7 @@ export default function CartPage() {
   const handleProceedToCheckout = () => {
     // Награда BOGO опциональна — не блокируем оформление.
     if (needsGiftSelection) {
-      setShowGiftModal(true);
+      openGiftModal();
       return;
     }
     router.push('/checkout');
@@ -308,15 +319,17 @@ export default function CartPage() {
                 </button>
               )}
 
-              {needsGiftSelection && (
+              {canPickGift && (
                 <button
                   type="button"
-                  onClick={() => setShowGiftModal(true)}
+                  onClick={openGiftModal}
                   className="mb-4 flex min-h-[56px] w-full items-center gap-3 rounded-lg border-2 border-emerald-400 bg-emerald-50 p-3 text-left leading-tight text-emerald-800 transition-colors hover:bg-emerald-100"
                 >
                   <Gift className="h-5 w-5 shrink-0" />
                   <span className="text-sm font-medium">
-                    {t('cart.gratis_pick', 'Gratis-Geschenk — bitte auswählen')}
+                    {needsGiftSelection
+                      ? t('cart.gratis_pick', 'Gratis-Geschenk — bitte auswählen')
+                      : t('cart.gratis_repick', 'Gratis-Artikel doch auswählen')}
                   </span>
                 </button>
               )}
@@ -361,7 +374,11 @@ export default function CartPage() {
           onSelect={(promotionId, optionId) => setGiftSlot((s) => ({ ...s, [promotionId]: optionId }))}
           onConfirm={handleGiftConfirm}
           onClose={() => {
-            giftOffers.forEach((offer) => declineFreeGift(offer.promotionId));
+            // Отказ только по офферам без выбора: declineFreeGift СТИРАЕТ выбор,
+            // поэтому раньше клик мимо модалки удалял уже добавленный подарок.
+            giftOffers.forEach((offer) => {
+              if (!state.selectedFreeGifts[offer.promotionId]) declineFreeGift(offer.promotionId);
+            });
             setGiftSlot({});
             setShowGiftModal(false);
           }}

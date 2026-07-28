@@ -11,6 +11,7 @@ import CouponInput from '../../../components/cart/CouponInput'
 import { getConflictingPromotions } from '../../../lib/promotions/coupon-conflict'
 import PromotionCartSummary from '../../../components/promotions/PromotionCartSummary'
 import BogoRewardLines from '../../../components/promotions/BogoRewardLines'
+import GratisGiftPickerModal from '../../../components/promotions/GratisGiftPickerModal'
 import LoyaltyRedeem from '../../../components/checkout/LoyaltyRedeem'
 import { getBogoPickerMerchandise, getVisibleBogoSecondItems } from '../../../lib/promotions/discount-total'
 import { useLanguage } from '../../../lib/contexts/LanguageContext'
@@ -101,7 +102,7 @@ function PayPalMark() {
 
 export default function CheckoutPage() {
   const router = useRouter()
-  const { state, setDeliveryType: setCartDeliveryType, setDeliveryZone: setCartDeliveryZone, setDeliveryFee, setContactInfo, setDeliveryAddress, setPaymentMethod: setCartPaymentMethod, clearCart, applyCoupon, removeCoupon, setPromotionPromoCode, setLoyaltyPoints } = useCart()
+  const { state, setDeliveryType: setCartDeliveryType, setDeliveryZone: setCartDeliveryZone, setDeliveryFee, setContactInfo, setDeliveryAddress, setPaymentMethod: setCartPaymentMethod, clearCart, applyCoupon, removeCoupon, setPromotionPromoCode, setLoyaltyPoints, setSelectedFreeGift, declineFreeGift } = useCart()
   const { language } = useLanguage()
   const [t, setT] = useState<any>(() => (k: string, fallback?: string) => fallback ?? k)
   const [step, setStep] = useState(1)
@@ -114,6 +115,11 @@ export default function CheckoutPage() {
   const [termsAccepted, setTermsAccepted] = useState(false)
   // SMS-Marketing-Einwilligung — отдельная, необязательная, по умолчанию НЕ отмечена.
   const [smsConsent, setSmsConsent] = useState(false)
+  // Выбор Gratis-Artikel прямо в оформлении: подарок можно потерять (отказ в
+  // попапе на меню, сброс выбора при пересчёте), а корзину со страницы checkout
+  // уже не поправить — поэтому здесь тот же пикер, что и на /cart.
+  const [showGiftModal, setShowGiftModal] = useState(false)
+  const [giftSlot, setGiftSlot] = useState<Record<string, string>>({})
   // Онлайн-оплата: после создания draft-заказа шаг 2 показывает инлайн-панель
   // с РОВНО ОДНИМ виджетом метода, выбранного в списке, — SumUp с whitelist
   // группы (Karte/Apple/Google Pay; позже SEPA) или нативные PayPal-кнопки.
@@ -172,6 +178,33 @@ export default function CheckoutPage() {
     (sum, item) => sum + item.quantity,
     0
   )
+
+  const giftOffers = state.promotionCalculation?.freeGiftOffers || []
+  const openGiftModal = () => {
+    // Уже сделанный выбор предзаполняем: модалка требует выбор для КАЖДОГО
+    // оффера, иначе «Gratis-Produkt übernehmen» останется заблокированной,
+    // когда часть подарков уже выбрана.
+    setGiftSlot({ ...state.selectedFreeGifts })
+    setShowGiftModal(true)
+  }
+  const handleGiftConfirm = () => {
+    for (const [promotionId, optionId] of Object.entries(giftSlot)) {
+      if (optionId) setSelectedFreeGift(promotionId, optionId)
+    }
+    setGiftSlot({})
+    setShowGiftModal(false)
+  }
+  const handleGiftDecline = () => {
+    // Отказ только по офферам без выбора — уже выбранные подарки не сбрасываем.
+    giftOffers.forEach((offer) => {
+      if (!giftSlot[offer.promotionId] && !state.selectedFreeGifts[offer.promotionId]) {
+        declineFreeGift(offer.promotionId)
+      }
+    })
+    setGiftSlot({})
+    setShowGiftModal(false)
+  }
+
   const [desiredDeliveryTime, setDesiredDeliveryTime] = useState<string>('')
   // Проверка адреса доставки (зона определяется по адресу, не выбором из списка).
   const [zoneCheck, setZoneCheck] = useState<null | {
@@ -1488,6 +1521,7 @@ export default function CheckoutPage() {
               calculation={state.promotionCalculation}
               selectedFreeGifts={state.selectedFreeGifts}
               declinedFreeGifts={state.declinedFreeGifts}
+              onPickGift={giftOffers.length > 0 ? openGiftModal : undefined}
               t={t}
             />
 
@@ -1556,6 +1590,17 @@ export default function CheckoutPage() {
           </div>
         </div>
       </div>
+
+      {showGiftModal && giftOffers.length > 0 && (
+        <GratisGiftPickerModal
+          offers={giftOffers}
+          selections={giftSlot}
+          onSelect={(promotionId, optionId) => setGiftSlot((s) => ({ ...s, [promotionId]: optionId }))}
+          onConfirm={handleGiftConfirm}
+          onClose={handleGiftDecline}
+          t={t}
+        />
+      )}
 
     </div>
   )
