@@ -11,6 +11,7 @@ import { DEFAULT_STORE_PHONE, phoneToTelHref } from '../lib/store-phone'
 import { trackGoogleAdsPhoneCall } from '../lib/analytics/google-ads'
 import { formatOrderHoursTemplate, resolveOrderAcceptanceHours } from '../lib/order-acceptance-hours'
 import { openConsentSettings } from '../lib/consent'
+import { cachedJson } from '../lib/client-cache'
 
 const DEFAULT_STORE_INFO = {
   address: 'Kurhausstraße 11A, 97688 Bad Kissingen',
@@ -67,8 +68,8 @@ export function Footer() {
   useEffect(() => {
     const loadCategories = async () => {
       try {
-        const response = await fetch('/api/categories?active=true&source=local');
-        const data = await response.json();
+        // URL намеренно совпадает с главной — один кэш, один запрос на вкладку.
+        const data = await cachedJson('/api/categories?source=local&active=true');
         if (data.success && data.categories) {
           setCategories(data.categories || []);
         }

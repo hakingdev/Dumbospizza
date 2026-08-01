@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '../../../../lib/contexts/LanguageContext';
 import { loadTranslation } from '../../../../lib/i18n';
+import { normalizeCouponUsageLimit } from '../../../../lib/promotions/coupon-validity';
 import Link from 'next/link';
 import { Save, ArrowLeft, Loader2 } from 'lucide-react';
 
@@ -82,7 +83,8 @@ export default function NewCouponPage() {
         validFrom: new Date(coupon.validFrom),
         validTo: new Date(coupon.validTo),
         minOrderAmount: coupon.minOrderAmount === '' ? undefined : Number(coupon.minOrderAmount),
-        usageLimit: coupon.usageLimit === '' ? undefined : Number(coupon.usageLimit),
+        // Пустое поле = без лимита → null (0 читался бы как «ноль применений»).
+        usageLimit: normalizeCouponUsageLimit(coupon.usageLimit),
         description: coupon.description || undefined
       };
       

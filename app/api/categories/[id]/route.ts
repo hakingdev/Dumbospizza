@@ -5,6 +5,7 @@ import { Product } from '../../../../lib/models/product.model';
 import { getServerSession } from 'next-auth';
 import { authOptions, isStaff } from '../../../../lib/auth';
 import { readSubcategories, sanitizeSubcategories } from '../../../../lib/categories/subcategories';
+import { invalidateCategories } from '../../../../lib/db/utils';
 
 async function isAuthorized() {
   const session = await getServerSession(authOptions);
@@ -66,6 +67,8 @@ export async function PUT(
       return NextResponse.json({ success: false, error: 'Category not found' }, { status: 404 });
     }
 
+    invalidateCategories();
+
     if (removedSubcategoryIds.length > 0) {
       await Product.updateMany(
         { category: params.id, subcategoryId: { $in: removedSubcategoryIds } },
@@ -94,7 +97,9 @@ export async function DELETE(
     if (!category) {
       return NextResponse.json({ success: false, error: 'Category not found' }, { status: 404 });
     }
-    
+
+    invalidateCategories();
+
     return NextResponse.json({ success: true, message: 'Category deleted' });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

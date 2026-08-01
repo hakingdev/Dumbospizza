@@ -169,7 +169,7 @@ export default function CouponsAdminPage() {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     {coupon.usageCount} 
-                    {coupon.usageLimit && <span className="text-gray-500"> / {coupon.usageLimit}</span>}
+                    {coupon.usageLimit > 0 && <span className="text-gray-500"> / {coupon.usageLimit}</span>}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${coupon.active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>

@@ -7,6 +7,7 @@ import ProductModal from './ProductModal'
 import { useLanguage } from '../lib/contexts/LanguageContext'
 import { loadTranslation } from '../lib/i18n'
 import { PromotionBadges, ProductCardPrice } from './promotions/PromotionBadges'
+import { readCategoryId } from './promotions/PromotionBadgesContext'
 import { SafeImage } from './SafeImage'
 import { NoTranslate } from './NoTranslate'
 import { MiniPizzaBoxBuilder } from './mini-pizza-box/MiniPizzaBoxBuilder'
@@ -52,6 +53,8 @@ export function ProductCard({ product }: ProductCardProps) {
   // «4er Mini Pizza Box»: statt Standard-Modal den Vollbild-Konfigurator öffnen.
   const rawCategory: any = product.category;
   const isMiniBox = rawCategory?.slug === MINI_BOX_CATEGORY_SLUG;
+  // /api/products liefert die Kategorie POPULIERT — als Objekt, nicht als id.
+  const categoryId = readCategoryId(product.categoryId ?? product.category);
 
   return (
     <div 
@@ -63,7 +66,7 @@ export function ProductCard({ product }: ProductCardProps) {
       <div className="relative h-56 mb-4 overflow-hidden rounded-xl bg-gray-100">
         <PromotionBadges
           productId={product.id}
-          categoryId={product.categoryId || product.category}
+          categoryId={categoryId}
           className="absolute top-3 left-3 z-10"
         />
         {product.image ? (
@@ -100,7 +103,7 @@ export function ProductCard({ product }: ProductCardProps) {
           </h3>
           <ProductCardPrice
             productId={product.id}
-            categoryId={product.categoryId || product.category}
+            categoryId={categoryId}
             basePrice={product.price}
             fromLabel={t('product_card.from', 'Preis ab')}
           />

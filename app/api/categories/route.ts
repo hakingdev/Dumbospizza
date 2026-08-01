@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '../../../lib/models';
-import { getCategories } from '../../../lib/db/utils';
+import { getCategories, invalidateCategories } from '../../../lib/db/utils';
 import { Category } from '../../../lib/models/category.model';
 import { getMewsPosEnabled } from '../../../lib/settings';
 import { fetchMewsPosCategories } from '../../../lib/mews-pos/sync';
@@ -63,7 +63,8 @@ export async function POST(request: NextRequest) {
 
     const category = new Category(data);
     await category.save();
-    
+    invalidateCategories();
+
     return NextResponse.json({ success: true, category }, { status: 201 });
   } catch (error: any) {
     console.error('Error creating category:', error);

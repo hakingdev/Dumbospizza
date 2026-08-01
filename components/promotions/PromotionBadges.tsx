@@ -1,21 +1,23 @@
 "use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { trackPromotionEvent } from '../../lib/api-client';
 import { computePromoDisplayPrice } from '../../lib/promotions/pricing';
+import { useProductBadges } from './PromotionBadgesContext';
 
-type Badge = {
-  promotionId: string;
-  badgeText: string;
-  name: string;
-  type?: string;
-  percentValue?: number;
-  fixedValue?: number;
-  bogoMode?: string;
-  validTo?: string;
-  scheduleLabel?: string;
-  happyHourActive?: boolean;
-};
+/**
+ * Просмотр акции засчитываем ОДИН раз на акцию за загрузку страницы. Раньше
+ * каждая из ~90 карточек каталога слала свой POST /api/promotions/analytics —
+ * это ~90 UPDATE'ов в promotions на один вход в категорию, при том что счётчик
+ * всё равно рос от карточек, которых никто не долистал.
+ */
+const trackedViews = new Set<string>();
+
+function trackViewOnce(promotionId: string) {
+  if (!promotionId || trackedViews.has(promotionId)) return;
+  trackedViews.add(promotionId);
+  trackPromotionEvent(promotionId, 'view').catch(() => {});
+}
 
 export function PromotionBadges({
   productId,
@@ -26,25 +28,11 @@ export function PromotionBadges({
   categoryId?: string;
   className?: string;
 }) {
-  const [badges, setBadges] = useState<Badge[]>([]);
+  const { badges } = useProductBadges(productId, categoryId);
 
   useEffect(() => {
-    if (!productId) return;
-    const params = new URLSearchParams();
-    if (categoryId) params.set('categoryId', categoryId);
-    fetch(`/api/promotions/product/${productId}?${params}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.success) {
-          const list = data.badges || [];
-          setBadges(list);
-          list.forEach((b: Badge) => {
-            trackPromotionEvent(b.promotionId, 'view').catch(() => {});
-          });
-        }
-      })
-      .catch(() => {});
-  }, [productId, categoryId]);
+    badges.forEach((b) => trackViewOnce(b.promotionId));
+  }, [badges]);
 
   if (badges.length === 0) return null;
 
@@ -74,22 +62,7 @@ export function ProductCardPrice({
   basePrice: number;
   fromLabel?: string;
 }) {
-  const [badges, setBadges] = useState<Badge[]>([]);
-  const [loaded, setLoaded] = useState(false);
-
-  useEffect(() => {
-    if (!productId) return;
-    setLoaded(false);
-    const params = new URLSearchParams();
-    if (categoryId) params.set('categoryId', categoryId);
-    fetch(`/api/promotions/product/${productId}?${params}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.success) setBadges(data.badges || []);
-      })
-      .catch(() => {})
-      .finally(() => setLoaded(true));
-  }, [productId, categoryId]);
+  const { badges, loaded } = useProductBadges(productId, categoryId);
 
   const { promoPrice, bestPercent, bogoHint } = computePromoDisplayPrice(basePrice, badges);
 
@@ -140,25 +113,15 @@ export function ProductPromotionsBanner({
   productId: string;
   categoryId?: string;
 }) {
-  const [badges, setBadges] = useState<Badge[]>([]);
+  const { badges } = useProductBadges(productId, categoryId);
 
+  // Баннер живёт на карточке товара/в модалке — он один на страницу, поэтому
+  // просмотр здесь засчитываем как раньше, без общей дедупликации каталога.
   useEffect(() => {
-    if (!productId) return;
-    const params = new URLSearchParams();
-    if (categoryId) params.set('categoryId', categoryId);
-    fetch(`/api/promotions/product/${productId}?${params}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.success) {
-          const list = data.badges || [];
-          setBadges(list);
-          list.forEach((b: Badge) => {
-            trackPromotionEvent(b.promotionId, 'view').catch(() => {});
-          });
-        }
-      })
-      .catch(() => {});
-  }, [productId, categoryId]);
+    badges.forEach((b) => {
+      trackPromotionEvent(b.promotionId, 'view').catch(() => {});
+    });
+  }, [badges]);
 
   if (badges.length === 0) return null;
 

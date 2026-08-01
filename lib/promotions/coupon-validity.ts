@@ -34,6 +34,19 @@ export function normalizeCouponCode(code: string | null | undefined): string {
   return (code || '').trim().toUpperCase();
 }
 
+/**
+ * Нормализация лимита использований. «Без ограничений» админка задаёт пустым полем,
+ * но в БД попадал и `0` (форма редактирования превращала пустой лимит в `Number(null)`),
+ * а `0` читался как «ноль применений» → купон не работал вообще.
+ * Пусто / 0 / отрицательное / не число → `null` (лимита нет).
+ */
+export function normalizeCouponUsageLimit(value: unknown): number | null {
+  if (value === '' || value == null) return null;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.floor(n);
+}
+
 /** Смещение зоны (минуты, local - UTC) для конкретного момента — учитывает DST. */
 function tzOffsetMinutes(date: Date, timeZone: string): number {
   const dtf = new Intl.DateTimeFormat('en-US', {
@@ -114,7 +127,8 @@ export function isCouponCurrentlyValid(
     if (now > to) return { valid: false, reason: 'expired' };
   }
 
-  if (coupon.usageLimit != null && (coupon.usageCount ?? 0) >= coupon.usageLimit) {
+  const usageLimit = normalizeCouponUsageLimit(coupon.usageLimit);
+  if (usageLimit != null && (coupon.usageCount ?? 0) >= usageLimit) {
     return { valid: false, reason: 'usage_limit' };
   }
   if (

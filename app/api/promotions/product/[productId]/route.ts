@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '../../../../../lib/models';
-import { Promotion } from '../../../../../lib/models/promotion.model';
+import { getEnabledPromotions } from '../../../../../lib/promotions/active-promotions';
 import { getProductPromotionBadges } from '../../../../../lib/promotions/engine';
 
 /** GET /api/promotions/product/[productId] — бейджи акций для карточки товара */
@@ -12,7 +12,7 @@ export async function GET(
     await connectToDatabase();
     const categoryId = request.nextUrl.searchParams.get('categoryId') || undefined;
     const channel = request.nextUrl.searchParams.get('channel') === 'app' ? 'app' : 'web';
-    const promotions = await Promotion.find({ enabled: true }).lean();
+    const promotions = await getEnabledPromotions();
     const badges = getProductPromotionBadges(
       params.productId,
       categoryId,

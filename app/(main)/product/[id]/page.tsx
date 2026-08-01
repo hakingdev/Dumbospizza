@@ -8,6 +8,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useLanguage } from '../../../../lib/contexts/LanguageContext';
 import { loadTranslation } from '../../../../lib/i18n';
 import { ProductPromotionsBanner } from '../../../../components/promotions/PromotionBadges';
+import { readCategoryId } from '../../../../components/promotions/PromotionBadgesContext';
 import { normalizeObjectId } from '../../../../lib/normalize-id';
 import {
   getOrderableSizes,
@@ -348,7 +349,10 @@ export default function ProductPage() {
               </h1>
               <p className="mb-4 break-words text-gray-600">{product.description}</p>
 
-              <ProductPromotionsBanner productId={product._id} categoryId={product.category} />
+              <ProductPromotionsBanner
+                productId={product._id}
+                categoryId={readCategoryId(product.category)}
+              />
 
               <div className="flex items-baseline gap-2 mb-6">
                 <span className="text-4xl font-bold text-primary-600">

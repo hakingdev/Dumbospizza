@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams } from 'next/navigation';
 import { ProductCard } from '../../../../components/product-card';
 import { ChevronLeft } from 'lucide-react';
@@ -14,6 +14,11 @@ import {
   type Subcategory,
 } from '../../../../lib/categories/subcategories';
 import SubcategoryFilter from '../../../../components/SubcategoryFilter';
+import { cachedJson } from '../../../../lib/client-cache';
+import {
+  PromotionBadgesProvider,
+  toBadgeItems,
+} from '../../../../components/promotions/PromotionBadgesContext';
 
 // useParams() liefert das URL-Segment ENKODIERT (z. B. "getr%C3%A4nke" für "getränke").
 // Dekodieren, damit Anzeige korrekt ist und der Vergleich mit dem DB-slug ("getränke") greift.
@@ -38,12 +43,15 @@ export default function CategoryPage() {
   const [t, setT] = useState<any>(() => (k: string, fallback?: string) => fallback ?? k);
 
   const categoryTitle = categoryName;
+  // Бейджи акций для всей сетки — одним запросом вместо двух на карточку.
+  const badgeItems = useMemo(() => toBadgeItems(products), [products]);
 
   useEffect(() => {
     const fetchProducts = async () => {
       try {
-        const response = await fetch(`/api/products?category=${encodeURIComponent(slug)}&available=true`);
-        const data = await response.json();
+        const data = await cachedJson(
+          `/api/products?category=${encodeURIComponent(slug)}&available=true`
+        );
         if (data.success) {
           setProducts(data.products);
         }
@@ -56,8 +64,7 @@ export default function CategoryPage() {
 
     const fetchCategory = async () => {
       try {
-        const response = await fetch('/api/categories?source=local');
-        const data = await response.json();
+        const data = await cachedJson('/api/categories?source=local');
         if (data.success) {
           const match = (data.categories || []).find((cat: any) => cat.slug === slug);
           if (match) {
@@ -115,27 +122,29 @@ export default function CategoryPage() {
           <p className="text-xl text-gray-600">{t('category.empty', 'In dieser Kategorie gibt es noch keine Produkte')}</p>
         </div>
       ) : (
-        groupBySubcategory(products as any[], subcategories, (p: any) => p.subcategoryId)
-          .filter((sub) => activeSub === null || (sub.id ?? '') === activeSub)
-          .map((sub) => (
-            <div key={sub.id || 'ohne'} className="mb-10 last:mb-0">
-              {sub.name && (
-                <h2 className="mb-4 text-xl font-semibold text-gray-700 md:text-2xl">{sub.name}</h2>
-              )}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                {sub.products.map((product: any) => (
-                  <ProductCard key={product._id} product={{
-                    id: product._id,
-                    name: product.name,
-                    description: product.description,
-                    price: product.basePrice,
-                    image: product.image,
-                    category: product.category
-                  }} />
-                ))}
+        <PromotionBadgesProvider items={badgeItems}>
+          {groupBySubcategory(products as any[], subcategories, (p: any) => p.subcategoryId)
+            .filter((sub) => activeSub === null || (sub.id ?? '') === activeSub)
+            .map((sub) => (
+              <div key={sub.id || 'ohne'} className="mb-10 last:mb-0">
+                {sub.name && (
+                  <h2 className="mb-4 text-xl font-semibold text-gray-700 md:text-2xl">{sub.name}</h2>
+                )}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                  {sub.products.map((product: any) => (
+                    <ProductCard key={product._id} product={{
+                      id: product._id,
+                      name: product.name,
+                      description: product.description,
+                      price: product.basePrice,
+                      image: product.image,
+                      category: product.category
+                    }} />
+                  ))}
+                </div>
               </div>
-            </div>
-          ))
+            ))}
+        </PromotionBadgesProvider>
       )}
     </div>
   );

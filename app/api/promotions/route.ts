@@ -5,6 +5,7 @@ import { Promotion } from '../../../lib/models/promotion.model';
 import { authOptions, isStaff } from '../../../lib/auth';
 import { slugifyPromotionName, getPromotionLifecycle, isPromotionEffectivelyActive } from '../../../lib/promotions/status';
 import { toPromotionAdminView, toPromotionPublicView } from '../../../lib/promotions/serialize';
+import { invalidateEnabledPromotions } from '../../../lib/promotions/active-promotions';
 import {
   formatPromotionSaveError,
   sanitizePromotionPayload,
@@ -108,6 +109,8 @@ export async function POST(request: NextRequest) {
       targetProductIds: payload.targetProductIds || [],
       targetCategoryIds: payload.targetCategoryIds || [],
     });
+
+    invalidateEnabledPromotions();
 
     return NextResponse.json({
       success: true,

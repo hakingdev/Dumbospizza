@@ -11,6 +11,11 @@ import {
   type Subcategory,
 } from '../../../lib/categories/subcategories';
 import SubcategoryFilter from '../../../components/SubcategoryFilter';
+import { cachedJson } from '../../../lib/client-cache';
+import {
+  PromotionBadgesProvider,
+  toBadgeItems,
+} from '../../../components/promotions/PromotionBadgesContext';
 
 /**
  * Speisekarte: gruppiert nach Kategorie mit klebriger Kategorie-Leiste + Scroll-Spy.
@@ -108,8 +113,7 @@ export default function MenuPage() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch('/api/products?available=true');
-        const data = await res.json();
+        const data = await cachedJson('/api/products?available=true');
         if (data.success) setProducts(data.products || []);
       } catch (e) {
         console.error('Error:', e);
@@ -127,6 +131,8 @@ export default function MenuPage() {
   }, [language]);
 
   const groups = useMemo(() => groupByCategory(products), [products]);
+  // Вся Speisekarte — это сотни карточек; бейджи забираем одним запросом.
+  const badgeItems = useMemo(() => toBadgeItems(products), [products]);
 
   // Header- + Leistenhöhe messen → Sticky-top der Leiste und scroll-margin der Sektionen.
   const measure = () => {
@@ -271,6 +277,7 @@ export default function MenuPage() {
       </div>
 
       <div className="container mx-auto px-4 py-8">
+        <PromotionBadgesProvider items={badgeItems}>
         {groups.map((g) => (
           <section
             key={g.slug}
@@ -321,6 +328,7 @@ export default function MenuPage() {
               ))}
           </section>
         ))}
+        </PromotionBadgesProvider>
       </div>
     </div>
   );

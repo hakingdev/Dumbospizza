@@ -13,6 +13,7 @@ import {
   hasNoActiveRegularSizes,
 } from '../lib/product-pricing';
 import { ProductPromotionsBanner } from './promotions/PromotionBadges';
+import { readCategoryId } from './promotions/PromotionBadgesContext';
 import { SafeImage } from './SafeImage';
 import { NoTranslate } from './NoTranslate';
 
@@ -348,7 +349,10 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
                       <p className="text-gray-600 mb-4">{product.description}</p>
 
                       <div className="mb-6">
-                        <ProductPromotionsBanner productId={product._id} categoryId={product.category} />
+                        <ProductPromotionsBanner
+                          productId={product._id}
+                          categoryId={readCategoryId(product.category)}
+                        />
                       </div>
 
                       {/* Sizes — вертикальный список (Lieferando-стиль) */}

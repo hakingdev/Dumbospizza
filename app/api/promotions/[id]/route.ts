@@ -4,6 +4,7 @@ import { connectToDatabase } from '../../../../lib/models';
 import { Promotion } from '../../../../lib/models/promotion.model';
 import { authOptions, isStaff } from '../../../../lib/auth';
 import { toPromotionAdminView, toPromotionPublicView } from '../../../../lib/promotions/serialize';
+import { invalidateEnabledPromotions } from '../../../../lib/promotions/active-promotions';
 import {
   formatPromotionSaveError,
   sanitizePromotionPayload,
@@ -53,6 +54,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     if (!promo) {
       return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
     }
+    invalidateEnabledPromotions();
     return NextResponse.json({ success: true, promotion: toPromotionAdminView(promo) });
   } catch (error) {
     console.error('PUT /api/promotions/[id]', error);
@@ -72,6 +74,7 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
     if (!promo) {
       return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
     }
+    invalidateEnabledPromotions();
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('DELETE /api/promotions/[id]', error);

@@ -3,6 +3,7 @@ import { connectToDatabase } from '../../../lib/models';
 import { SizeVariation } from '../../../lib/models/size-variation.model';
 import { getServerSession } from 'next-auth';
 import { authOptions, isStaff } from '../../../lib/auth';
+import { invalidateSizeVariationStates } from '../../../lib/size-variation-sync';
 
 async function isAuthorized() {
   const session = await getServerSession(authOptions);
@@ -57,6 +58,7 @@ export async function POST(request: NextRequest) {
       active: data.active !== undefined ? Boolean(data.active) : true
     });
     await variation.save();
+    invalidateSizeVariationStates();
 
     return NextResponse.json({ success: true, variation }, { status: 201 });
   } catch (error: any) {

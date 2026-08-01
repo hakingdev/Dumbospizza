@@ -1,5 +1,6 @@
 import { Product } from './models/product.model';
 import { SizeVariation } from './models/size-variation.model';
+import { createTtlCache } from './cache/ttl-cache';
 import {
   applySizeVariationStates,
   removeOrphanedSizeVariations,
@@ -12,13 +13,27 @@ type ProductWithSizes = {
   sizes?: EmbeddedProductSize[];
 };
 
+/**
+ * Библиотека размеров — десяток строк, но читается на КАЖДУЮ выдачу товаров.
+ * Кэшируем в памяти инстанса; мутации размеров сбрасывают кэш.
+ */
+const variationStatesCache = createTtlCache(
+  async () => (await SizeVariation.find().select('name label active').lean()) as SizeVariationState[],
+  60_000
+);
+
+/** Вызывать после любой правки библиотеки размеров. */
+export function invalidateSizeVariationStates(): void {
+  variationStatesCache.invalidate();
+}
+
 /** Подмешивает актуальные статусы библиотеки в товары перед публичной выдачей. */
 export async function hydrateSizeVariationStates<T extends ProductWithSizes>(
   products: T[]
 ): Promise<T[]> {
   if (products.length === 0) return products;
 
-  const variations = (await SizeVariation.find().select('name label active').lean()) as SizeVariationState[];
+  const variations = await variationStatesCache.get();
   for (const product of products) {
     const existingSizes = removeOrphanedSizeVariations(product.sizes, variations);
     product.sizes = applySizeVariationStates(existingSizes, variations);
@@ -35,6 +50,8 @@ export async function syncSizeVariationToProducts(
 ): Promise<number> {
   const variationId = String(variation._id ?? variation.id ?? '');
   if (!variationId) return 0;
+
+  invalidateSizeVariationStates();
 
   const products = await Product.find().select('sizes');
   let updated = 0;
@@ -57,6 +74,8 @@ export async function removeSizeVariationFromProducts(
   variationName?: string
 ): Promise<number> {
   if (!variationId) return 0;
+
+  invalidateSizeVariationStates();
 
   const products = await Product.find().select('sizes');
   let updated = 0;

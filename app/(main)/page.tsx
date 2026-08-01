@@ -1,12 +1,16 @@
 "use client";
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { FeaturedProducts } from '../../components/featured-products'
 import { CategoryProducts } from '../../components/category-products'
 import { Hero } from '../../components/hero'
 import { HomeBannerSlider } from '../../components/home-banner-slider'
 import { ProductCard } from '../../components/product-card'
+import {
+  PromotionBadgesProvider,
+  toBadgeItems,
+} from '../../components/promotions/PromotionBadgesContext'
 import { Truck, Award, Clock, Shield, Heart } from 'lucide-react'
 import { useLanguage } from '../../lib/contexts/LanguageContext'
 import { loadTranslation } from '../../lib/i18n'
@@ -14,6 +18,7 @@ import PreOrderModal from '../../components/PreOrderModal'
 import { SafeImage } from '../../components/SafeImage'
 import { formatOrderHoursTemplate, resolveOrderAcceptanceHours } from '../../lib/order-acceptance-hours'
 import { storageGet, storageSet } from '../../lib/safe-storage'
+import { cachedJson } from '../../lib/client-cache'
 
 const categoryColors = [
   'from-red-500 to-orange-500',
@@ -82,6 +87,7 @@ export default function Home() {
   const [valentineProducts, setValentineProducts] = useState<any[]>([])
   const [valentineLoading, setValentineLoading] = useState(true)
   const [orderHours, setOrderHours] = useState(() => resolveOrderAcceptanceHours(null))
+  const valentineBadgeItems = useMemo(() => toBadgeItems(valentineProducts), [valentineProducts])
 
   useEffect(() => {
     const loadTranslations = async () => {
@@ -95,8 +101,7 @@ export default function Home() {
   useEffect(() => {
     const loadCategories = async () => {
       try {
-        const response = await fetch('/api/categories?source=local&active=true')
-        const data = await response.json()
+        const data = await cachedJson('/api/categories?source=local&active=true')
         if (data.success) {
           setCategories(data.categories || [])
         }
@@ -231,19 +236,21 @@ export default function Home() {
                 </svg>
               </Link>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              {valentineProducts.map((product: any) => (
-                <ProductCard key={product._id} product={{
-                  id: product._id,
-                  name: product.name,
-                  description: product.description,
-                  price: product.basePrice,
-                  image: product.image,
-                  category: product.category,
-                  valentinePromo: true
-                }} />
-              ))}
-            </div>
+            <PromotionBadgesProvider items={valentineBadgeItems}>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                {valentineProducts.map((product: any) => (
+                  <ProductCard key={product._id} product={{
+                    id: product._id,
+                    name: product.name,
+                    description: product.description,
+                    price: product.basePrice,
+                    image: product.image,
+                    category: product.category,
+                    valentinePromo: true
+                  }} />
+                ))}
+              </div>
+            </PromotionBadgesProvider>
           </div>
         </section>
       )}

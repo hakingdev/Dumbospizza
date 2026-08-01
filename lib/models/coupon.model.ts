@@ -1,5 +1,6 @@
 import { createModel } from '../db/mongoose-compat';
 import { coupons } from '../db/schema';
+import { normalizeCouponUsageLimit } from '../promotions/coupon-validity';
 
 export interface CouponDocument {
   code: string;
@@ -21,11 +22,13 @@ export const Coupon = createModel(coupons, {
     /** Виртуал isValid из Mongoose-модели (теперь обычная функция). */
     isValid(this: any): boolean {
       const now = new Date();
+      // Лимит: пусто/0 = без ограничений (та же семантика, что в isCouponCurrentlyValid).
+      const usageLimit = normalizeCouponUsageLimit(this.usageLimit);
       return (
         this.active &&
         now >= new Date(this.validFrom) &&
         now <= new Date(this.validTo) &&
-        (this.usageLimit == null || this.usageCount < this.usageLimit)
+        (usageLimit == null || this.usageCount < usageLimit)
       );
     },
     isValidForOrder(this: any, orderAmount: number): boolean {

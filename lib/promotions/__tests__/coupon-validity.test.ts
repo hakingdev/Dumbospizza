@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   isCouponCurrentlyValid,
   normalizeCouponCode,
+  normalizeCouponUsageLimit,
   resolveCouponValidTo,
 } from '../coupon-validity';
 
@@ -83,6 +84,16 @@ describe('isCouponCurrentlyValid — статусы', () => {
       valid: false,
       reason: 'usage_limit',
     });
+  });
+
+  it('usageLimit 0 = без лимита (пустое поле в админке), а не «ноль применений»', () => {
+    expect(isCouponCurrentlyValid(TEAM({ usageLimit: 0, usageCount: 0 }), now).valid).toBe(true);
+    expect(isCouponCurrentlyValid(TEAM({ usageLimit: 0, usageCount: 42 }), now).valid).toBe(true);
+    expect(normalizeCouponUsageLimit(0)).toBeNull();
+    expect(normalizeCouponUsageLimit('')).toBeNull();
+    expect(normalizeCouponUsageLimit(null)).toBeNull();
+    expect(normalizeCouponUsageLimit(-3)).toBeNull();
+    expect(normalizeCouponUsageLimit('10')).toBe(10);
   });
 
   it('min_order: orderAmount < minOrderAmount', () => {

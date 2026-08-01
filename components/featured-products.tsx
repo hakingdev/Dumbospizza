@@ -1,11 +1,14 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { ProductCard } from './product-card';
+import { PromotionBadgesProvider, toBadgeItems } from './promotions/PromotionBadgesContext';
+import { cachedJson } from '../lib/client-cache';
 
 export function FeaturedProducts() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const badgeItems = useMemo(() => toBadgeItems(products), [products]);
 
   useEffect(() => {
     fetchProducts();
@@ -13,8 +16,7 @@ export function FeaturedProducts() {
 
   const fetchProducts = async () => {
     try {
-      const response = await fetch('/api/products?available=true&featured=true&limit=8');
-      const data = await response.json();
+      const data = await cachedJson('/api/products?available=true&featured=true&limit=8');
       if (data.success) {
         setProducts(data.products.slice(0, 8));
       }
@@ -36,18 +38,20 @@ export function FeaturedProducts() {
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-      {products.map((product: any) => (
-        <ProductCard key={product._id} product={{
-          id: product._id,
-          name: product.name,
-          description: product.description,
-          price: product.basePrice,
-          image: product.image,
-          category: product.category,
-          valentinePromo: product.valentinePromo
-        }} />
-      ))}
-    </div>
+    <PromotionBadgesProvider items={badgeItems}>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        {products.map((product: any) => (
+          <ProductCard key={product._id} product={{
+            id: product._id,
+            name: product.name,
+            description: product.description,
+            price: product.basePrice,
+            image: product.image,
+            category: product.category,
+            valentinePromo: product.valentinePromo
+          }} />
+        ))}
+      </div>
+    </PromotionBadgesProvider>
   );
 }

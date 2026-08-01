@@ -1,7 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '../../../../lib/models';
-import { Promotion } from '../../../../lib/models/promotion.model';
+import { getEnabledPromotions } from '../../../../lib/promotions/active-promotions';
 import { getProductPromotionBadges } from '../../../../lib/promotions/engine';
+
+/**
+ * Верхняя граница на случай мусорного тела запроса. Полная Speisekarte —
+ * это уже сотни товаров, поэтому лимит должен быть заведомо выше каталога,
+ * иначе часть карточек молча останется без бейджей.
+ */
+const MAX_ITEMS = 1000;
 
 /** POST — бейджи для списка товаров (каталог / Flutter). */
 export async function POST(request: NextRequest) {
@@ -17,10 +24,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, badges: {} });
     }
 
-    const promotions = await Promotion.find({ enabled: true }).lean();
+    if (items.length > MAX_ITEMS) {
+      console.warn(
+        `POST /api/promotions/badges: получено ${items.length} позиций, обрабатываю первые ${MAX_ITEMS}`
+      );
+    }
+
+    const promotions = await getEnabledPromotions();
     const badges: Record<string, Array<Record<string, unknown>>> = {};
 
-    for (const item of items.slice(0, 200)) {
+    for (const item of items.slice(0, MAX_ITEMS)) {
       if (!item.productId) continue;
       badges[item.productId] = getProductPromotionBadges(
         item.productId,

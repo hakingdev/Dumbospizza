@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useLanguage } from '../../../../../lib/contexts/LanguageContext';
 import { loadTranslation } from '../../../../../lib/i18n';
 import { getCouponById, updateCoupon } from '../../../../../lib/api-client';
+import { normalizeCouponUsageLimit } from '../../../../../lib/promotions/coupon-validity';
 import Link from 'next/link';
 import { Save, ArrowLeft, Loader2 } from 'lucide-react';
 
@@ -22,7 +23,7 @@ export default function EditCouponPage({ params }: { params: { id: string } }) {
     validFrom: '',
     validTo: '',
     minOrderAmount: 0,
-    usageLimit: 0,
+    usageLimit: '',
     active: true
   });
   
@@ -93,11 +94,14 @@ export default function EditCouponPage({ params }: { params: { id: string } }) {
       setError(null);
       setSuccess(null);
       
-      // Для полей, которые должны быть числами, но могут быть пустыми
+      // Для полей, которые должны быть числами, но могут быть пустыми.
+      // usageLimit шлём явным null (не undefined): undefined выпадает из JSON и
+      // не очистил бы уже сохранённый лимит. Number(null) === 0 здесь недопустим —
+      // 0 раньше означал «ноль применений» и убивал безлимитный купон.
       const formattedData = {
         ...coupon,
         minOrderAmount: coupon.minOrderAmount === '' ? undefined : Number(coupon.minOrderAmount),
-        usageLimit: coupon.usageLimit === '' ? undefined : Number(coupon.usageLimit)
+        usageLimit: normalizeCouponUsageLimit(coupon.usageLimit)
       };
       
       const result = await updateCoupon(id, formattedData);

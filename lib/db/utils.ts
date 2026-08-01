@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import db from './client';
+import { createTtlCache } from '../cache/ttl-cache';
 import { Product } from '../models/product.model';
 import { Category } from '../models/category.model';
 import { Order } from '../models/order.model';
@@ -17,7 +18,8 @@ export async function getProducts({ category, available, featured, valentineProm
   const query: any = {};
 
   if (category) {
-    const categoryDoc = await Category.findOne({ slug: category });
+    // slug → id берём из кэша категорий, а не отдельным SELECT на каждый запрос.
+    const categoryDoc = (await getCategories()).find((c: any) => c.slug === category);
     if (categoryDoc) {
       query.category = categoryDoc._id;
     } else {
@@ -44,10 +46,25 @@ export async function searchProducts(searchTerm: string) {
 }
 
 // Categories
+/**
+ * Категорий десятки, а читает их каждая страница каталога (хедер, футер, меню,
+ * страница категории). Держим весь список в памяти инстанса и фильтруем на месте;
+ * мутации категорий обязаны звать invalidateCategories().
+ */
+const categoriesCache = createTtlCache(
+  async () => (await Category.find({}).sort({ order: 1 })) as any[],
+  60_000
+);
+
+/** Сбросить кэш категорий (create/update/delete из админки). */
+export function invalidateCategories(): void {
+  categoriesCache.invalidate();
+}
+
 export async function getCategories({ active }: { active?: boolean } = {}) {
-  const query: any = {};
-  if (active !== undefined) query.active = active;
-  return Category.find(query).sort({ order: 1 });
+  const all = await categoriesCache.get();
+  if (active === undefined) return all;
+  return all.filter((c: any) => Boolean(c.active) === active);
 }
 
 // Orders
