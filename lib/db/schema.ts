@@ -210,6 +210,10 @@ export const orders = pgTable(
     telegramMessageId: bigint('telegram_message_id', { mode: 'number' }),
     mewsOrderId: text('mews_order_id'),
     kitchenPrintStatus: text('kitchen_print_status').default('pending'),
+    // Номер задания печати кухонного чека: 0 — первичная печать, +1 на каждый
+    // Nachdruck из админки. Входит в идемпотентный ключ агента, поэтому повторная
+    // печать не считается дублем уже напечатанного (scripts/print-agent-core.js).
+    kitchenPrintSeq: integer('kitchen_print_seq').notNull().default(0),
     customerPrintStatus: text('customer_print_status').default('pending'),
     statusUpdates: jsonb('status_updates')
       .$type<{ status: string; timestamp: string; updatedBy?: string }[]>()

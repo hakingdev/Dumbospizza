@@ -295,7 +295,10 @@ async function fetchPendingOrders() {
   return data.orders || [];
 }
 
-async function markPrinted(orderId) {
+// printSeq — номер отработанного задания печати. Сервер подтверждает статус
+// только если он не изменился: если пока шла печать оператор нажал «Напечатать
+// ещё раз», заказ должен остаться в очереди, а не уехать в 'completed'.
+async function markPrinted(orderId, printSeq) {
   const url = `${API_BASE_URL.replace(/\/$/, '')}/api/orders/${orderId}/mark-printed`;
   const res = await fetch(url, {
     method: 'POST',
@@ -303,7 +306,8 @@ async function markPrinted(orderId) {
       'X-Print-Agent-Key': PRINT_AGENT_SECRET,
       'X-Print-Agent-Id': AGENT_ID,
       'Content-Type': 'application/json'
-    }
+    },
+    body: JSON.stringify({ success: true, printSeq: Number(printSeq) || 0 })
   });
   if (!res.ok) throw new Error('mark-printed ' + res.status);
 }

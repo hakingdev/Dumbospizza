@@ -18,12 +18,19 @@ function createFakeServer() {
   return {
     rows,
     addOrder(id: string, orderNumber: string) {
-      rows.push({ _id: id, orderNumber, kitchenPrintStatus: 'pending' });
+      rows.push({ _id: id, orderNumber, kitchenPrintStatus: 'pending', kitchenPrintSeq: 0 });
     },
     /** Явный reclaim зависшего заказа (как по истечении lease на сервере). */
     reclaim(id: string) {
       const row = rows.find((r) => r._id === id);
       if (row && row.kitchenPrintStatus === 'printing') row.reclaimed = true;
+    },
+    /** «Напечатать ещё раз» из админки: requestKitchenReprint на сервере. */
+    requestReprint(id: string) {
+      const row = rows.find((r) => r._id === id);
+      if (!row) return;
+      row.kitchenPrintStatus = 'pending';
+      row.kitchenPrintSeq = (row.kitchenPrintSeq || 0) + 1;
     },
     async fetchPendingOrders() {
       const out: Row[] = [];
@@ -38,9 +45,12 @@ function createFakeServer() {
       }
       return out;
     },
-    async markPrinted(orderId: string) {
+    /** Подтверждение с проверкой seq — как confirmPrintResult на сервере. */
+    async markPrinted(orderId: string, seq?: number) {
       const row = rows.find((r) => r._id === orderId);
       if (!row) throw new Error('mark-printed 404');
+      // Устаревшее подтверждение (пока печатали — запросили Nachdruck) игнорируем.
+      if (seq !== undefined && (row.kitchenPrintSeq || 0) !== seq) return;
       row.kitchenPrintStatus = 'completed';
     },
   };
@@ -59,7 +69,7 @@ function createTestAgent(server: ReturnType<typeof createFakeServer>, opts: Row 
       if (opts.printDelayMs) await new Promise((r) => setTimeout(r, opts.printDelayMs));
       receipts.push(String(order.orderNumber));
     },
-    markPrinted: opts.markPrinted || ((id: string) => server.markPrinted(id)),
+    markPrinted: opts.markPrinted || ((id: string, seq?: number) => server.markPrinted(id, seq)),
     store: opts.store || createPrintedStore(tmpStateFile()),
     agentId: opts.agentId || 'test#1',
     log: vi.fn(),
@@ -156,6 +166,62 @@ describe('print-agent — «один заказ = один чек»', () => {
     const all = [...one.receipts, ...two.receipts].sort();
     expect(all).toEqual(['260709001', '260709002']); // ровно по одному чеку
     expect(server.rows.every((r) => r.kitchenPrintStatus === 'completed')).toBe(true);
+  });
+
+  it('«Напечатать ещё раз» из админки → новый чек, хранилище ключей не глушит', async () => {
+    const server = createFakeServer();
+    const { agent, receipts } = createTestAgent(server);
+
+    server.addOrder('a', '260709001');
+    await agent.runOnce();
+    expect(receipts).toEqual(['260709001']);
+
+    // Чек не вышел из принтера (принтер спал) — оператор жмёт кнопку.
+    server.requestReprint('a');
+    await agent.runOnce();
+
+    expect(receipts).toEqual(['260709001', '260709001']); // второй чек напечатан
+    expect(server.rows[0].kitchenPrintStatus).toBe('completed');
+
+    // Дальше — снова ровно один чек на задание: лишних тиков не печатает.
+    await agent.runOnce();
+    expect(receipts).toHaveLength(2);
+  });
+
+  it('Nachdruck во время печати не теряется: подтверждение старого задания игнорируется', async () => {
+    const server = createFakeServer();
+    server.addOrder('a', '260709001');
+    const { agent, receipts } = createTestAgent(server, { printDelayMs: 20 });
+
+    // Пока агент печатает задание seq=0, оператор жмёт «Напечатать ещё раз».
+    const tick = agent.runOnce();
+    await new Promise((r) => setTimeout(r, 5));
+    server.requestReprint('a');
+    await tick;
+
+    // Устаревший ACK не увёл заказ в completed — он снова в очереди.
+    expect(server.rows[0].kitchenPrintStatus).toBe('pending');
+
+    await agent.runOnce();
+    expect(receipts).toEqual(['260709001', '260709001']);
+    expect(server.rows[0].kitchenPrintStatus).toBe('completed');
+  });
+
+  it('обновление агента не перепечатывает уже напечатанные заказы (ключ seq=0 совместим)', async () => {
+    const server = createFakeServer();
+    const stateFile = tmpStateFile();
+    // Хранилище, записанное агентом СТАРОЙ версии (ключ без номера задания).
+    fs.writeFileSync(stateFile, JSON.stringify({ 'a:kitchen': new Date().toISOString() }));
+
+    server.addOrder('a', '260709001');
+    server.rows[0].kitchenPrintStatus = 'pending';
+    const { agent, receipts } = createTestAgent(server, {
+      store: createPrintedStore(stateFile),
+    });
+    await agent.runOnce();
+
+    expect(receipts).toEqual([]); // повторного чека нет
+    expect(server.rows[0].kitchenPrintStatus).toBe('completed');
   });
 
   it('печать дольше интервала polling\'а: параллельный тик пропускается, дублей нет', async () => {

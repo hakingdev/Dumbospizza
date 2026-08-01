@@ -5,7 +5,11 @@
 // UPDATE ... WHERE ... RETURNING в Postgres (findOneAndUpdate в mongoose-compat —
 // один conditional UPDATE): из конкурирующих claim'ов на строку проходит один.
 import { describe, it, expect, vi } from 'vitest';
-import { claimPendingPrintOrders, confirmPrintResult } from '../print-queue';
+import {
+  claimPendingPrintOrders,
+  confirmPrintResult,
+  requestKitchenReprint,
+} from '../print-queue';
 
 type Row = Record<string, any>;
 
@@ -47,6 +51,9 @@ function createFakeModel(rows: Row[], nowFn: () => Date = () => new Date()) {
       const row = rows.find((r) => matches(r, query));
       if (!row) return null;
       Object.assign(row, update.$set || {});
+      for (const [k, v] of Object.entries(update.$inc || {})) {
+        row[k] = (row[k] || 0) + (v as number);
+      }
       row.updatedAt = nowFn(); // $onUpdate в схеме
       return { ...row, _id: row.id };
     },
@@ -57,7 +64,9 @@ function pendingOrder(id: string, num: string, overrides: Row = {}): Row {
   return {
     id,
     orderNumber: num,
+    status: 'new',
     kitchenPrintStatus: 'pending',
+    kitchenPrintSeq: 0,
     paymentMethod: 'cash',
     paymentStatus: 'pending',
     createdAt: new Date('2026-07-09T18:00:00Z'),
@@ -197,5 +206,87 @@ describe('confirmPrintResult — идемпотентное подтвержде
   it('неизвестный заказ → null (роут ответит 404)', async () => {
     const model = createFakeModel([]);
     expect(await confirmPrintResult('ghost', true, { model, ...silent })).toBeNull();
+  });
+
+  it('подтверждение с устаревшим seq не затирает запрошенный Nachdruck', async () => {
+    const rows = [
+      pendingOrder('o1', '260709001', { kitchenPrintStatus: 'pending', kitchenPrintSeq: 1 }),
+    ];
+    const model = createFakeModel(rows);
+
+    // Агент печатал задание seq=0, а пока печатал — нажали «Напечатать ещё раз».
+    const res = await confirmPrintResult('o1', true, { model, seq: 0, ...silent });
+
+    expect(res).toBeNull();
+    expect(rows[0].kitchenPrintStatus).toBe('pending'); // заказ остался в очереди
+  });
+});
+
+describe('requestKitchenReprint — кнопка «Напечатать ещё раз»', () => {
+  it('возвращает заказ в очередь новым заданием (seq + 1)', async () => {
+    const rows = [
+      pendingOrder('o1', '260709001', { kitchenPrintStatus: 'completed', kitchenPrintSeq: 0 }),
+    ];
+    const model = createFakeModel(rows);
+
+    const order = await requestKitchenReprint('o1', { model, ...silent });
+
+    expect(order).not.toBeNull();
+    expect(rows[0].kitchenPrintStatus).toBe('pending');
+    expect(rows[0].kitchenPrintSeq).toBe(1); // ключ агента другой → чек напечатается
+  });
+
+  it('заказ, зависший в printing, всё равно можно поставить повторно', async () => {
+    const rows = [
+      pendingOrder('o1', '260709001', { kitchenPrintStatus: 'printing', kitchenPrintSeq: 0 }),
+    ];
+    const model = createFakeModel(rows);
+
+    await requestKitchenReprint('o1', { model, ...silent });
+
+    expect(rows[0].kitchenPrintStatus).toBe('pending');
+    expect(rows[0].kitchenPrintSeq).toBe(1);
+  });
+
+  it('неоплаченный онлайн-заказ отклоняется (иначе завис бы в pending навсегда)', async () => {
+    const rows = [
+      pendingOrder('o1', '260709001', {
+        kitchenPrintStatus: 'completed',
+        paymentMethod: 'online',
+        paymentStatus: 'pending',
+      }),
+    ];
+    const model = createFakeModel(rows);
+
+    expect(await requestKitchenReprint('o1', { model, ...silent })).toBeNull();
+    expect(rows[0].kitchenPrintStatus).toBe('completed');
+    expect(rows[0].kitchenPrintSeq).toBe(0);
+  });
+
+  it('драфт онлайн-оплаты отклоняется', async () => {
+    const rows = [
+      pendingOrder('o1', '260709001', {
+        status: 'pending_payment',
+        paymentMethod: 'online',
+        paymentStatus: 'pending',
+      }),
+    ];
+    const model = createFakeModel(rows);
+
+    expect(await requestKitchenReprint('o1', { model, ...silent })).toBeNull();
+  });
+
+  it('оплаченный онлайн-заказ печатается повторно', async () => {
+    const rows = [
+      pendingOrder('o1', '260709001', {
+        kitchenPrintStatus: 'completed',
+        paymentMethod: 'online',
+        paymentStatus: 'completed',
+      }),
+    ];
+    const model = createFakeModel(rows);
+
+    expect(await requestKitchenReprint('o1', { model, ...silent })).not.toBeNull();
+    expect(rows[0].kitchenPrintSeq).toBe(1);
   });
 });

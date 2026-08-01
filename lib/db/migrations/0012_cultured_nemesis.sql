@@ -1,0 +1,1 @@
+ALTER TABLE "orders" ADD COLUMN "kitchen_print_seq" integer DEFAULT 0 NOT NULL;

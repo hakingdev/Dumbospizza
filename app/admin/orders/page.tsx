@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from 'react';
-import { Search, ShoppingBag, Eye, ChevronDown, ChevronUp, Download } from 'lucide-react';
+import { Fragment, useState, useEffect } from 'react';
+import { Search, ShoppingBag, Eye, ChevronDown, ChevronUp, Download, Printer, Check } from 'lucide-react';
 import OrderTaxSummary from '../../../components/admin/OrderTaxSummary';
 import PaymentRefundPanel from '../../../components/admin/PaymentRefundPanel';
 const EXPORT_STATUSES = [
@@ -13,6 +13,14 @@ const EXPORT_STATUSES = [
   { value: 'completed', label: 'Доставлен' },
   { value: 'cancelled', label: 'Отменен' },
 ];
+
+/** Статус кухонной печати — в подсказке кнопки «Печать». */
+const PRINT_STATUS_LABELS: Record<string, string> = {
+  pending: 'в очереди',
+  printing: 'печатается',
+  completed: 'напечатан',
+  failed: 'ошибка',
+};
 
 function buildExportHref(format: 'csv' | 'xlsx', status: string, start: string, end: string): string {
   const p = new URLSearchParams({ format });
@@ -30,6 +38,8 @@ export default function OrdersPage() {
   const [exportStatus, setExportStatus] = useState('');
   const [exportStart, setExportStart] = useState('');
   const [exportEnd, setExportEnd] = useState('');
+  const [reprintingOrder, setReprintingOrder] = useState<string | null>(null);
+  const [reprintQueued, setReprintQueued] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchOrders = async () => {
@@ -78,6 +88,38 @@ export default function OrdersPage() {
       alert('Ошибка при обновлении статуса заказа');
     } finally {
       setUpdatingStatus(null);
+    }
+  };
+
+  /**
+   * Повторная печать кухонного чека. Сервер ставит заказ обратно в очередь
+   * принт-агента новым заданием (kitchenPrintSeq + 1) — печатает агент на
+   * кассовом ПК, поэтому «В очереди» ≠ «чек вышел»: обычно 5-10 секунд.
+   */
+  const handleReprint = async (orderId: string, orderNumber: string) => {
+    if (!confirm(`Напечатать чек заказа #${orderNumber} ещё раз?`)) return;
+
+    setReprintingOrder(orderId);
+    try {
+      const response = await fetch(`/api/orders/${orderId}/reprint`, { method: 'POST' });
+      const data = await response.json();
+
+      if (data.success) {
+        setOrders(orders.map((order: any) =>
+          (order._id === orderId || order.id === orderId)
+            ? { ...order, kitchenPrintStatus: 'pending' }
+            : order
+        ));
+        setReprintQueued(orderId);
+        setTimeout(() => setReprintQueued((cur) => (cur === orderId ? null : cur)), 6000);
+      } else {
+        alert('Не удалось поставить в печать: ' + (data.error || 'неизвестная ошибка'));
+      }
+    } catch (error) {
+      console.error('Error requesting reprint:', error);
+      alert('Не удалось поставить в печать — проверь соединение');
+    } finally {
+      setReprintingOrder(null);
     }
   };
 
@@ -195,10 +237,15 @@ export default function OrdersPage() {
                 const orderId = order._id || order.id;
                 const isExpanded = expandedOrder === orderId;
                 const isUpdating = updatingStatus === orderId;
-                
+                const isReprinting = reprintingOrder === orderId;
+                const isReprintQueued = reprintQueued === orderId;
+
                 return (
-                  <>
-                    <tr key={orderId} className="border-b hover:bg-gray-50">
+                  // key на фрагменте, а не на <tr>: строка заказа + строка
+                  // деталей — один элемент списка, иначе React путает строки
+                  // при обновлении (индикатор «В очереди» уезжал бы к соседу).
+                  <Fragment key={orderId}>
+                    <tr className="border-b hover:bg-gray-50">
                       <td className="px-4 sm:px-6 py-4">#{order.orderNumber || orderId}</td>
                       <td className="px-4 sm:px-6 py-4">
                         <div>
@@ -239,13 +286,42 @@ export default function OrdersPage() {
                         })}
                       </td>
                       <td className="px-4 sm:px-6 py-4">
-                        <button
-                          onClick={() => toggleOrderDetails(orderId)}
-                          className="text-primary-600 hover:text-primary-700 flex items-center gap-1"
-                        >
-                          <Eye className="h-4 w-4" />
-                          {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                        </button>
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={() => toggleOrderDetails(orderId)}
+                            className="text-primary-600 hover:text-primary-700 flex items-center gap-1"
+                            title="Детали заказа"
+                          >
+                            <Eye className="h-4 w-4" />
+                            {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                          </button>
+                          {isReprintQueued ? (
+                            <span
+                              data-testid={`reprint-queued-${orderId}`}
+                              className="flex items-center gap-1 text-xs text-green-700 whitespace-nowrap"
+                            >
+                              <Check className="h-4 w-4" />
+                              В очереди
+                            </span>
+                          ) : (
+                            <button
+                              data-testid={`reprint-${orderId}`}
+                              onClick={() => handleReprint(orderId, order.orderNumber || orderId)}
+                              disabled={isReprinting}
+                              title={`Напечатать чек ещё раз (печать: ${
+                                PRINT_STATUS_LABELS[order.kitchenPrintStatus as string] || '—'
+                              })`}
+                              className={`flex items-center gap-1 text-gray-600 hover:text-primary-700 ${
+                                isReprinting ? 'opacity-50 cursor-not-allowed' : ''
+                              }`}
+                            >
+                              <Printer className="h-4 w-4" />
+                              <span className="text-xs whitespace-nowrap">
+                                {isReprinting ? '...' : 'Печать'}
+                              </span>
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                     {isExpanded && (
@@ -351,7 +427,7 @@ export default function OrdersPage() {
                         </td>
                       </tr>
                     )}
-                  </>
+                  </Fragment>
                 );
               })}
             </tbody>

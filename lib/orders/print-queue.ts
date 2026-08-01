@@ -1,4 +1,5 @@
 import { Order } from '../models/order.model';
+import { PENDING_PAYMENT_STATUS } from './payment-draft';
 
 /**
  * Очередь печати кухонных чеков для принт-агента.
@@ -121,27 +122,88 @@ export async function claimPendingPrintOrders(
  * Подтверждение печати от агента — идемпотентно по заказу: повторный вызов на
  * уже подтверждённом заказе просто ещё раз выставляет тот же терминальный статус.
  * Один атомарный UPDATE вместо прежнего findById + save (read-then-write).
+ *
+ * @param seq номер задания печати, который агент реально отработал. Если задан,
+ *   UPDATE идёт с условием на kitchenPrintSeq: пока агент печатал, оператор мог
+ *   нажать «Напечатать ещё раз» (seq++ и статус → 'pending') — устаревшее
+ *   подтверждение НЕ должно затирать этот запрос обратно в 'completed'.
+ *   Агенты старых версий seq не присылают → поведение прежнее (без условия).
  */
 export async function confirmPrintResult(
   orderId: string,
   printed: boolean,
-  opts: ClaimOptions = {}
+  opts: ClaimOptions & { seq?: number } = {}
 ): Promise<any | null> {
   const model = (opts.model as any) ?? Order;
   const log = opts.log ?? ((msg: string) => console.log(msg));
   const agent = opts.agentId || 'unknown';
   const status = printed ? 'completed' : 'failed';
+  const guardSeq = Number.isFinite(opts.seq as number);
 
-  const order = await model.findOneAndUpdate(
-    { _id: orderId },
-    { $set: { kitchenPrintStatus: status } }
-  );
+  const filter: AnyRecord = { _id: orderId };
+  if (guardSeq) filter.kitchenPrintSeq = opts.seq;
+
+  const order = await model.findOneAndUpdate(filter, { $set: { kitchenPrintStatus: status } });
   if (order) {
     const { num } = orderRef(order);
     log(
       `[print-queue] decision=${printed ? 'confirmed_printed' : 'confirmed_failed'} ` +
-        `order=${num} order_id=${orderId} agent=${agent}`
+        `order=${num} order_id=${orderId} agent=${agent} seq=${guardSeq ? opts.seq : '-'}`
     );
+  } else if (guardSeq) {
+    log(
+      `[print-queue] decision=confirm_ignored_stale_seq order_id=${orderId} agent=${agent} ` +
+        `seq=${opts.seq} (за время печати запросили Nachdruck — заказ остаётся в очереди)`
+    );
+  }
+  return order;
+}
+
+/**
+ * Запрос повторной печати кухонного чека («Напечатать ещё раз» в админке).
+ *
+ * Возврата в очередь одним лишь статусом НЕ хватает: у агента есть persistent-
+ * хранилище напечатанных ключей, и уже напечатанный заказ он пропустит, просто
+ * повторив подтверждение. Поэтому вместе со статусом инкрементим kitchenPrintSeq —
+ * ключ задания становится другим, и агент печатает чек как новое задание
+ * (см. scripts/print-agent-core.js).
+ *
+ * Один атомарный UPDATE: из двух одновременных нажатий обе поднимут seq, но
+ * заказ всё равно уйдёт в печать ровно один раз за тик claim'а.
+ *
+ * @returns null, если заказа нет или он не печатаемый (драфт/неоплаченный онлайн).
+ */
+export async function requestKitchenReprint(
+  orderId: string,
+  opts: ClaimOptions & { requestedBy?: string } = {}
+): Promise<any | null> {
+  const model = (opts.model as any) ?? Order;
+  const log = opts.log ?? ((msg: string) => console.log(msg));
+  const by = opts.requestedBy || 'unknown';
+
+  const order = await model.findOneAndUpdate(
+    {
+      _id: orderId,
+      // Те же условия, по которым заказ вообще может попасть к агенту
+      // (см. GET /api/orders): драфты и неоплаченный онлайн в печать не идут —
+      // иначе заказ навсегда завис бы в 'pending'.
+      status: { $ne: PENDING_PAYMENT_STATUS },
+      $or: [{ paymentMethod: { $ne: 'online' } }, { paymentStatus: 'completed' }],
+    },
+    {
+      $set: { kitchenPrintStatus: 'pending' },
+      $inc: { kitchenPrintSeq: 1 },
+    }
+  );
+
+  if (order) {
+    const { num } = orderRef(order);
+    log(
+      `[print-queue] decision=reprint_requested order=${num} order_id=${orderId} ` +
+        `seq=${order.kitchenPrintSeq} by=${by}`
+    );
+  } else {
+    log(`[print-queue] decision=reprint_rejected order_id=${orderId} by=${by}`);
   }
   return order;
 }

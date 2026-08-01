@@ -18,9 +18,19 @@
 const fs = require('fs');
 const path = require('path');
 
-/** Стабильный идемпотентный ключ задания печати: заказ + тип чека. */
-function printIdempotencyKey(orderId, receiptType = 'kitchen') {
-  return `${orderId}:${receiptType}`;
+/**
+ * Стабильный идемпотентный ключ задания печати: заказ + тип чека + номер задания.
+ *
+ * seq приходит с сервера (orders.kitchen_print_seq): 0 — первичная печать,
+ * +1 на каждый Nachdruck из админки. Ключ первичной печати намеренно БЕЗ
+ * суффикса — он совпадает с форматом до появления Nachdruck'а, поэтому уже
+ * напечатанные заказы из существующего printed-orders.json не печатаются
+ * повторно после обновления агента.
+ */
+function printIdempotencyKey(orderId, receiptType = 'kitchen', seq = 0) {
+  const n = Number(seq);
+  const suffix = Number.isFinite(n) && n > 0 ? `#${n}` : '';
+  return `${orderId}:${receiptType}${suffix}`;
 }
 
 /**
@@ -71,7 +81,7 @@ function createPrintedStore(filePath, opts = {}) {
  * @param {object} deps
  * @param {() => Promise<any[]>} deps.fetchPendingOrders заказы, атомарно выданные сервером этому агенту
  * @param {(order: any) => Promise<void>} deps.printReceipt физическая печать чека
- * @param {(orderId: string) => Promise<void>} deps.markPrinted подтверждение печати (идемпотентное)
+ * @param {(orderId: string, seq: number) => Promise<void>} deps.markPrinted подтверждение печати (идемпотентное)
  * @param {{has(k:string):boolean, add(k:string):void}} deps.store persistent-хранилище напечатанных ключей
  * @param {string} deps.agentId идентификатор экземпляра агента (для логов сервера и агента)
  * @param {(msg: string) => void} [deps.log]
@@ -105,7 +115,10 @@ function createPrintAgent(deps) {
       for (const order of orders) {
         const orderId = String(order._id || order.id);
         const orderNumber = String(order.orderNumber || orderId);
-        const key = printIdempotencyKey(orderId);
+        // Номер задания печати: повторная печать из админки приходит с seq+1,
+        // то есть как ДРУГОЕ задание — хранилище напечатанных ключей её не глушит.
+        const seq = Number(order.kitchenPrintSeq) || 0;
+        const key = printIdempotencyKey(orderId, 'kitchen', seq);
         try {
           if (store.has(key)) {
             // Чек уже выходил из принтера (reclaim после потерянного ACK,
@@ -113,7 +126,7 @@ function createPrintAgent(deps) {
             log(
               `[print] decision=already_printed order=${orderNumber} order_id=${orderId} key=${key} agent=${agentId}`
             );
-            await markPrinted(orderId);
+            await markPrinted(orderId, seq);
             confirmed++;
             continue;
           }
@@ -125,7 +138,7 @@ function createPrintAgent(deps) {
           store.add(key);
           printed++;
 
-          await markPrinted(orderId);
+          await markPrinted(orderId, seq);
           confirmed++;
           log(
             `[print] decision=printed order=${orderNumber} order_id=${orderId} key=${key} agent=${agentId}`

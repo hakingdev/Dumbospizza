@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '../../../../../lib/models';
+import { Order } from '../../../../../lib/models/order.model';
 import { confirmPrintResult } from '../../../../../lib/orders/print-queue';
 
 /**
@@ -24,13 +25,27 @@ export async function POST(
 
   try {
     await connectToDatabase();
-    const body = await request.json().catch(() => ({}));
+    const body: any = await request.json().catch(() => ({}));
     const printed = body?.success !== false;
+    // Номер отработанного задания печати: агенты новых версий присылают его,
+    // чтобы подтверждение не затёрло запрошенный во время печати Nachdruck.
+    const seq = typeof body?.printSeq === 'number' && Number.isFinite(body.printSeq)
+      ? body.printSeq
+      : undefined;
 
     const order = await confirmPrintResult(params.id, printed, {
       agentId: request.headers.get('X-Print-Agent-Id') || undefined,
+      seq,
     });
     if (!order) {
+      // seq не совпал — заказ жив, но за время печати его снова поставили в
+      // очередь. Для агента это успех: его задание закрыто, повторять нечего.
+      if (seq !== undefined) {
+        const exists = await Order.findById(params.id);
+        if (exists) {
+          return NextResponse.json({ success: true, superseded: true });
+        }
+      }
       return NextResponse.json({ success: false, error: 'Order not found' }, { status: 404 });
     }
     return NextResponse.json({

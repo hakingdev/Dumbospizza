@@ -106,6 +106,8 @@ export interface IOrder {
   telegramMessageId?: number;
   mewsOrderId?: string;
   kitchenPrintStatus?: 'pending' | 'printing' | 'completed' | 'failed';
+  /** Номер задания печати кухонного чека: 0 — первичное, +1 на каждый Nachdruck. */
+  kitchenPrintSeq?: number;
   customerPrintStatus?: 'pending' | 'printing' | 'completed' | 'failed';
   createdAt: Date;
   updatedAt: Date;
