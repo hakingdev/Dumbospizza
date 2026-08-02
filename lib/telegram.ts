@@ -7,6 +7,7 @@ import type { IOrder } from './models/order.model';
 import { sendOrderStatusNotification } from './whatsapp';
 import { earnForCompletedOrder, reverseOrder } from './loyalty/service';
 import { stripPromoLabels } from './orders/gift-label';
+import { requestKitchenReprint } from './orders/print-queue';
 
 const botCache = new Map<string, any>();
 
@@ -303,6 +304,95 @@ export function resolveTelegramStatus(statusKey: string): OrderStatus | null {
   return TELEGRAM_STATUS_MAP[statusKey] ?? null;
 }
 
+/**
+ * Разбор callback_data вида `reprint_<orderNumber>` — кнопка «🖨 Чек ещё раз».
+ * Возвращает null, если это не наша кнопка.
+ */
+export function parseReprintCallback(data: unknown): { orderNumber: string } | null {
+  if (typeof data !== 'string' || !data.startsWith('reprint_')) return null;
+  const orderNumber = data.slice('reprint_'.length);
+  return orderNumber ? { orderNumber } : null;
+}
+
+export interface ReprintCallbackDeps {
+  answerCallbackQuery: (id: string, opts?: { text?: string; show_alert?: boolean }) => PromiseLike<unknown>;
+  findOrder: (orderNumber: string) => PromiseLike<any | null>;
+  /** Ставит кухонный чек в очередь новым заданием; null = заказ печатать нельзя. */
+  requestReprint: (orderId: string) => PromiseLike<any | null>;
+  log?: (...args: any[]) => void;
+}
+
+export type ReprintCallbackResult = {
+  handled: boolean;
+  reason?: 'not_reprint_callback' | 'order_not_found' | 'lookup_error' | 'rejected' | 'queued';
+};
+
+/**
+ * Ядро обработки клика по «🖨 Чек ещё раз». Как и у кнопок статуса: изолировано
+ * от Telegram/БД через deps, answerCallbackQuery вызывается всегда.
+ *
+ * Ответ оператору намеренно говорит «в очереди», а не «напечатано»: печатает
+ * агент на кассовом ПК, сервер знает только о постановке в очередь.
+ */
+export async function handleReprintCallbackQuery(
+  cbq: any,
+  deps: ReprintCallbackDeps
+): Promise<ReprintCallbackResult> {
+  const log = deps.log || ((...a: any[]) => console.log('[telegram]', ...a));
+  const id: string = cbq?.id;
+  const ack = async (opts?: { text?: string; show_alert?: boolean }) => {
+    if (!id) return;
+    try {
+      await deps.answerCallbackQuery(id, opts);
+    } catch (e) {
+      log('answerCallbackQuery failed', (e as Error)?.message);
+    }
+  };
+
+  const parsed = parseReprintCallback(cbq?.data);
+  if (!parsed) {
+    await ack();
+    return { handled: false, reason: 'not_reprint_callback' };
+  }
+
+  log('reprint requested', { orderNumber: parsed.orderNumber });
+
+  let order: any;
+  try {
+    order = await deps.findOrder(parsed.orderNumber);
+  } catch (e) {
+    log('order lookup failed', (e as Error)?.message);
+    await ack({ text: 'Fehler beim Laden der Bestellung', show_alert: true });
+    return { handled: false, reason: 'lookup_error' };
+  }
+
+  if (!order) {
+    log('order not found', parsed.orderNumber);
+    await ack({ text: `Заказ #${parsed.orderNumber} не найден`, show_alert: true });
+    return { handled: false, reason: 'order_not_found' };
+  }
+
+  let queued: any = null;
+  try {
+    queued = await deps.requestReprint(String(order._id || order.id));
+  } catch (e) {
+    log('reprint request failed', (e as Error)?.message);
+    await ack({ text: 'Не удалось поставить чек в печать', show_alert: true });
+    return { handled: false, reason: 'lookup_error' };
+  }
+
+  if (!queued) {
+    await ack({
+      text: `Заказ #${parsed.orderNumber} нельзя напечатать: не подтверждена оплата`,
+      show_alert: true,
+    });
+    return { handled: false, reason: 'rejected' };
+  }
+
+  await ack({ text: `🖨 Чек #${parsed.orderNumber} — в очереди на печать` });
+  return { handled: true, reason: 'queued' };
+}
+
 export interface StatusCallbackDeps {
   answerCallbackQuery: (id: string, opts?: { text?: string; show_alert?: boolean }) => PromiseLike<unknown>;
   findOrder: (orderNumber: string) => PromiseLike<any | null>;
@@ -427,6 +517,18 @@ export async function processTelegramUpdate(update: any): Promise<void> {
   const { bot } = await getTelegramConfig();
   await connectToDatabase();
 
+  // Разводим кнопки по префиксу callback_data ДО обработчиков: иначе каждый
+  // ответил бы на чужой клик своим answerCallbackQuery (двойной ack).
+  if (parseReprintCallback(update.callback_query?.data)) {
+    await handleReprintCallbackQuery(update.callback_query, {
+      answerCallbackQuery: (cbId, opts) => bot.answerCallbackQuery(cbId, opts),
+      findOrder: (orderNumber) => Order.findOne({ orderNumber }),
+      requestReprint: (orderId) =>
+        requestKitchenReprint(orderId, { requestedBy: 'telegram' }),
+    });
+    return;
+  }
+
   await handleStatusCallbackQuery(update.callback_query, {
     answerCallbackQuery: (cbId, opts) => bot.answerCallbackQuery(cbId, opts),
     findOrder: (orderNumber) => Order.findOne({ orderNumber }),
@@ -468,6 +570,11 @@ function buildStatusKeyboard(orderId: string) {
       ],
       [
         { text: '❌ Отменён', callback_data: `status_cancelled_${orderId}` }
+      ],
+      [
+        // Повторная печать кухонного чека — та же операция, что кнопка «Печать»
+        // в админке (lib/orders/print-queue.ts → requestKitchenReprint).
+        { text: '🖨 Чек ещё раз', callback_data: `reprint_${orderId}` }
       ]
     ]
   };
