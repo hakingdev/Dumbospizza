@@ -103,6 +103,9 @@ export interface IOrder {
   notes?: string;
   /** Желаемое время доставки в формате HH:mm (например "16:45") */
   desiredDeliveryTime?: string;
+  /** Время готовности в минутах, объявленное клиенту из Telegram. */
+  etaMinutes?: number;
+  etaSetAt?: Date;
   telegramMessageId?: number;
   mewsOrderId?: string;
   kitchenPrintStatus?: 'pending' | 'printing' | 'completed' | 'failed';

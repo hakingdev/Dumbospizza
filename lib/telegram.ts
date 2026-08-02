@@ -4,7 +4,7 @@ import { getSetting } from './settings';
 import { connectToDatabase } from './models';
 import { Order } from './models/order.model';
 import type { IOrder } from './models/order.model';
-import { sendOrderStatusNotification } from './whatsapp';
+import { sendOrderStatusNotification, sendOrderEtaNotification } from './whatsapp';
 import { earnForCompletedOrder, reverseOrder } from './loyalty/service';
 import { stripPromoLabels } from './orders/gift-label';
 import { requestKitchenReprint } from './orders/print-queue';
@@ -35,6 +35,21 @@ async function getTelegramConfig() {
 // Order status types
 export type OrderStatus = 'new' | 'preparing' | 'ready_for_delivery' | 'delivering' | 'completed' | 'cancelled';
 
+/** Подписи статусов в сообщении Telegram (и белый список статусов заказа). */
+const STATUS_INFO: Record<OrderStatus, string> = {
+  new: '🆕 Новый',
+  preparing: '🧑‍🍳 Готовится',
+  ready_for_delivery: '✅ Готов к доставке',
+  delivering: '🚚 В пути',
+  completed: '🏁 Доставлен',
+  cancelled: '❌ Отменён'
+};
+
+/** Статус заказа из БД может быть и `pending_payment` — в сообщении его не рисуем. */
+export function isOrderStatus(value: unknown): value is OrderStatus {
+  return typeof value === 'string' && value in STATUS_INFO;
+}
+
 export interface OrderNotification {
   orderId: string;
   customerName: string;
@@ -58,6 +73,8 @@ export interface OrderNotification {
   paymentMethod: string;
   deliveryType: 'delivery' | 'pickup';
   desiredDeliveryTime?: string;
+  /** Объявленное клиенту время готовности, мин (кнопка «⏱ Время готовности»). */
+  etaMinutes?: number;
 }
 
 export interface PreOrderNotification {
@@ -139,12 +156,18 @@ function buildOrderMessageText(order: OrderNotification): string {
     ? `\n🕐 Желаемое время: ${escapeHtml(order.desiredDeliveryTime)}`
     : '';
 
+  // Клиенту уже сказали время — держим его в сообщении, иначе после ухода
+  // всплывашки оператор не вспомнит, что и когда пообещали.
+  const etaLine = order.etaMinutes
+    ? `\n⏱ Клиенту сообщено: ~${order.etaMinutes} мин`
+    : '';
+
   return `
 🔔 <b>НОВЫЙ ЗАКАЗ #${order.orderId}</b>
 
 👤 Клиент: ${escapeHtml(order.customerName)}
 📱 Телефон: ${escapeHtml(order.phoneNumber)}
-${addressInfo}${desiredTimeLine}
+${addressInfo}${desiredTimeLine}${etaLine}
 ${sumsBlock}
 💳 Способ оплаты: ${escapeHtml(order.paymentMethod)}
 
@@ -186,15 +209,7 @@ export async function updateOrderStatus(
 ): Promise<boolean> {
   try {
     const { bot, chatId } = await getTelegramConfig();
-    const statusInfo: Record<OrderStatus, string> = {
-      new: '🆕 Новый',
-      preparing: '🧑‍🍳 Готовится',
-      ready_for_delivery: '✅ Готов к доставке',
-      delivering: '🚚 В пути',
-      completed: '🏁 Доставлен',
-      cancelled: '❌ Отменён'
-    };
-    const statusLine = `Статус заказа #${orderId}: ${statusInfo[status]}`;
+    const statusLine = `Статус заказа #${orderId}: ${STATUS_INFO[status]}`;
 
     const baseText = orderData
       ? buildOrderMessageText(orderData)
@@ -264,7 +279,8 @@ function orderToNotification(order: IOrder): OrderNotification {
     discount: order.discount,
     paymentMethod: order.paymentMethod,
     deliveryType: order.deliveryType,
-    desiredDeliveryTime: order.desiredDeliveryTime
+    desiredDeliveryTime: order.desiredDeliveryTime,
+    etaMinutes: order.etaMinutes
   };
 }
 
@@ -393,6 +409,197 @@ export async function handleReprintCallbackQuery(
   return { handled: true, reason: 'queued' };
 }
 
+/** Пресеты времени готовности (минуты) на кнопках «⏱ Время готовности». */
+export const ETA_PRESETS = [30, 45, 60, 90, 120] as const;
+
+/** Границы значения из callback_data — защита от мусора и опечаток в пресетах. */
+const ETA_MIN_MINUTES = 1;
+const ETA_MAX_MINUTES = 600;
+
+export type EtaCallback =
+  | { action: 'menu'; orderId: string }
+  | { action: 'back'; orderId: string }
+  | { action: 'set'; minutes: number; orderId: string };
+
+/**
+ * Разбор callback_data кнопок времени готовности:
+ *   `eta_menu_<orderNumber>`           — показать пресеты,
+ *   `eta_back_<orderNumber>`           — вернуться к основной клавиатуре,
+ *   `eta_set_<minutes>_<orderNumber>`  — объявить время клиенту.
+ * Делим по ПЕРВОМУ '_' (как parseStatusCallback): orderNumber может содержать '_'.
+ */
+export function parseEtaCallback(data: unknown): EtaCallback | null {
+  if (typeof data !== 'string' || !data.startsWith('eta_')) return null;
+  const rest = data.slice('eta_'.length);
+  const i = rest.indexOf('_');
+  if (i <= 0) return null;
+
+  const action = rest.slice(0, i);
+  const tail = rest.slice(i + 1);
+  if (!tail) return null;
+
+  if (action === 'menu' || action === 'back') return { action, orderId: tail };
+  if (action !== 'set') return null;
+
+  const j = tail.indexOf('_');
+  if (j <= 0) return null;
+  const minutes = Number(tail.slice(0, j));
+  const orderId = tail.slice(j + 1);
+  if (!orderId) return null;
+  if (!Number.isInteger(minutes) || minutes < ETA_MIN_MINUTES || minutes > ETA_MAX_MINUTES) {
+    return null;
+  }
+  return { action: 'set', minutes, orderId };
+}
+
+export interface EtaCallbackDeps {
+  answerCallbackQuery: (id: string, opts?: { text?: string; show_alert?: boolean }) => PromiseLike<unknown>;
+  findOrder: (orderNumber: string) => PromiseLike<any | null>;
+  /** Заменить основную клавиатуру рядом пресетов. */
+  showEtaMenu?: (messageId: number, orderId: string) => Promise<void>;
+  /** Вернуть основную клавиатуру, не трогая текст. */
+  showMainKeyboard?: (messageId: number, orderId: string) => Promise<void>;
+  /** Перерисовать сообщение из данных заказа (текст + основная клавиатура). */
+  refreshMessage?: (messageId: number, order: any) => Promise<void>;
+  /** Отправка клиенту; false = не доставлено — оператор должен об этом узнать. */
+  notifyCustomer: (order: any, minutes: number) => PromiseLike<boolean>;
+  log?: (...args: any[]) => void;
+}
+
+export type EtaCallbackResult = {
+  handled: boolean;
+  minutes?: number;
+  reason?:
+    | 'not_eta_callback'
+    | 'menu_shown'
+    | 'menu_closed'
+    | 'order_not_found'
+    | 'lookup_error'
+    | 'save_error'
+    | 'unchanged'
+    | 'sent'
+    | 'send_failed';
+};
+
+/**
+ * Ядро обработки кнопок времени готовности. Как и у статусов/реприна: изоляция
+ * от Telegram/БД через deps, answerCallbackQuery вызывается всегда.
+ *
+ * Отличие от статусов: ack идёт ПОСЛЕ отправки клиенту, потому что оператору
+ * важен именно результат доставки — «сохранено, но не отправлено» он должен
+ * увидеть сразу, а не искать в логах.
+ */
+export async function handleEtaCallbackQuery(
+  cbq: any,
+  deps: EtaCallbackDeps
+): Promise<EtaCallbackResult> {
+  const log = deps.log || ((...a: any[]) => console.log('[telegram]', ...a));
+  const id: string = cbq?.id;
+  const ack = async (opts?: { text?: string; show_alert?: boolean }) => {
+    if (!id) return;
+    try {
+      await deps.answerCallbackQuery(id, opts);
+    } catch (e) {
+      log('answerCallbackQuery failed', (e as Error)?.message);
+    }
+  };
+
+  const parsed = parseEtaCallback(cbq?.data);
+  if (!parsed) {
+    await ack();
+    return { handled: false, reason: 'not_eta_callback' };
+  }
+
+  const messageId: number | undefined = cbq?.message?.message_id;
+  const swapKeyboard = async (
+    fn: EtaCallbackDeps['showEtaMenu'] | EtaCallbackDeps['showMainKeyboard'],
+    orderId: string,
+    label: string
+  ) => {
+    if (!messageId || !fn) return;
+    try {
+      await fn(messageId, orderId);
+    } catch (e) {
+      log(`${label} failed`, (e as Error)?.message);
+    }
+  };
+
+  if (parsed.action === 'menu') {
+    await ack();
+    await swapKeyboard(deps.showEtaMenu, parsed.orderId, 'showEtaMenu');
+    return { handled: true, reason: 'menu_shown' };
+  }
+
+  if (parsed.action === 'back') {
+    await ack();
+    await swapKeyboard(deps.showMainKeyboard, parsed.orderId, 'showMainKeyboard');
+    return { handled: true, reason: 'menu_closed' };
+  }
+
+  const { minutes } = parsed;
+  log('eta requested', { orderNumber: parsed.orderId, minutes });
+
+  let order: any;
+  try {
+    order = await deps.findOrder(parsed.orderId);
+  } catch (e) {
+    log('order lookup failed', (e as Error)?.message);
+    await ack({ text: 'Fehler beim Laden der Bestellung', show_alert: true });
+    return { handled: false, reason: 'lookup_error' };
+  }
+
+  if (!order) {
+    log('order not found', parsed.orderId);
+    await ack({ text: `Заказ #${parsed.orderId} не найден`, show_alert: true });
+    return { handled: false, reason: 'order_not_found' };
+  }
+
+  // Идемпотентность: то же время — не шлём клиенту второе сообщение. Каждое
+  // WhatsApp-уведомление платное и читается как «время опять изменилось».
+  if (order.etaMinutes === minutes) {
+    await ack({ text: `Клиенту уже сообщено: ~${minutes} мин` });
+    await swapKeyboard(deps.showMainKeyboard, parsed.orderId, 'showMainKeyboard');
+    return { handled: true, minutes, reason: 'unchanged' };
+  }
+
+  try {
+    order.etaMinutes = minutes;
+    order.etaSetAt = new Date();
+    await order.save();
+    log('eta saved', { orderNumber: parsed.orderId, minutes });
+  } catch (e) {
+    log('order save failed', (e as Error)?.message);
+    await ack({ text: 'Zeit konnte nicht gespeichert werden', show_alert: true });
+    return { handled: false, reason: 'save_error' };
+  }
+
+  let delivered = false;
+  try {
+    delivered = await deps.notifyCustomer(order, minutes);
+  } catch (e) {
+    log('notifyCustomer failed', (e as Error)?.message);
+  }
+
+  await ack(
+    delivered
+      ? { text: `⏱ ${minutes} мин — клиенту отправлено` }
+      : {
+          text: `⏱ ${minutes} мин сохранено, но сообщение клиенту НЕ отправлено`,
+          show_alert: true,
+        }
+  );
+
+  if (messageId && deps.refreshMessage) {
+    try {
+      await deps.refreshMessage(messageId, order);
+    } catch (e) {
+      log('refreshMessage failed', (e as Error)?.message);
+    }
+  }
+
+  return { handled: true, minutes, reason: delivered ? 'sent' : 'send_failed' };
+}
+
 export interface StatusCallbackDeps {
   answerCallbackQuery: (id: string, opts?: { text?: string; show_alert?: boolean }) => PromiseLike<unknown>;
   findOrder: (orderNumber: string) => PromiseLike<any | null>;
@@ -514,11 +721,54 @@ export async function handleStatusCallbackQuery(
 export async function processTelegramUpdate(update: any): Promise<void> {
   if (!update?.callback_query) return;
 
-  const { bot } = await getTelegramConfig();
+  const { bot, chatId } = await getTelegramConfig();
   await connectToDatabase();
 
   // Разводим кнопки по префиксу callback_data ДО обработчиков: иначе каждый
   // ответил бы на чужой клик своим answerCallbackQuery (двойной ack).
+  if (parseEtaCallback(update.callback_query?.data)) {
+    await handleEtaCallbackQuery(update.callback_query, {
+      answerCallbackQuery: (cbId, opts) => bot.answerCallbackQuery(cbId, opts),
+      findOrder: (orderNumber) => Order.findOne({ orderNumber }),
+      showEtaMenu: async (messageId, orderId) => {
+        await bot.editMessageReplyMarkup(buildEtaKeyboard(orderId), {
+          chat_id: chatId,
+          message_id: messageId,
+        });
+      },
+      showMainKeyboard: async (messageId, orderId) => {
+        await bot.editMessageReplyMarkup(buildStatusKeyboard(orderId), {
+          chat_id: chatId,
+          message_id: messageId,
+        });
+      },
+      refreshMessage: async (messageId, order) => {
+        // Пересобираем текст, чтобы в сообщении осталось «Клиенту сообщено».
+        // Заодно возвращается основная клавиатура (внутри buildStatusKeyboard).
+        if (!isOrderStatus(order.status)) {
+          await bot.editMessageReplyMarkup(buildStatusKeyboard(order.orderNumber), {
+            chat_id: chatId,
+            message_id: messageId,
+          });
+          return;
+        }
+        await updateOrderStatus(
+          messageId,
+          order.status,
+          order.orderNumber,
+          undefined,
+          orderToNotification(order)
+        );
+      },
+      notifyCustomer: (order, minutes) =>
+        sendOrderEtaNotification(
+          { phoneNumber: order.phoneNumber, orderNumber: order.orderNumber },
+          minutes
+        ),
+    });
+    return;
+  }
+
   if (parseReprintCallback(update.callback_query?.data)) {
     await handleReprintCallbackQuery(update.callback_query, {
       answerCallbackQuery: (cbId, opts) => bot.answerCallbackQuery(cbId, opts),
@@ -572,10 +822,30 @@ function buildStatusKeyboard(orderId: string) {
         { text: '❌ Отменён', callback_data: `status_cancelled_${orderId}` }
       ],
       [
+        // Время готовности → WhatsApp клиенту (lib/whatsapp.ts). Двухшаговая:
+        // клик открывает пресеты, чтобы не раздувать основную клавиатуру.
+        { text: '⏱ Время готовности', callback_data: `eta_menu_${orderId}` }
+      ],
+      [
         // Повторная печать кухонного чека — та же операция, что кнопка «Печать»
         // в админке (lib/orders/print-queue.ts → requestKitchenReprint).
         { text: '🖨 Чек ещё раз', callback_data: `reprint_${orderId}` }
       ]
+    ]
+  };
+}
+
+/** Ряд пресетов времени готовности + возврат к основной клавиатуре. */
+function buildEtaKeyboard(orderId: string) {
+  const presets = ETA_PRESETS.map((m) => ({
+    text: `${m} мин`,
+    callback_data: `eta_set_${m}_${orderId}`
+  }));
+  return {
+    inline_keyboard: [
+      presets.slice(0, 3),
+      presets.slice(3),
+      [{ text: '◀️ Назад', callback_data: `eta_back_${orderId}` }]
     ]
   };
 }

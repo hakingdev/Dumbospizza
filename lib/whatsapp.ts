@@ -265,6 +265,54 @@ export async function sendOrderPlacedNotification(order: OrderForWhatsApp): Prom
 }
 
 /**
+ * Send the estimated preparation time to the customer via WhatsApp.
+ * Вызывается кнопкой «⏱ Время готовности» в Telegram (lib/telegram.ts).
+ *
+ * Только Twilio: воркер whatsapp-web.js мёртв (номер забанен), а у Meta Cloud
+ * API нет одобренного шаблона под это сообщение. Fire-and-forget, never throws.
+ */
+export async function sendOrderEtaNotification(
+  order: OrderForWhatsApp,
+  minutes: number
+): Promise<boolean> {
+  try {
+    await connectToDatabase();
+    const storeSettings = await getSetting<Record<string, any>>('storeSettings', {});
+    const enabled = storeSettings?.whatsappOrderNotificationsEnabled ?? false;
+    if (!enabled) return false;
+
+    const twilio = getTwilioConfig();
+    if (!twilio) {
+      console.error('WhatsApp ETA: Twilio не настроен (TWILIO_ACCOUNT_SID/TWILIO_WHATSAPP_FROM)');
+      return false;
+    }
+
+    // Без одобренного шаблона Meta не доставит сообщение вне 24h-окна — в проде
+    // ContentSid обязателен, plain text остаётся только для песочницы.
+    const contentSid = process.env.TWILIO_CONTENT_SID_ORDER_ETA?.trim() || undefined;
+    if (!contentSid) {
+      console.warn('WhatsApp ETA: TWILIO_CONTENT_SID_ORDER_ETA не задан — уйдёт plain text (только песочница/24h-окно)');
+    }
+
+    return sendViaTwilio(twilio, {
+      phone: order.phoneNumber,
+      defaultCountryCode:
+        (storeSettings?.whatsappDefaultCountryCode as string)?.trim() || DEFAULT_COUNTRY_CODE,
+      contentSid,
+      contentVariables: { '1': order.orderNumber, '2': String(minutes) },
+      // Дословно как в шаблоне bestellung_in_zubereitung — чтобы песочница и
+      // прод не расходились текстом.
+      fallbackText:
+        `Ihre Bestellung ${order.orderNumber} wird zubereitet. ` +
+        `Voraussichtlich fertig in ca. ${minutes} Minuten. Ihr Dumbo Pizza Team`,
+    });
+  } catch (error) {
+    console.error('Error sending WhatsApp ETA notification:', error);
+    return false;
+  }
+}
+
+/**
  * Send order status update to customer via WhatsApp.
  * Mode: WhatsApp Web worker (if enabled) or Meta Cloud API. Fire-and-forget, never throws.
  */

@@ -207,6 +207,11 @@ export const orders = pgTable(
     status: text('status').notNull().default('new'),
     notes: text('notes'),
     desiredDeliveryTime: text('desired_delivery_time'),
+    // Время готовности, объявленное клиенту кнопкой «⏱ Время готовности» в
+    // Telegram. Храним значение + момент установки: повторный клик по тому же
+    // числу не должен слать клиенту второе WhatsApp-сообщение.
+    etaMinutes: integer('eta_minutes'),
+    etaSetAt: timestamp('eta_set_at', { withTimezone: true, mode: 'date' }),
     telegramMessageId: bigint('telegram_message_id', { mode: 'number' }),
     mewsOrderId: text('mews_order_id'),
     kitchenPrintStatus: text('kitchen_print_status').default('pending'),
