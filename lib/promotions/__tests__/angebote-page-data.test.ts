@@ -69,6 +69,26 @@ describe('loadParticipatingProducts — число запросов', () => {
     expect(out).toHaveLength(17);
   });
 
+  it('displayPrice берётся из активных размеров, а не из устаревшего basePrice', async () => {
+    const find = vi.fn(async () => [
+      {
+        _id: 'prodSized',
+        name: 'Dumbo Pizza',
+        basePrice: 7.88, // устаревшее поле — в карточке был именно этот «неправильный» прайс
+        sizes: [
+          { name: 'ca. 20x20', price: 8.9, active: true },
+          { name: 'ca. 30x40', price: 16.9, active: true },
+          { name: 'Mini 18cm', price: 4.9, active: true }, // не продаётся поштучно
+          { name: 'ca. 60x40', price: 3.33, active: false }, // выключен в библиотеке
+        ],
+      },
+      { _id: 'prodPlain', name: 'Cola', basePrice: 2.5 }, // без размеров → basePrice
+    ]);
+    const out = await loadParticipatingProducts(makePromo(), find);
+    expect(out.find((p) => p.id === 'prodSized')?.displayPrice).toBe(8.9);
+    expect(out.find((p) => p.id === 'prodPlain')?.displayPrice).toBe(2.5);
+  });
+
   it('пустое таргетирование → запросов нет', async () => {
     const find = vi.fn(async () => []);
     const out = await loadParticipatingProducts(

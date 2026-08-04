@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { ProductCard } from './product-card';
 import { PromotionBadgesProvider, toBadgeItems } from './promotions/PromotionBadgesContext';
 import { cachedJson } from '../lib/client-cache';
+import { getProductDisplayPrice } from '../lib/product-pricing';
 
 export function FeaturedProducts() {
   const [products, setProducts] = useState([]);
@@ -45,7 +46,8 @@ export function FeaturedProducts() {
             id: product._id,
             name: product.name,
             description: product.description,
-            price: product.basePrice,
+            // «ab»-Preis aus den aktiven Größen — basePrice ist bei Größen-Produkten veraltet
+            price: getProductDisplayPrice(product),
             image: product.image,
             category: product.category,
             valentinePromo: product.valentinePromo

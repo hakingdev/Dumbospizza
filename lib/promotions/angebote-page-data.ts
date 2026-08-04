@@ -1,4 +1,5 @@
 import type { toPromotionPublicView } from './serialize';
+import { getProductDisplayPrice, type ProductSizeLike } from '../product-pricing';
 
 type PublicPromo = ReturnType<typeof toPromotionPublicView>;
 
@@ -6,7 +7,8 @@ export interface ParticipatingProduct {
   id: string;
   name: string;
   image?: string;
-  basePrice: number;
+  /** «ab»-Preis: минимальная цена активных размеров, для товаров без размеров — basePrice */
+  displayPrice: number;
 }
 
 export interface OfferParticipationFallback {
@@ -14,7 +16,13 @@ export interface OfferParticipationFallback {
   description: string;
 }
 
-type ProductRow = { _id: unknown; name: string; image?: string; basePrice: number };
+type ProductRow = {
+  _id: unknown;
+  name: string;
+  image?: string;
+  basePrice: number;
+  sizes?: ProductSizeLike[];
+};
 /** Запрос товаров (инъекция для тестируемости; в проде — Product.find). */
 export type FindProducts = (query: Record<string, unknown>) => Promise<ProductRow[]>;
 
@@ -88,7 +96,7 @@ export async function loadParticipatingProducts(
       const id = String(doc._id);
       if (seen.has(id)) continue;
       seen.add(id);
-      products.push({ id, name: doc.name, image: doc.image, basePrice: doc.basePrice });
+      products.push({ id, name: doc.name, image: doc.image, displayPrice: getProductDisplayPrice(doc) });
     }
   };
 

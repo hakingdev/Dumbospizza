@@ -19,6 +19,7 @@ import { SafeImage } from '../../components/SafeImage'
 import { formatOrderHoursTemplate, resolveOrderAcceptanceHours } from '../../lib/order-acceptance-hours'
 import { storageGet, storageSet } from '../../lib/safe-storage'
 import { cachedJson } from '../../lib/client-cache'
+import { getProductDisplayPrice } from '../../lib/product-pricing'
 
 const categoryColors = [
   'from-red-500 to-orange-500',
@@ -243,7 +244,8 @@ export default function Home() {
                     id: product._id,
                     name: product.name,
                     description: product.description,
-                    price: product.basePrice,
+                    // «ab»-Preis aus den aktiven Größen — basePrice ist bei Größen-Produkten veraltet
+                    price: getProductDisplayPrice(product),
                     image: product.image,
                     category: product.category,
                     valentinePromo: true

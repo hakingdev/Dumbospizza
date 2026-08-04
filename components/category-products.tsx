@@ -5,6 +5,7 @@ import { ProductCard } from './product-card';
 import Link from 'next/link';
 import { PromotionBadgesProvider, toBadgeItems } from './promotions/PromotionBadgesContext';
 import { cachedJson } from '../lib/client-cache';
+import { getProductDisplayPrice } from '../lib/product-pricing';
 
 interface CategoryProductsProps {
   categorySlug: string;
@@ -70,7 +71,8 @@ export function CategoryProducts({ categorySlug, categoryTitle, limit = 4, onPro
             id: product._id,
             name: product.name,
             description: product.description,
-            price: product.basePrice,
+            // «ab»-Preis aus den aktiven Größen — basePrice ist bei Größen-Produkten veraltet
+            price: getProductDisplayPrice(product),
             image: product.image,
             category: product.category,
             valentinePromo: product.valentinePromo

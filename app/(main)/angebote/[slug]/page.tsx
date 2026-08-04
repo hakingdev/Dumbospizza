@@ -11,6 +11,7 @@ import {
   getOfferParticipationFallback,
   loadParticipatingProducts,
 } from '../../../../lib/promotions/angebote-page-data';
+import { hydrateSizeVariationStates } from '../../../../lib/size-variation-sync';
 import { NoTranslate } from '../../../../components/NoTranslate';
 
 // ISR: страница акции кэшируется и ревалидируется (товары/акция меняются редко).
@@ -45,8 +46,12 @@ export default async function AngebotDetailPage({ params }: Props) {
   const doc = await getPromotionBySlug(params.slug);
   if (!doc) notFound();
   const p = toPromotionPublicView(doc);
-  const participatingProducts = await loadParticipatingProducts(p, (query) =>
-    Product.find(query).select('name image basePrice').lean() as any
+  // sizes mitladen + Bibliotheks-Status hydratisieren: der «ab»-Preis kommt aus den
+  // aktiven Größen, basePrice ist bei Größen-Produkten veraltet.
+  const participatingProducts = await loadParticipatingProducts(p, async (query) =>
+    hydrateSizeVariationStates(
+      (await Product.find(query).select('name image basePrice sizes').lean()) as any[]
+    ) as any
   );
   const participationFallback = getOfferParticipationFallback(p);
 
@@ -98,7 +103,7 @@ export default async function AngebotDetailPage({ params }: Props) {
                 )}
                 <div>
                   <div className="font-semibold"><NoTranslate>{prod.name}</NoTranslate></div>
-                  <div className="text-primary-600 font-bold mt-1">Preis ab <NoTranslate>{prod.basePrice.toFixed(2)} €</NoTranslate></div>
+                  <div className="text-primary-600 font-bold mt-1">Preis ab <NoTranslate>{prod.displayPrice.toFixed(2)} €</NoTranslate></div>
                 </div>
               </Link>
             ))}

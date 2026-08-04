@@ -16,6 +16,7 @@ import {
   PromotionBadgesProvider,
   toBadgeItems,
 } from '../../../components/promotions/PromotionBadgesContext';
+import { getProductDisplayPrice, type ProductSizeLike } from '../../../lib/product-pricing';
 
 /**
  * Speisekarte: gruppiert nach Kategorie mit klebriger Kategorie-Leiste + Scroll-Spy.
@@ -38,6 +39,7 @@ interface ApiProduct {
   name: string;
   description: string;
   basePrice: number;
+  sizes?: ProductSizeLike[];
   image: string;
   category: CategoryRef | string | null;
   subcategoryId?: string | null;
@@ -316,7 +318,8 @@ export default function MenuPage() {
                           id: product._id,
                           name: product.name,
                           description: product.description,
-                          price: product.basePrice,
+                          // «ab»-Preis aus den aktiven Größen — basePrice ist bei Größen-Produkten veraltet
+                          price: getProductDisplayPrice(product),
                           image: product.image,
                           category: product.category,
                           valentinePromo: product.valentinePromo,

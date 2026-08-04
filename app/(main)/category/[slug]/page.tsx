@@ -19,6 +19,7 @@ import {
   PromotionBadgesProvider,
   toBadgeItems,
 } from '../../../../components/promotions/PromotionBadgesContext';
+import { getProductDisplayPrice } from '../../../../lib/product-pricing';
 
 // useParams() liefert das URL-Segment ENKODIERT (z. B. "getr%C3%A4nke" für "getränke").
 // Dekodieren, damit Anzeige korrekt ist und der Vergleich mit dem DB-slug ("getränke") greift.
@@ -136,7 +137,8 @@ export default function CategoryPage() {
                       id: product._id,
                       name: product.name,
                       description: product.description,
-                      price: product.basePrice,
+                      // «ab»-Preis aus den aktiven Größen — basePrice ist bei Größen-Produkten veraltet
+                      price: getProductDisplayPrice(product),
                       image: product.image,
                       category: product.category
                     }} />
