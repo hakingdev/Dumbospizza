@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { Save, Plus, MapPin, Trash2, Edit, Loader2, Search } from 'lucide-react';
+import { DEFAULT_DETOUR_FACTOR, normalizeDetourFactor } from '../../../lib/delivery/detour';
 
 // Карта — только на клиенте (Leaflet использует window).
 const DeliveryZoneMap = dynamic(() => import('../../../components/delivery/DeliveryZoneMap'), {
@@ -31,6 +32,11 @@ type AddressCheck = {
   coordinates?: { lat: number; lng: number };
 };
 
+// Max Distance зон — километры ПО ДОРОГЕ (так их и задаёт ресторан), поэтому
+// круги на карте (они по прямой) рисуются с поправкой на коэффициент объезда.
+const ROAD_DISTANCE_HINT =
+  'Max. Distanz = Fahrstrecke in km (nicht Luftlinie). Die Kreise auf der Karte sind eine Näherung.';
+
 export default function DeliveryZonesPage() {
   const [zones, setZones] = useState<DeliveryZone[]>([]);
   const [loading, setLoading] = useState(true);
@@ -54,6 +60,7 @@ export default function DeliveryZonesPage() {
     lat: 50.19526,
     lng: 10.07827,
   });
+  const [detourFactor, setDetourFactor] = useState(DEFAULT_DETOUR_FACTOR);
 
   const highlightedZoneId = addressCheck?.status === 'success' ? addressCheck.zoneId ?? null : null;
   const addressMarker = addressCheck?.status === 'success' ? addressCheck.coordinates ?? null : null;
@@ -67,6 +74,7 @@ export default function DeliveryZonesPage() {
         if (loc && typeof loc.lat === 'number' && typeof loc.lng === 'number') {
           setRestaurantCoords({ lat: loc.lat, lng: loc.lng });
         }
+        setDetourFactor(normalizeDetourFactor(data?.detourFactor));
       })
       .catch(() => {});
   }, []);
@@ -288,7 +296,9 @@ export default function DeliveryZonesPage() {
           zones={zones.map((z) => ({ id: z._id, name: z.name, maxDistance: z.maxDistance }))}
           addressMarker={addressMarker}
           highlightedZoneId={highlightedZoneId}
+          detourFactor={detourFactor}
         />
+        <p className="mt-2 text-xs text-gray-500">{ROAD_DISTANCE_HINT}</p>
       </div>
 
       <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
@@ -425,7 +435,9 @@ export default function DeliveryZonesPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Max Distance (km)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Max Distance (km Fahrstrecke)
+                </label>
                 <input
                   type="number"
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
@@ -434,6 +446,7 @@ export default function DeliveryZonesPage() {
                   min="0"
                   step="0.5"
                 />
+                <p className="mt-1 text-xs text-gray-500">{ROAD_DISTANCE_HINT}</p>
               </div>
 
               <div>

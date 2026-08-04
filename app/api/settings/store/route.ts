@@ -11,6 +11,10 @@ const PUBLIC_SETTING_KEYS = [
   'address',
   'currency',
   'minOrderAmount',
+  // Checkout читает этот ключ анонимно, чтобы посчитать Lieferkosten так же,
+  // как их посчитает сервер при оформлении заказа.
+  'freeDeliveryThreshold',
+  'deliveryDetourFactor',
   'deliveryTime',
   'deliverySlotStart',
   'deliverySlotEnd',

@@ -4,6 +4,11 @@ import { Order } from '../../../lib/models/order.model';
 import { Product } from '../../../lib/models/product.model';
 import { Category } from '../../../lib/models/category.model';
 import { Coupon } from '../../../lib/models/coupon.model';
+import { DeliveryZone } from '../../../lib/models/delivery-zone.model';
+import {
+  resolveDeliveryFee,
+  normalizeFreeDeliveryThreshold,
+} from '../../../lib/delivery/delivery-fee';
 import { isCouponCurrentlyValid, normalizeCouponCode } from '../../../lib/promotions/coupon-validity';
 import { calculateOrderPromotions } from '../../../lib/promotions/order-integration';
 import {
@@ -36,8 +41,25 @@ import { getLoyaltyRules, computeMaxRedeemablePoints } from '../../../lib/loyalt
 import { hydrateSizeVariationStates } from '../../../lib/size-variation-sync';
 import { hasConfiguredRegularSizes } from '../../../lib/product-pricing';
 
-/** Бесплатная доставка от 30 € (та же граница, что в корзине на клиенте). */
-const FREE_DELIVERY_THRESHOLD = 30;
+/**
+ * Тариф доставки заказа. Источник правды — зона в БД (клиент прислал её id),
+ * клиентская сумма — только запасной вариант для мобильного приложения и
+ * повторов заказа, где id зоны нет.
+ */
+async function resolveZoneDeliveryFee(
+  zoneId: unknown,
+  clientFee: unknown
+): Promise<number> {
+  const fallback = Number(clientFee) || 0;
+  if (typeof zoneId !== 'string' || !zoneId.trim()) return fallback;
+  try {
+    const zone = await DeliveryZone.findById(zoneId);
+    if (zone && zone.active) return Number(zone.deliveryFee) || 0;
+  } catch (error) {
+    console.error('Delivery zone lookup failed:', error);
+  }
+  return fallback;
+}
 
 function normalizeSizeKey(value: unknown): string {
   return String(value || '')
@@ -246,7 +268,17 @@ export async function POST(request: NextRequest) {
       (sum, item) => sum + item.totalPrice,
       0
     );
-    
+
+    // Доставка: тариф берём из зоны в БД (клиенту тут не верим), порог
+    // бесплатной доставки — настройка магазина, по умолчанию выключен.
+    const zoneDeliveryFee = await resolveZoneDeliveryFee(
+      orderData.deliveryZoneId,
+      orderData.deliveryFee
+    );
+    const freeDeliveryThreshold = normalizeFreeDeliveryThreshold(
+      storeSettings?.freeDeliveryThreshold
+    );
+
     // Списание баллов считаем НИЖЕ (после купона/акций) на сервере —
     // не доверяя клиенту: cap 30% и минимальная сумма проверяются здесь.
     let couponDiscount = 0;
@@ -314,12 +346,12 @@ export async function POST(request: NextRequest) {
     if (customerSession && requestedPoints > 0 && !discountCodeActive) {
       loyaltyRules = await getLoyaltyRules();
       loyaltyBalance = await getBalance(customerSession.userId);
-      const feeWithoutPromotions =
-        orderData.deliveryType === 'pickup'
-          ? 0
-          : calculatedSubtotal >= FREE_DELIVERY_THRESHOLD
-            ? 0
-            : orderData.deliveryFee || 0;
+      const feeWithoutPromotions = resolveDeliveryFee({
+        deliveryType: orderData.deliveryType === 'pickup' ? 'pickup' : 'delivery',
+        merchandiseSubtotal: calculatedSubtotal,
+        zoneDeliveryFee: zoneDeliveryFee,
+        freeDeliveryThreshold,
+      });
       const baseAmount = Math.max(calculatedSubtotal + feeWithoutPromotions - couponDiscount, 0);
       pointsIntended =
         computeMaxRedeemablePoints(loyaltyBalance, baseAmount, loyaltyRules) > 0;
@@ -375,12 +407,12 @@ export async function POST(request: NextRequest) {
       0
     );
     const merchandiseSubtotal = calculatedSubtotal + bogoMerchandise;
-    const effectiveDeliveryFee =
-      orderData.deliveryType === 'delivery' && merchandiseSubtotal >= FREE_DELIVERY_THRESHOLD
-        ? 0
-        : orderData.deliveryType === 'pickup'
-          ? 0
-          : orderData.deliveryFee || 0;
+    const effectiveDeliveryFee = resolveDeliveryFee({
+      deliveryType: orderData.deliveryType === 'pickup' ? 'pickup' : 'delivery',
+      merchandiseSubtotal,
+      zoneDeliveryFee,
+      freeDeliveryThreshold,
+    });
 
     const { freeGifts: resolvedFreeGifts, error: giftError } = resolveFreeGiftsForOrder(
       promotionCalc,

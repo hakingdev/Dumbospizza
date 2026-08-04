@@ -6,6 +6,7 @@ import { Loader2 } from 'lucide-react';
 import { useLanguage } from '../../../lib/contexts/LanguageContext';
 import { loadTranslation } from '../../../lib/i18n';
 import { sortZonesForList } from '../../../lib/delivery/zone-match';
+import { DEFAULT_DETOUR_FACTOR, normalizeDetourFactor } from '../../../lib/delivery/detour';
 
 // Карта — только на клиенте (Leaflet использует window).
 const DeliveryZoneMap = dynamic(() => import('../../../components/delivery/DeliveryZoneMap'), {
@@ -25,6 +26,7 @@ export default function DeliveryPage() {
     lat: 50.19526,
     lng: 10.07827,
   });
+  const [detourFactor, setDetourFactor] = useState(DEFAULT_DETOUR_FACTOR);
   const [hoveredZoneId, setHoveredZoneId] = useState<string | null>(null);
   // Выбранная зона (клик/чип) — для подсветки на карте и деталей в мобильной версии.
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
@@ -48,6 +50,7 @@ export default function DeliveryPage() {
           if (loc && typeof loc.lat === 'number' && typeof loc.lng === 'number') {
             setRestaurantCoords({ lat: loc.lat, lng: loc.lng });
           }
+          setDetourFactor(normalizeDetourFactor(data.detourFactor));
         }
       })
       .catch((error) => console.error('Error loading delivery zones:', error));
@@ -114,6 +117,7 @@ export default function DeliveryPage() {
             <DeliveryZoneMap
               restaurantCoords={restaurantCoords}
               zones={(zones as any[]).map((z) => ({ id: z._id, name: z.name, maxDistance: z.maxDistance }))}
+              detourFactor={detourFactor}
               highlightedZoneId={activeZoneId}
               className="h-[360px] sm:h-[460px] w-full max-w-full"
             />

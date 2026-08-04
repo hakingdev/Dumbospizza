@@ -22,6 +22,7 @@ import {
   parseOrdersTimeToMinutes,
 } from '../../../lib/order-acceptance-hours'
 import { evaluateDeliveryGate } from '../../../lib/delivery/checkout-gate'
+import { normalizeFreeDeliveryThreshold } from '../../../lib/delivery/delivery-fee'
 import { NoTranslate } from '../../../components/NoTranslate'
 import { trackMetaEvent } from '../../../lib/analytics/meta-pixel'
 import {
@@ -102,7 +103,7 @@ function PayPalMark() {
 
 export default function CheckoutPage() {
   const router = useRouter()
-  const { state, setDeliveryType: setCartDeliveryType, setDeliveryZone: setCartDeliveryZone, setDeliveryFee, setContactInfo, setDeliveryAddress, setPaymentMethod: setCartPaymentMethod, clearCart, applyCoupon, removeCoupon, setPromotionPromoCode, setLoyaltyPoints, setSelectedFreeGift, declineFreeGift } = useCart()
+  const { state, setDeliveryType: setCartDeliveryType, setDeliveryZone: setCartDeliveryZone, setDeliveryFee, setFreeDeliveryThreshold, setContactInfo, setDeliveryAddress, setPaymentMethod: setCartPaymentMethod, clearCart, applyCoupon, removeCoupon, setPromotionPromoCode, setLoyaltyPoints, setSelectedFreeGift, declineFreeGift } = useCart()
   const { language } = useLanguage()
   const [t, setT] = useState<any>(() => (k: string, fallback?: string) => fallback ?? k)
   const [step, setStep] = useState(1)
@@ -308,30 +309,23 @@ export default function CheckoutPage() {
     }
   }, [deliveryType, setCartDeliveryType, state.deliveryType])
 
+  // Порог бесплатной доставки — настройка магазина (0 = выключено). Раньше был
+  // захардкожен на 30 € и полностью съедал тариф зоны: Mindestbestellwert
+  // дальних зон выше порога, поэтому 4–6 € не могли примениться никогда.
+  useEffect(() => {
+    setFreeDeliveryThreshold(normalizeFreeDeliveryThreshold(orderSettings?.freeDeliveryThreshold))
+  }, [orderSettings, setFreeDeliveryThreshold])
+
+  // В корзину кладём ТАРИФ ЗОНЫ как есть — скидку за сумму применяет
+  // resolveDeliveryFee внутри calculateTotals, поэтому пересчёт по изменению
+  // суммы отдельным эффектом больше не нужен.
   useEffect(() => {
     const zone = deliveryZones.find(z => z._id === deliveryZone)
     if (zone && state.deliveryZone !== deliveryZone) {
       setCartDeliveryZone(deliveryZone, zone.minOrderAmount)
-      // Free delivery for orders >= 30 euros
-      const FREE_DELIVERY_THRESHOLD = 30;
-      const effectiveDeliveryFee = merchandiseSubtotal >= FREE_DELIVERY_THRESHOLD ? 0 : (zone.deliveryFee || 0);
-      setDeliveryFee(effectiveDeliveryFee)
+      setDeliveryFee(zone.deliveryFee || 0)
     }
-  }, [deliveryZone, deliveryZones, setCartDeliveryZone, setDeliveryFee, state.deliveryZone, merchandiseSubtotal])
-  
-  // Recalculate delivery fee when subtotal changes
-  useEffect(() => {
-    if (deliveryType === 'delivery' && state.deliveryZone) {
-      const zone = deliveryZones.find(z => z._id === state.deliveryZone)
-      if (zone) {
-        const FREE_DELIVERY_THRESHOLD = 30;
-        const effectiveDeliveryFee = merchandiseSubtotal >= FREE_DELIVERY_THRESHOLD ? 0 : (zone.deliveryFee || 0);
-        if (state.deliveryFee !== effectiveDeliveryFee) {
-          setDeliveryFee(effectiveDeliveryFee)
-        }
-      }
-    }
-  }, [merchandiseSubtotal, deliveryType, state.deliveryFee, state.deliveryZone, deliveryZones, setDeliveryFee])
+  }, [deliveryZone, deliveryZones, setCartDeliveryZone, setDeliveryFee, state.deliveryZone])
 
   useEffect(() => {
     if (state.paymentMethod !== paymentMethod) {
@@ -611,7 +605,10 @@ export default function CheckoutPage() {
         paymentMethod: isOnlineCheckoutMethod(paymentMethod) ? 'online' : paymentMethod,
         subtotal: merchandiseSubtotal,
         tax: 0,
-        deliveryFee: state.deliveryFee,
+        // Тариф зоны, а не итоговая сумма: скидку за сумму заказа применяет
+        // сервер (он же — источник правды по тарифу, см. deliveryZoneId).
+        deliveryFee: state.zoneDeliveryFee,
+        deliveryZoneId: state.deliveryZone || undefined,
         total: state.total,
         loyaltyPointsToRedeem: state.loyaltyPointsToRedeem || 0,
         couponCode: state.couponCode,

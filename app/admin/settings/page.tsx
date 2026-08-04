@@ -25,6 +25,10 @@ export default function SettingsPage() {
     address: 'Kurhausstraße 11A, 97688 Bad Kissingen',
     currency: 'EUR',
     minOrderAmount: 10,
+    // 0 = выключено: всегда действует тариф зоны из «Delivery Zones».
+    freeDeliveryThreshold: 0,
+    // Во сколько раз дорога длиннее прямой — запасной расчёт, если роутер молчит.
+    deliveryDetourFactor: 1.35,
     deliveryTime: '30-60',
     deliverySlotStart: '17:00',
     deliverySlotEnd: '21:30',
@@ -332,6 +336,42 @@ export default function SettingsPage() {
                     onChange={(e) => setSettings({...settings, deliveryTime: e.target.value})}
                     className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500"
                   />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium mb-2">
+                    Бесплатная доставка от (€)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.5"
+                    value={settings.freeDeliveryThreshold}
+                    onChange={(e) => setSettings({ ...settings, freeDeliveryThreshold: Number(e.target.value) })}
+                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">
+                    0 = выключено: всегда берётся цена доставки из зоны.
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-2">
+                    Коэффициент объезда (дорога / прямая)
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="3"
+                    step="0.05"
+                    value={settings.deliveryDetourFactor}
+                    onChange={(e) => setSettings({ ...settings, deliveryDetourFactor: Number(e.target.value) })}
+                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">
+                    Запасной расчёт, если маршрутизатор недоступен, и радиусы кругов на карте.
+                  </p>
                 </div>
               </div>
             </div>

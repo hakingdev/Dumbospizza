@@ -99,11 +99,21 @@ export function normalizeName(s: string | null | undefined): string {
 /**
  * «Район» зоны = название без ведущего города (`Bad Kissingen Garitz` → `garitz`).
  * Для отдельных населённых пунктов (`Euerdorf`) остаётся как есть.
+ *
+ * Зоны-кольца (`10-12 km`, `0-2 km`) районом НЕ являются: у них нет ни одного
+ * слова длиннее двух букв кроме «km». Возвращаем '' → matchZoneByAddress их
+ * пропускает и подбор идёт по расстоянию, как и задумано для колец. Заодно
+ * отсекаются слишком короткие токены («au»), которые ловили ложные совпадения
+ * подстрокой внутри чужих названий (`h-au-sen`).
  */
 export function zoneDistrictToken(name: string): string {
   const n = normalizeName(name);
   const stripped = n.replace(/^bad kissingen\s*/, '').trim();
-  return stripped || n; // у самого «Bad Kissingen» (центр) токен пустой → вернём полное
+  const token = stripped || n; // у самого «Bad Kissingen» (центр) токен пустой → вернём полное
+  const hasDistrictWord = token
+    .split(' ')
+    .some((word) => word !== 'km' && /^[a-z]{3,}$/.test(word));
+  return hasDistrictWord ? token : '';
 }
 
 export interface GeoLocationParts {

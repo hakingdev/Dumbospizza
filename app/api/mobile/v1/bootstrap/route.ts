@@ -9,6 +9,7 @@ import {
   getNowMinutesInTimeZone,
   parseOrdersTimeToMinutes,
 } from '../../../../../lib/order-acceptance-hours';
+import { normalizeFreeDeliveryThreshold } from '../../../../../lib/delivery/delivery-fee';
 
 export const dynamic = 'force-dynamic';
 
@@ -72,7 +73,8 @@ export async function GET() {
       ordersBlockedReason: (s.ordersBlockedReason as string) || null,
       ordersClosedMessageBeforeOpen: (s.ordersClosedMessageBeforeOpen as string) || null,
       ordersClosedMessageAfterClose: (s.ordersClosedMessageAfterClose as string) || null,
-      freeDeliveryThresholdEuro: 30,
+      // 0 — правило выключено, действует тариф зоны (настройка магазина).
+      freeDeliveryThresholdEuro: normalizeFreeDeliveryThreshold(s.freeDeliveryThreshold),
       /** Можно ли сейчас оформить заказ (та же логика, что POST /api/orders) */
       acceptingOrders,
       /** Текст для пользователя, если acceptingOrders === false */

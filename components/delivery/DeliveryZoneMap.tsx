@@ -4,6 +4,7 @@ import { useEffect, useMemo } from 'react';
 import { MapContainer, TileLayer, Circle, Marker, Popup, useMap, Tooltip } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import { DEFAULT_DETOUR_FACTOR, zoneMapRadiusKm } from '../../lib/delivery/detour';
 
 export interface MapZone {
   id: string;
@@ -18,6 +19,12 @@ export interface DeliveryZoneMapProps {
   highlightedZoneId?: string | null;
   /** Наведение на круг зоны на карте (для двунаправленной подсветки в админке). */
   onZoneHover?: (zoneId: string | null) => void;
+  /**
+   * Коэффициент объезда: maxDistance зон — километры ПО ДОРОГЕ, а круг рисуется
+   * по прямой. Радиус делим на него, иначе карта обещает область заметно больше
+   * той, куда реально доезжает курьер.
+   */
+  detourFactor?: number;
   className?: string;
 }
 
@@ -41,17 +48,36 @@ function FitBounds({
 }) {
   const map = useMap();
   useEffect(() => {
-    const r = L.latLng(restaurantCoords.lat, restaurantCoords.lng);
-    if (addressMarker) {
-      // Показать ресторан и адрес одновременно.
-      const bounds = L.latLngBounds([r, L.latLng(addressMarker.lat, addressMarker.lng)]);
-      map.fitBounds(bounds.pad(0.4), { animate: false });
-    } else {
-      // Иначе вписать самый большой круг зоны. toBounds() считает рамку из точки+метров
-      // без привязки к карте (у detached L.circle.getBounds() нет _map → падает).
-      const meters = Math.max(maxRadiusKm, 0.5) * 1000;
-      map.fitBounds(r.toBounds(meters * 2).pad(0.1), { animate: false });
-    }
+    const fit = () => {
+      // Карта грузится динамически внутри grid/flex-колонки: на момент mount её
+      // контейнер часто ещё 0×0, и fitBounds считает зум для пустого вьюпорта —
+      // отсюда карта мира вместо Bad Kissingen. invalidateSize даёт Leaflet
+      // актуальный размер ПЕРЕД расчётом.
+      map.invalidateSize({ animate: false });
+      const r = L.latLng(restaurantCoords.lat, restaurantCoords.lng);
+      if (addressMarker) {
+        // Показать ресторан и адрес одновременно.
+        const bounds = L.latLngBounds([r, L.latLng(addressMarker.lat, addressMarker.lng)]);
+        map.fitBounds(bounds.pad(0.4), { animate: false });
+      } else {
+        // Иначе вписать самый большой круг зоны. toBounds() считает рамку из точки+метров
+        // без привязки к карте (у detached L.circle.getBounds() нет _map → падает).
+        const meters = Math.max(maxRadiusKm, 0.5) * 1000;
+        map.fitBounds(r.toBounds(meters * 2).pad(0.1), { animate: false });
+      }
+    };
+
+    fit();
+    // Второй проход после первого кадра: к этому моменту контейнер уже разложен.
+    // (ResizeObserver здесь не годится — invalidateSize внутри его коллбэка
+    //  сам провоцирует resize-цикл и подвешивает вкладку.)
+    const raf = requestAnimationFrame(fit);
+    const timer = setTimeout(fit, 250);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      clearTimeout(timer);
+    };
   }, [map, restaurantCoords.lat, restaurantCoords.lng, addressMarker, maxRadiusKm]);
   return null;
 }
@@ -62,6 +88,7 @@ export default function DeliveryZoneMap({
   addressMarker,
   highlightedZoneId,
   onZoneHover,
+  detourFactor = DEFAULT_DETOUR_FACTOR,
   className,
 }: DeliveryZoneMapProps) {
   // Сначала большие круги, потом меньшие — мелкие зоны видны поверх.
@@ -70,8 +97,8 @@ export default function DeliveryZoneMap({
     [zones]
   );
   const maxRadiusKm = useMemo(
-    () => Math.max(0.5, ...zones.map((z) => z.maxDistance || 0)),
-    [zones]
+    () => Math.max(0.5, ...zones.map((z) => zoneMapRadiusKm(z.maxDistance || 0, detourFactor))),
+    [zones, detourFactor]
   );
 
   return (
@@ -94,7 +121,7 @@ export default function DeliveryZoneMap({
           <Circle
             key={zone.id}
             center={[restaurantCoords.lat, restaurantCoords.lng]}
-            radius={(zone.maxDistance || 0) * 1000}
+            radius={zoneMapRadiusKm(zone.maxDistance || 0, detourFactor) * 1000}
             pathOptions={{
               color: isHighlighted ? '#dc2626' : '#3b82f6',
               weight: isHighlighted ? 3 : 1,
@@ -110,7 +137,7 @@ export default function DeliveryZoneMap({
                 : undefined
             }
           >
-            <Tooltip>{zone.name} — {zone.maxDistance} km</Tooltip>
+            <Tooltip>{zone.name} — bis {zone.maxDistance} km Fahrstrecke</Tooltip>
           </Circle>
         );
       })}

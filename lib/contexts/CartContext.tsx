@@ -9,6 +9,7 @@ import { storageGet, storageSet } from '../safe-storage';
 import { getAppliedPromotionDiscount, getBogoPickerMerchandise } from '../promotions/discount-total';
 import { giftOptionId } from '../promotions/gifts';
 import { trackMetaEvent } from '../analytics/meta-pixel';
+import { resolveDeliveryFee } from '../delivery/delivery-fee';
 
 // Types
 export interface CartItem {
@@ -44,7 +45,12 @@ export interface CartState {
   items: CartItem[];
   subtotal: number;
   tax: number;
+  /** Итоговые Lieferkosten заказа (результат resolveDeliveryFee). Только чтение. */
   deliveryFee: number;
+  /** Тариф найденной зоны «как в админке» — вход расчёта, его не затирает free-delivery. */
+  zoneDeliveryFee: number;
+  /** Порог бесплатной доставки из настроек; 0 = правило выключено. */
+  freeDeliveryThreshold: number;
   total: number;
   deliveryType: 'delivery' | 'pickup';
   deliveryZone: string | null;
@@ -99,6 +105,7 @@ type CartAction =
   | { type: 'SET_DELIVERY_TYPE'; payload: 'delivery' | 'pickup' }
   | { type: 'SET_DELIVERY_ZONE'; payload: { zone: string; minOrderAmount: number } }
   | { type: 'SET_DELIVERY_FEE'; payload: number }
+  | { type: 'SET_FREE_DELIVERY_THRESHOLD'; payload: number }
   | { type: 'SET_CONTACT_INFO'; payload: Partial<CartState['contactInfo']> }
   | { type: 'SET_DELIVERY_ADDRESS'; payload: Partial<CartState['deliveryAddress']> }
   | { type: 'SET_PAYMENT_METHOD'; payload: CartState['paymentMethod'] }
@@ -120,6 +127,8 @@ const initialState: CartState = {
   subtotal: 0,
   tax: 0,
   deliveryFee: 0,
+  zoneDeliveryFee: 0,
+  freeDeliveryThreshold: 0,
   total: 0,
   deliveryType: 'delivery',
   deliveryZone: null,
@@ -176,9 +185,6 @@ export function areMoneyPromotionsSuppressed(
   return !!state.couponCode || effectiveLoyaltyPoints(state) > 0;
 }
 
-/** Free delivery for orders >= 30 euros */
-const FREE_DELIVERY_THRESHOLD = 30;
-
 /**
  * Сумма заказа, от которой считается лимит списания баллов.
  *
@@ -188,12 +194,12 @@ const FREE_DELIVERY_THRESHOLD = 30;
  */
 export function loyaltyRedeemBaseAmount(state: CartState): number {
   const subtotal = state.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
-  const fee =
-    state.deliveryType === 'pickup'
-      ? 0
-      : subtotal >= FREE_DELIVERY_THRESHOLD
-        ? 0
-        : state.deliveryFee;
+  const fee = resolveDeliveryFee({
+    deliveryType: state.deliveryType,
+    merchandiseSubtotal: subtotal,
+    zoneDeliveryFee: state.zoneDeliveryFee,
+    freeDeliveryThreshold: state.freeDeliveryThreshold,
+  });
   return Math.max(subtotal + fee - (state.couponDiscount || 0), 0);
 }
 
@@ -226,12 +232,12 @@ const calculateTotals = (state: CartState): Partial<CartState> => {
     : getAppliedPromotionDiscount(state.promotionCalculation);
 
   const merchandiseForDelivery = subtotal + bogoSecondTotal;
-  const effectiveDeliveryFee =
-    state.deliveryType === 'delivery' && merchandiseForDelivery >= FREE_DELIVERY_THRESHOLD
-      ? 0
-      : state.deliveryType === 'pickup'
-        ? 0
-        : state.deliveryFee;
+  const effectiveDeliveryFee = resolveDeliveryFee({
+    deliveryType: state.deliveryType,
+    merchandiseSubtotal: merchandiseForDelivery,
+    zoneDeliveryFee: state.zoneDeliveryFee,
+    freeDeliveryThreshold: state.freeDeliveryThreshold,
+  });
 
   const total = Math.max(
     subtotal +
@@ -463,36 +469,31 @@ export function cartReducer(state: CartState, action: CartAction): CartState {
         deliveryAddress: state.deliveryAddress, // Preserve delivery address
       };
     
-    case 'SET_DELIVERY_TYPE':
-      return {
-        ...state,
-        deliveryType: action.payload,
-        // Reset delivery fee if switching to pickup
-        deliveryFee: action.payload === 'pickup' ? 0 : state.deliveryFee,
-        // Recalculate totals
-        ...calculateTotals({
-          ...state,
-          deliveryFee: action.payload === 'pickup' ? 0 : state.deliveryFee,
-        }),
-      };
-    
+    case 'SET_DELIVERY_TYPE': {
+      // Тариф зоны не трогаем: при возврате с Abholung на Lieferung он должен
+      // вернуться сам, без повторной проверки адреса. Обнуление — дело
+      // resolveDeliveryFee (pickup → 0).
+      const newState = { ...state, deliveryType: action.payload };
+      return { ...newState, ...calculateTotals(newState) };
+    }
+
     case 'SET_DELIVERY_ZONE':
       return {
         ...state,
         deliveryZone: action.payload.zone,
         minOrderAmount: action.payload.minOrderAmount,
       };
-    
-    case 'SET_DELIVERY_FEE':
-      return {
-        ...state,
-        deliveryFee: action.payload,
-        ...calculateTotals({
-          ...state,
-          deliveryFee: action.payload,
-        }),
-      };
-    
+
+    case 'SET_DELIVERY_FEE': {
+      const newState = { ...state, zoneDeliveryFee: action.payload };
+      return { ...newState, ...calculateTotals(newState) };
+    }
+
+    case 'SET_FREE_DELIVERY_THRESHOLD': {
+      const newState = { ...state, freeDeliveryThreshold: action.payload };
+      return { ...newState, ...calculateTotals(newState) };
+    }
+
     case 'SET_CONTACT_INFO':
       return {
         ...state,
@@ -736,6 +737,7 @@ export function cartReducer(state: CartState, action: CartAction): CartState {
         deliveryZone: null,
         minOrderAmount: 0,
         deliveryFee: 0,
+        zoneDeliveryFee: 0,
         loyaltyPointsToRedeem: 0,
         loyaltyPointsDiscount: 0,
         couponCode: undefined,
@@ -772,6 +774,7 @@ interface CartContextType {
   setDeliveryType: (type: 'delivery' | 'pickup') => void;
   setDeliveryZone: (zone: string, minOrderAmount: number) => void;
   setDeliveryFee: (fee: number) => void;
+  setFreeDeliveryThreshold: (threshold: number) => void;
   setContactInfo: (info: Partial<CartState['contactInfo']>) => void;
   setDeliveryAddress: (address: Partial<CartState['deliveryAddress']>) => void;
   setPaymentMethod: (method: CartState['paymentMethod']) => void;
@@ -801,6 +804,12 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           const loaded = {
             ...initialState,
             ...parsed,
+            // Тариф зоны появился позже поля deliveryFee — старую корзину читаем
+            // из него, иначе доставка «обнулилась бы» до повторной проверки адреса.
+            zoneDeliveryFee: parsed.zoneDeliveryFee ?? parsed.deliveryFee ?? 0,
+            // Порог free-delivery — настройка магазина, а не свойство корзины:
+            // сохранённое значение может быть устаревшим, берём заново с сервера.
+            freeDeliveryThreshold: 0,
             selectedFreeGifts: parsed.selectedFreeGifts || {},
             declinedFreeGifts: parsed.declinedFreeGifts || {},
             // нормализуем к массивам объектов {itemId, productId}. Старые форматы:
@@ -964,6 +973,10 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: 'SET_DELIVERY_FEE', payload: fee });
   }, []);
 
+  const setFreeDeliveryThreshold = useCallback((threshold: number) => {
+    dispatch({ type: 'SET_FREE_DELIVERY_THRESHOLD', payload: threshold });
+  }, []);
+
   const setContactInfo = useCallback((info: Partial<CartState['contactInfo']>) => {
     dispatch({ type: 'SET_CONTACT_INFO', payload: info });
   }, []);
@@ -1030,6 +1043,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     setDeliveryType,
     setDeliveryZone,
     setDeliveryFee,
+    setFreeDeliveryThreshold,
     setContactInfo,
     setDeliveryAddress,
     setPaymentMethod,

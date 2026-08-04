@@ -23,6 +23,25 @@ describe('zoneDistrictToken', () => {
     expect(zoneDistrictToken('Euerdorf')).toBe('euerdorf');
     expect(zoneDistrictToken('Bad Kissingen')).toBe('bad kissingen');
   });
+
+  it('зоны-кольца районом не считаются → подбор идёт по расстоянию', () => {
+    expect(zoneDistrictToken('10-12 km')).toBe('');
+    expect(zoneDistrictToken('12 - 16 km')).toBe('');
+    expect(zoneDistrictToken('0-2 km')).toBe('');
+  });
+});
+
+describe('matchZoneByAddress — кольцевые зоны', () => {
+  const ringZones: DeliveryZoneLike[] = [
+    { _id: 'r1', name: '0-2 km', minOrderAmount: 12, deliveryFee: 0, maxDistance: 2 },
+    { _id: 'r2', name: '10-12 km', minOrderAmount: 37, deliveryFee: 5, maxDistance: 12 },
+    { _id: 'r3', name: '12 - 16 km', minOrderAmount: 42, deliveryFee: 6, maxDistance: 16 },
+  ];
+
+  it('никогда не матчит по названию — иначе кольцо перебило бы расстояние', () => {
+    expect(matchZoneByAddress({ localities: ['Steinach', 'Bad Bocklet'] }, ringZones)).toBeNull();
+    expect(matchZoneByAddress({ localities: ['Bad Kissingen'] }, ringZones)).toBeNull();
+  });
 });
 
 describe('matchZoneByAddress — по району/Ortsteil', () => {

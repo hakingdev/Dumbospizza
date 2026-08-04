@@ -4,12 +4,13 @@ import { connectToDatabase } from '../../../../lib/models';
 import { DeliveryZone } from '../../../../lib/models/delivery-zone.model';
 import { getSetting } from '../../../../lib/settings';
 import {
-  haversineDistanceKm,
   selectDeliveryZone,
   matchZoneByAddress,
   roundKm,
   type GeoLocationParts,
 } from '../../../../lib/delivery/zone-match';
+import { resolveRoadDistanceKm } from '../../../../lib/delivery/road-distance';
+import { normalizeDetourFactor } from '../../../../lib/delivery/detour';
 
 export const dynamic = 'force-dynamic';
 
@@ -128,7 +129,14 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const distance = haversineDistanceKm(restaurantCoords, coords);
+    // Расстояние — ПО ДОРОГЕ: зоны в админке заданы километрами маршрута, а не
+    // по прямой. Luftlinie кидала адрес на одну-две зоны ближе (Steinach:
+    // 10.25 км по прямой против 15.89 км по дороге).
+    const road = await resolveRoadDistanceKm(restaurantCoords, coords, {
+      googleApiKey: storeSettings?.googleMapsApiKey || googleMapsApiKey,
+      detourFactor: normalizeDetourFactor(storeSettings?.deliveryDetourFactor),
+    });
+    const distance = road.km;
     const distanceRounded = roundKm(distance);
 
     // Зоны — именованные районы Bad Kissingen: сначала матч по району/Ortsteil
@@ -158,6 +166,7 @@ export async function POST(request: NextRequest) {
         reason: 'outside_delivery_area',
         message: `Ihre Adresse liegt außerhalb unseres Liefergebiets (${distanceRounded} km > ${maxDistance} km). Abholung ist möglich.`,
         distance: distanceRounded,
+        distanceMode: road.mode,
         maxDistance,
       });
     }
@@ -174,6 +183,8 @@ export async function POST(request: NextRequest) {
         deliveryFee: zone.deliveryFee,
       },
       distance: distanceRounded,
+      distanceMode: road.mode,
+      matchedBy: byName ? 'district' : 'distance',
       coordinates: { lat: coords.lat, lng: coords.lng },
       restaurantCoordinates: { lat: restaurantCoords.lat, lng: restaurantCoords.lng },
     });
@@ -188,7 +199,15 @@ export async function GET() {
   try {
     await connectToDatabase();
     const zones = await DeliveryZone.find({ active: true }).sort({ sortOrder: 1, name: 1 });
-    return NextResponse.json({ success: true, zones, restaurantLocation });
+    const storeSettings = await getSetting<Record<string, any>>('storeSettings', {});
+    // Круги на карте рисуются по прямой, а maxDistance зон — дорожные км:
+    // отдаём коэффициент, чтобы карта не обещала область больше реальной.
+    return NextResponse.json({
+      success: true,
+      zones,
+      restaurantLocation,
+      detourFactor: normalizeDetourFactor(storeSettings?.deliveryDetourFactor),
+    });
   } catch (error: any) {
     console.error('Error fetching delivery zones:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
