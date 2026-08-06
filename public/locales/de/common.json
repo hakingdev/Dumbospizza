@@ -381,16 +381,15 @@
     "agreement": "Wenn Sie fortfahren, stimmen Sie zu"
   },
   "hero": {
-    "badge": "Beste Pizza in der Stadt",
-    "title_line1": "Leckere Pizza",
+    "badge": "Beste Pizza & Sushi in der Stadt",
+    "title_line1": "Pizza & Sushi",
     "title_line2": "mit Lieferung",
-    "subtitle": "Frisch zubereitete Pizza aus hochwertigen Zutaten. Lieferung in 30–60 Minuten, zu Stoßzeiten bis zu 90 Minuten!",
+    "subtitle": "Detroit-Style Pizza und frisches Sushi aus hochwertigen Zutaten – frisch zubereitet und direkt zu dir geliefert.",
     "cta_order": "Jetzt bestellen",
     "cta_menu": "Speisekarte ansehen",
     "minutes": "Minuten",
     "free_from": "ab 30€",
-    "rating": "Bewertung",
-    "image_alt": "Leckere Pizza mit Lieferung",
+    "image_alt": "Detroit-Style Pizza und Sushi-Rollen von oben",
     "badge_discount": "auf die erste Bestellung",
     "badge_delivery": "Lieferung",
     "cta_offers": "Angebote ansehen"

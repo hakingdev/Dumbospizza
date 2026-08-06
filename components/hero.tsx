@@ -4,7 +4,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
-import { ArrowRight, Clock, Truck, Star } from 'lucide-react';
+import { ArrowRight, Truck } from 'lucide-react';
 import { useLanguage } from '../lib/contexts/LanguageContext';
 import { loadTranslation } from '../lib/i18n';
 
@@ -40,7 +40,7 @@ export function Hero() {
             aria-hidden="true"
           />
 
-          <div className="relative grid grid-cols-1 lg:min-h-[520px] lg:grid-cols-[1.05fr_0.95fr]">
+          <div className="relative grid grid-cols-1 lg:min-h-[520px] lg:grid-cols-[1fr_1.08fr]">
             {/* Оффер */}
             <motion.div
               initial={{ opacity: 0, x: -20 }}
@@ -49,11 +49,11 @@ export function Hero() {
               className="order-2 flex flex-col justify-center px-6 py-10 text-white md:px-10 md:py-14 lg:order-1 lg:px-12"
             >
               <span className="mb-5 inline-flex max-w-full items-center gap-2 self-start whitespace-nowrap rounded-full bg-yellow-400 px-3 py-2 text-xs font-bold tracking-[.02em] text-yellow-900 shadow-md sm:px-4 sm:text-sm">
-                🍕 {t('hero.badge', 'Beste Pizza in der Stadt')}
+                🍕 {t('hero.badge', 'Beste Pizza & Sushi in der Stadt')}
               </span>
 
               <h1 className="mb-4 text-[34px] font-extrabold leading-[1.04] tracking-[-.02em] sm:text-[38px] md:text-[48px] lg:text-[56px]">
-                {t('hero.title_line1', 'Leckere Pizza')}
+                {t('hero.title_line1', 'Pizza & Sushi')}
                 <br />
                 <span className="bg-gradient-to-r from-pink-200 to-rose-300 bg-clip-text text-transparent">
                   {t('hero.title_line2', 'mit Lieferung')}
@@ -63,7 +63,7 @@ export function Hero() {
               <p className="mb-7 max-w-[460px] text-base leading-relaxed text-white/90 md:text-lg">
                 {t(
                   'hero.subtitle',
-                  'Frisch zubereitete Pizza aus hochwertigen Zutaten. Lieferung in 30–60 Minuten, zu Stoßzeiten bis zu 90 Minuten!'
+                  'Detroit-Style Pizza und frisches Sushi aus hochwertigen Zutaten – frisch zubereitet und direkt zu dir geliefert.'
                 )}
               </p>
 
@@ -87,35 +87,29 @@ export function Hero() {
               {/* trust */}
               <div className="mt-6 flex flex-wrap gap-x-[22px] gap-y-3.5 text-sm text-white/85">
                 <span className="inline-flex items-center gap-[7px]">
-                  <Clock className="h-4 w-4" /> 30–60 {t('hero.minutes', 'Minuten')}
-                </span>
-                <span className="inline-flex items-center gap-[7px]">
                   <Truck className="h-4 w-4" /> {t('hero.badge_delivery', 'Lieferung')}{' '}
                   {t('hero.free_from', 'ab 30€')}
-                </span>
-                <span className="inline-flex items-center gap-[7px]">
-                  <Star className="h-4 w-4" /> 4,8 {t('hero.rating', 'Bewertung')}
                 </span>
               </div>
             </motion.div>
 
-            {/* Картинка */}
-            <div className="relative order-1 flex items-center justify-center px-6 py-10 md:px-10 md:py-12 lg:order-2 lg:px-11">
+            {/* Картинка: одно фуд-фото сверху — детройт-пицца и суши */}
+            <div className="relative order-1 flex items-center justify-center px-5 py-8 md:px-10 md:py-12 lg:order-2 lg:px-8">
               <div
                 className="pointer-events-none absolute inset-0"
                 style={{ background: 'linear-gradient(180deg, rgba(0,0,0,.04), rgba(0,0,0,.22))' }}
                 aria-hidden="true"
               />
-              <div className="relative z-10 w-full max-w-[420px]">
-                {/* Maße = echte Bildmaße (768×512): eine falsche Ratio reserviert
-                    den falschen Platz und verschiebt den Hero beim Laden. */}
+              <div className="relative z-10 w-full max-w-[600px]">
+                {/* Maße = echte Bildmaße: eine falsche Ratio reserviert den
+                    falschen Platz und verschiebt den Hero beim Laden. */}
                 <Image
-                  src="/images/pizza-hero.png"
-                  width={768}
-                  height={512}
-                  sizes="(max-width: 1024px) 100vw, 420px"
-                  alt={t('hero.image_alt', 'Leckere Pizza mit Lieferung')}
-                  className="relative w-full rounded-2xl drop-shadow-[0_18px_26px_rgba(0,0,0,.4)]"
+                  src="/images/hero-food.jpg"
+                  width={1387}
+                  height={941}
+                  sizes="(max-width: 1024px) 94vw, 600px"
+                  alt={t('hero.image_alt', 'Detroit-Style Pizza und Sushi-Rollen von oben')}
+                  className="w-full rounded-[22px] ring-1 ring-white/20 shadow-[0_26px_50px_rgba(0,0,0,.5)]"
                   priority
                 />
               </div>
