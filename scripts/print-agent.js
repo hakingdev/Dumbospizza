@@ -51,10 +51,11 @@ const AGENT_ID = `${os.hostname()}#${process.pid}`;
 const STATE_FILE =
   process.env.PRINT_AGENT_STATE_FILE || path.join(__dirname, 'printed-orders.json');
 
-// Windows: "COM3" -> "\\.\COM3". Network: "tcp://..." stays. Name: "printer:Name" or use as-is for driver.
-const PRINTER_INTERFACE = /^COM\d+$/i.test(PRINTER_RAW)
-  ? '\\\\.\\' + PRINTER_RAW.toUpperCase()
-  : PRINTER_RAW;
+// Несколько принтеров через запятую (переходный режим при замене железа):
+//   KITCHEN_PRINTER_INTERFACE=COM3,tcp://192.168.192.168:9100
+// Чек печатается на ВСЕХ; задание успешно, если напечатал хотя бы один —
+// отказ одного принтера не блокирует очередь и не дублирует чек на втором.
+const PRINTER_RAW_LIST = PRINTER_RAW.split(',').map((s) => s.trim()).filter(Boolean);
 
 const thermalPrinter = require('node-thermal-printer');
 const { ThermalPrinter, PrinterTypes, CharacterSet } = thermalPrinter;
@@ -71,56 +72,67 @@ const printerCharacterSet =
   CHARACTER_SET_BY_ENV[(process.env.PRINT_CHARACTER_SET || 'PC858_EURO').toUpperCase()] ||
   CharacterSet.PC858_EURO;
 
-const printerNameHintsPortable =
-  /^1|true|yes$/i.test(String(process.env.PRINT_PORTABLE || '')) ||
-  /TM-P20|TMP20|TM\s*P20/i.test(PRINTER_RAW);
 const envBool = (v, def) => {
   if (v === undefined || v === '') return def;
   return /^1|true|yes$/i.test(String(v));
 };
-const PRINT_LINE_WIDTH = Math.min(
-  48,
-  Math.max(
-    24,
-    parseInt(process.env.PRINT_LINE_WIDTH || (printerNameHintsPortable ? '32' : '48'), 10) ||
-      (printerNameHintsPortable ? 32 : 48)
-  )
-);
-const PRINT_PARTIAL_CUT =
-  process.env.PRINT_PARTIAL_CUT !== undefined && process.env.PRINT_PARTIAL_CUT !== ''
-    ? envBool(process.env.PRINT_PARTIAL_CUT, false)
-    : printerNameHintsPortable;
+
+// Настройки конкретного принтера можно переопределить суффиксом его номера в
+// списке (нумерация с 1): PRINT_LINE_WIDTH_2=48, PRINT_PARTIAL_CUT_2=0.
+// Без суффикса переменная действует на все принтеры (обратная совместимость).
+function buildPrinterEntry(raw, index) {
+  const isCom = /^COM\d+$/i.test(raw);
+  const isTcp = /^tcp:\/\//i.test(raw);
+  const isByName = !isCom && !isTcp && !/^[\\\/]/.test(raw);
+  const hintsPortable =
+    /^1|true|yes$/i.test(String(process.env.PRINT_PORTABLE || '')) ||
+    /TM-P20|TMP20|TM\s*P20/i.test(raw);
+  const suffix = index > 0 ? '_' + (index + 1) : '';
+  const widthEnv = process.env['PRINT_LINE_WIDTH' + suffix] || process.env.PRINT_LINE_WIDTH;
+  const cutEnvRaw =
+    process.env['PRINT_PARTIAL_CUT' + suffix] !== undefined &&
+    process.env['PRINT_PARTIAL_CUT' + suffix] !== ''
+      ? process.env['PRINT_PARTIAL_CUT' + suffix]
+      : process.env.PRINT_PARTIAL_CUT;
+  const defWidth = hintsPortable ? 32 : 48;
+  return {
+    raw,
+    // Windows: "COM3" -> "\\.\COM3". Network: "tcp://..." stays. Name: as-is for driver.
+    iface: isCom ? '\\\\.\\' + raw.toUpperCase() : raw,
+    isCom,
+    isByName,
+    width: Math.min(48, Math.max(24, parseInt(widthEnv || '', 10) || defWidth)),
+    partialCut:
+      cutEnvRaw !== undefined && cutEnvRaw !== '' ? envBool(cutEnvRaw, false) : hintsPortable,
+  };
+}
+const PRINTERS = PRINTER_RAW_LIST.map(buildPrinterEntry);
+
 const PRINT_FEED_BEFORE_CUT = Math.min(
   8,
   Math.max(0, parseInt(process.env.PRINT_FEED_BEFORE_CUT || '3', 10) || 3)
 );
-const PRINT_USE_DOUBLE_SIZE =
-  process.env.PRINT_USE_DOUBLE_SIZE !== undefined && process.env.PRINT_USE_DOUBLE_SIZE !== ''
-    ? envBool(process.env.PRINT_USE_DOUBLE_SIZE, false)
-    : false; // компактный чек по умолчанию (мельче шрифт)
-
 let printerDriver = null;
 try {
   printerDriver = require('printer');
 } catch (_) {}
 
-const isPrinterByName = !/^COM\d+$/i.test(PRINTER_RAW) && !/^tcp:\/\//i.test(PRINTER_RAW) && !/^[\\\/]/.test(PRINTER_RAW);
-if (isPrinterByName && !printerDriver) {
+if (PRINTERS.some((p) => p.isByName) && !printerDriver) {
   console.error('Printer by name needs the "printer" package (npm install printer --legacy-peer-deps).');
   console.error('Or use a COM port: set KITCHEN_PRINTER_INTERFACE=COM3 in .env');
   process.exit(1);
 }
 
-function getPrinter() {
-  const iface = printerDriver && isPrinterByName
-    ? 'printer:' + PRINTER_RAW
-    : PRINTER_INTERFACE;
+function getPrinter(entry) {
+  const iface = printerDriver && entry.isByName
+    ? 'printer:' + entry.raw
+    : entry.iface;
   const config = {
     type: PrinterTypes.EPSON,
     interface: iface,
     options: { timeout: 8000 },
     characterSet: printerCharacterSet,
-    width: PRINT_LINE_WIDTH,
+    width: entry.width,
   };
   if (printerDriver && iface.startsWith('printer:')) config.driver = printerDriver;
   return new ThermalPrinter(config);
@@ -178,6 +190,11 @@ function formatEuro(value) {
   return 'EUR ' + (Number(value) || 0).toFixed(2).replace('.', ',');
 }
 
+// Цена позиции без «EUR » — экономит 4 знака строки под длинные названия.
+function formatPrice(value) {
+  return (Number(value) || 0).toFixed(2).replace('.', ',');
+}
+
 // Aktions-/Gratis-Label am Zeilenanfang ([GRATIS], [AKTION], …) entfernen:
 // auf dem Bon nur Produkt + Preis, keine Sonderkennzeichnung.
 // Spiegelbild von lib/orders/gift-label.ts. (Präfix bleibt in der DB — dort
@@ -203,18 +220,21 @@ function formatDateTime(d) {
   return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-const isComPort = /^\\\\\.\\/.test(PRINTER_INTERFACE); // \\.\COM3
-
-async function printKitchenReceipt(n) {
-  const printer = getPrinter();
-  if (!isComPort) {
+async function printKitchenReceiptTo(entry, n) {
+  const printer = getPrinter(entry);
+  if (!entry.isCom) {
     const connected = await printer.isPrinterConnected();
-    if (!connected) throw new Error('Printer not connected: ' + PRINTER_INTERFACE);
+    if (!connected) throw new Error('Printer not connected: ' + entry.iface);
   }
 
-  // Шапка
+  // Шапка. ВНИМАНИЕ: в node-thermal-printer аргументы setTextSize(a, b)
+  // физически означают (ШИРИНА, ВЫСОТА), вопреки её же документации: байт
+  // GS ! n собирается как hex `${a}${b}`, а старший полубайт n — множитель
+  // ширины. 0 = обычный, 1 = двойной, 2 = тройной.
+  // Двойная ширина халвирует символы в строке, поэтому все leftRight-строки
+  // (цена справа) печатаются setTextSize(0, 1) — выше, но колонки на месте.
   printer.alignCenter();
-  if (PRINT_USE_DOUBLE_SIZE) printer.setTextSize(1, 1); else printer.setTextNormal();
+  printer.setTextSize(1, 1);
   printer.bold(true);
   printer.println('DUMBO SLICE PIZZA');
   printer.bold(false);
@@ -225,54 +245,81 @@ async function printKitchenReceipt(n) {
 
   // Заказ
   printer.alignLeft();
+  printer.setTextSize(0, 1);
   printer.bold(true);
   printer.leftRight('#' + n.orderId, formatDateTime(new Date()));
-  printer.println((n.deliveryType === 'pickup' ? 'ABHOLUNG' : 'LIEFERUNG'));
+  printer.println(n.deliveryType === 'pickup' ? 'ABHOLUNG' : 'LIEFERUNG');
   printer.bold(false);
   if (n.desiredDeliveryTime) printer.println('Zeit: ' + n.desiredDeliveryTime);
   if (n.customerName) printer.println('Kunde: ' + n.customerName);
   if (n.phoneNumber) printer.println('Tel: ' + n.phoneNumber);
   if (n.deliveryType === 'delivery' && n.address) printer.println(n.address);
+  printer.setTextNormal();
   printer.drawLine();
 
   // Позиции по категориям
   for (const group of groupItemsByCategory(n.items)) {
+    printer.setTextSize(1, 1); // КАТЕГОРИЯ — крупно, двойная высота и ширина
     printer.bold(true);
-    printer.println(group.category); // КАТЕГОРИЯ — жирная
+    printer.println(group.category);
     printer.bold(false);
+    printer.setTextSize(0, 1); // позиции — двойная высота, полная ширина колонок
     for (const item of group.items) {
       const displayName = stripPromoLabels(item.name);
       const lineTotal = (item.price != null ? item.price : 0) * item.quantity;
-      const right = item.price != null ? formatEuro(lineTotal) : '';
+      const right = item.price != null ? formatPrice(lineTotal) : '';
       const left = item.quantity + 'x ' + displayName;
-      if (right) printer.leftRight(left, right);
-      else printer.println(left);
+      if (!right) {
+        printer.println(left);
+      } else if (left.length + right.length + 1 <= entry.width) {
+        printer.leftRight(left, right);
+      } else {
+        // Название длиннее строки: не рвём его посреди слова впритык к цене,
+        // а печатаем цену отдельной строкой, прижатой вправо.
+        printer.println(left);
+        printer.leftRight('', right);
+      }
       (item.customizations || []).forEach((c) => printer.println('   - ' + c));
     }
   }
+  printer.setTextNormal();
   printer.drawLine();
 
   // Итоги
+  printer.setTextSize(0, 1);
   if (n.deliveryType === 'delivery' && (n.deliveryFee || 0) > 0) {
     printer.leftRight('Lieferung:', formatEuro(n.deliveryFee || 0));
   }
+  printer.setTextSize(1, 1);
   printer.bold(true);
-  printer.leftRight('GESAMT:', formatEuro(n.totalAmount));
+  // Не leftRight: при двойной ширине его паддинг до полной строки переносится.
+  printer.println('GESAMT: ' + formatEuro(n.totalAmount));
   printer.bold(false);
+  printer.setTextNormal();
   printer.drawLine();
 
   // Оплата
+  printer.setTextSize(0, 1);
   printer.bold(true);
   printer.println('ZAHLUNG: ' + formatPaymentMethod(n.paymentMethod));
   printer.bold(false);
+  printer.setTextNormal();
 
-  // Комментарий
+  // Комментарий клиента — самый крупный блок чека: инвертированный заголовок
+  // (белым по чёрному) + текст выше всех остальных строк и подчёркнут.
   if (n.notes && String(n.notes).trim()) {
     printer.drawLine();
+    printer.setTextSize(1, 1);
+    printer.invert(true);
     printer.bold(true);
-    printer.println('HINWEIS:');
-    printer.bold(false);
+    printer.println(' HINWEIS: ');
+    printer.invert(false);
+    printer.setTextSize(0, 2); // тройная высота, обычная ширина: полные колонки
+    printer.underline(true);
     printer.println(String(n.notes).trim());
+    printer.underline(false);
+    printer.bold(false);
+    printer.setTextNormal();
   }
 
   // Подвал + отрез
@@ -280,9 +327,34 @@ async function printKitchenReceipt(n) {
   printer.alignCenter();
   printer.println('Kein Kassenbon');
   for (let i = 0; i < PRINT_FEED_BEFORE_CUT; i++) printer.newLine();
-  if (PRINT_PARTIAL_CUT) printer.partialCut();
+  if (entry.partialCut) printer.partialCut();
   else printer.cut();
   await printer.execute();
+}
+
+// Печать на все настроенные принтеры. Успех = хотя бы один напечатал: чек
+// физически существует, поэтому заказ подтверждаем — иначе retry продублировал
+// бы чек на работающем принтере. Отказы остальных — в лог.
+async function printKitchenReceipt(n) {
+  const errors = [];
+  let printedOn = 0;
+  for (const entry of PRINTERS) {
+    try {
+      await printKitchenReceiptTo(entry, n);
+      printedOn++;
+    } catch (err) {
+      errors.push(entry.raw + ': ' + (err && err.message));
+    }
+  }
+  if (printedOn === 0) {
+    throw new Error('All printers failed: ' + errors.join(' | '));
+  }
+  if (errors.length) {
+    console.error(
+      '[print] decision=partial printed_on=' + printedOn + '/' + PRINTERS.length +
+      ' failed=' + errors.join(' | ')
+    );
+  }
 }
 
 async function fetchPendingOrders() {
