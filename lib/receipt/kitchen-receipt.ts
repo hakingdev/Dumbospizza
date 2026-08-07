@@ -15,6 +15,8 @@ export interface ReceiptItem {
   price?: number;
   /** Имя категории товара (для группировки). Пусто → «Sonstiges». */
   category?: string;
+  /** Имя подкатегории (метки) — подзаголовок внутри категории. */
+  subcategory?: string;
   /** Размер/топпинги/соусы — печатаются под товаром. */
   customizations?: string[];
 }
@@ -83,6 +85,28 @@ export function groupItemsByCategory(
   return order.map((category) => ({ category, items: map.get(category)! }));
 }
 
+/**
+ * Группировка позиций категории по подкатегориям: сначала позиции БЕЗ метки
+ * (сразу под заголовком категории), затем группы подкатегорий в порядке
+ * первого появления. Для сборки заказа (суши по видам и т.п.).
+ */
+export function groupItemsBySubcategory(
+  items: ReceiptItem[]
+): Array<{ subcategory: string | null; items: ReceiptItem[] }> {
+  const order: (string | null)[] = [];
+  const map = new Map<string | null, ReceiptItem[]>();
+  for (const item of items) {
+    const sub = (item.subcategory && item.subcategory.trim()) || null;
+    if (!map.has(sub)) {
+      map.set(sub, []);
+      order.push(sub);
+    }
+    map.get(sub)!.push(item);
+  }
+  order.sort((a, b) => (a === null ? -1 : b === null ? 1 : 0));
+  return order.map((subcategory) => ({ subcategory, items: map.get(subcategory)! }));
+}
+
 function formatDateTime(value?: Date | string): string {
   const d = value ? new Date(value) : new Date();
   if (Number.isNaN(d.getTime())) return '';
@@ -123,20 +147,25 @@ export function buildKitchenReceiptOps(order: ReceiptOrder): ReceiptOp[] {
   }
   ops.push({ type: 'line' });
 
-  // Позиции по категориям
+  // Позиции по категориям, внутри категории — по подкатегориям (меткам)
   for (const group of groupItemsByCategory(order.items)) {
     ops.push({ type: 'text', text: group.category, bold: true }); // КАТЕГОРИЯ — жирная
-    for (const item of group.items) {
-      // Aktions-/Gratis-Label ([GRATIS]/[AKTION]) entfernen: nur Produkt + Preis.
-      const displayName = stripPromoLabels(item.name);
-      const lineTotal = (item.price ?? 0) * item.quantity;
-      ops.push({
-        type: 'lr',
-        left: `${item.quantity}x ${displayName}`,
-        right: item.price != null ? formatEuro(lineTotal) : '',
-      });
-      for (const c of item.customizations || []) {
-        ops.push({ type: 'text', text: `   - ${c}` });
+    for (const sub of groupItemsBySubcategory(group.items)) {
+      if (sub.subcategory) {
+        ops.push({ type: 'text', text: `* ${sub.subcategory} *`, bold: true }); // подзаголовок
+      }
+      for (const item of sub.items) {
+        // Aktions-/Gratis-Label ([GRATIS]/[AKTION]) entfernen: nur Produkt + Preis.
+        const displayName = stripPromoLabels(item.name);
+        const lineTotal = (item.price ?? 0) * item.quantity;
+        ops.push({
+          type: 'lr',
+          left: `${item.quantity}x ${displayName}`,
+          right: item.price != null ? formatEuro(lineTotal) : '',
+        });
+        for (const c of item.customizations || []) {
+          ops.push({ type: 'text', text: `   - ${c}` });
+        }
       }
     }
   }

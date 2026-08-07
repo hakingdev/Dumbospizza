@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   groupItemsByCategory,
+  groupItemsBySubcategory,
   formatPaymentMethod,
   formatEuro,
   buildKitchenReceiptOps,
@@ -47,6 +48,80 @@ describe('groupItemsByCategory', () => {
     ]);
     expect(groups.map((g) => g.category)).toEqual(['Pizza', 'Drinks']);
     expect(groups[0].items.map((i) => i.name)).toEqual(['A', 'C']);
+  });
+});
+
+describe('groupItemsBySubcategory', () => {
+  it('позиции без метки идут первыми, затем группы в порядке появления', () => {
+    const groups = groupItemsBySubcategory([
+      { name: 'Philadelphia Lachs', quantity: 1, subcategory: 'Philadelphia' },
+      { name: 'Miso Suppe', quantity: 1 },
+      { name: 'California Ebi', quantity: 1, subcategory: 'California' },
+      { name: 'Philadelphia Avocado', quantity: 1, subcategory: 'Philadelphia' },
+    ]);
+    expect(groups.map((g) => g.subcategory)).toEqual([null, 'Philadelphia', 'California']);
+    expect(groups[1].items.map((i) => i.name)).toEqual([
+      'Philadelphia Lachs',
+      'Philadelphia Avocado',
+    ]);
+  });
+
+  it('без меток — одна группа null', () => {
+    const groups = groupItemsBySubcategory([{ name: 'A', quantity: 1 }]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].subcategory).toBeNull();
+  });
+});
+
+describe('buildKitchenReceiptOps — подкатегории', () => {
+  const sushiOrder: ReceiptOrder = {
+    orderId: '2',
+    deliveryType: 'pickup',
+    totalAmount: 30,
+    paymentMethod: 'cash',
+    items: [
+      { name: 'Miso Suppe', quantity: 1, price: 4, category: 'MakiLove Sushi' },
+      {
+        name: 'Philadelphia Lachs',
+        quantity: 1,
+        price: 12,
+        category: 'MakiLove Sushi',
+        subcategory: 'Philadelphia',
+      },
+      {
+        name: 'California Ebi',
+        quantity: 1,
+        price: 10,
+        category: 'MakiLove Sushi',
+        subcategory: 'California',
+      },
+      { name: 'Margherita', quantity: 1, price: 7.9, category: 'Pizza' },
+    ],
+  };
+  const ops = buildKitchenReceiptOps(sushiOrder);
+  const text = renderOpsToText(ops, 42).join('\n');
+
+  it('подкатегория — жирный подзаголовок под категорией', () => {
+    const subOp = ops.find((o) => o.type === 'text' && o.text === '* Philadelphia *');
+    expect(subOp).toBeTruthy();
+    expect((subOp as any).bold).toBe(true);
+  });
+
+  it('порядок: категория → без метки → подкатегории со своими товарами', () => {
+    const iCat = text.indexOf('MakiLove Sushi');
+    const iLoose = text.indexOf('Miso Suppe');
+    const iPhilaHdr = text.indexOf('* Philadelphia *');
+    const iPhilaItem = text.indexOf('Philadelphia Lachs');
+    const iCali = text.indexOf('* California *');
+    expect(iCat).toBeGreaterThanOrEqual(0);
+    expect(iCat).toBeLessThan(iLoose);
+    expect(iLoose).toBeLessThan(iPhilaHdr);
+    expect(iPhilaHdr).toBeLessThan(iPhilaItem);
+    expect(iPhilaItem).toBeLessThan(iCali);
+  });
+
+  it('товары другой категории не попадают под чужие подзаголовки', () => {
+    expect(text.indexOf('* California *')).toBeLessThan(text.indexOf('Pizza'));
   });
 });
 

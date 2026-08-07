@@ -3,6 +3,7 @@ import { connectToDatabase } from '../../../lib/models';
 import { Order } from '../../../lib/models/order.model';
 import { Product } from '../../../lib/models/product.model';
 import { Category } from '../../../lib/models/category.model';
+import { readSubcategories } from '../../../lib/categories/subcategories';
 import { Coupon } from '../../../lib/models/coupon.model';
 import { DeliveryZone } from '../../../lib/models/delivery-zone.model';
 import {
@@ -149,9 +150,10 @@ export async function POST(request: NextRequest) {
     );
     const taxRateByProduct = new Map<string, number>();
     const categoryByProduct = new Map<string, string>();
+    const subcategoryByProduct = new Map<string, string>();
     if (lineProductIds.length > 0) {
       const lineProducts = await Product.find({ _id: { $in: lineProductIds } })
-        .select('taxRate category sizes')
+        .select('taxRate category sizes subcategoryId')
         .lean();
       await hydrateSizeVariationStates(lineProducts as any[]);
 
@@ -202,14 +204,25 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Имена категорий (для группировки в кухонном чеке): id → name.
+      // Имена категорий и подкатегорий (для группировки в кухонном чеке).
+      // Подкатегория — метка из categories.subcategories; в позицию заказа
+      // пишем её ИМЯ на момент заказа (снимок, как и category).
       const catIds = Array.from(
         new Set(lineProducts.map((p) => String((p as any).category)).filter(Boolean))
       );
       const catNameById = new Map<string, string>();
+      const subNameByCatId = new Map<string, Map<string, string>>();
       if (catIds.length > 0) {
-        const cats = await Category.find({ _id: { $in: catIds } }).select('name').lean();
-        for (const c of cats) catNameById.set(String((c as any)._id), (c as any).name);
+        const cats = await Category.find({ _id: { $in: catIds } })
+          .select('name subcategories')
+          .lean();
+        for (const c of cats) {
+          catNameById.set(String((c as any)._id), (c as any).name);
+          subNameByCatId.set(
+            String((c as any)._id),
+            new Map(readSubcategories(c as any).map((s) => [s.id, s.name]))
+          );
+        }
       }
 
       for (const p of lineProducts) {
@@ -218,6 +231,10 @@ export async function POST(request: NextRequest) {
         }
         const catName = catNameById.get(String((p as any).category));
         if (catName) categoryByProduct.set(String((p as any)._id), catName);
+        const subName = subNameByCatId
+          .get(String((p as any).category))
+          ?.get(String((p as any).subcategoryId || ''));
+        if (subName) subcategoryByProduct.set(String((p as any)._id), subName);
       }
     }
 
@@ -228,6 +245,7 @@ export async function POST(request: NextRequest) {
       quantity: item.quantity,
       price: item.price, // Price per unit
       category: categoryByProduct.get(item.productId || item.id),
+      subcategory: subcategoryByProduct.get(item.productId || item.id),
       taxRate: taxRateByProduct.get(item.productId || item.id),
       size: item.size ? {
         id: item.size.id || '',

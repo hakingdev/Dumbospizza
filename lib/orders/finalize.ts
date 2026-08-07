@@ -26,6 +26,7 @@ export function buildOrderNotification(order: any) {
       quantity: item.quantity,
       price: item.price,
       category: item.category,
+      subcategory: item.subcategory,
       customizations: [
         ...(item.size ? [`Size: ${item.size.name}`] : []),
         ...(item.extras?.toppings?.map((t: any) => `Topping: ${t.name}`) || []),

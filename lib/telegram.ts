@@ -62,6 +62,8 @@ export interface OrderNotification {
     price?: number;
     /** Имя категории — для группировки в кухонном чеке. */
     category?: string;
+    /** Имя подкатегории — подзаголовок внутри категории на кухонном чеке. */
+    subcategory?: string;
     customizations?: string[];
   }>;
   totalAmount: number;

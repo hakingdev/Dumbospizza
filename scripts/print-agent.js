@@ -78,8 +78,9 @@ const envBool = (v, def) => {
 };
 
 // Настройки конкретного принтера можно переопределить суффиксом его номера в
-// списке (нумерация с 1): PRINT_LINE_WIDTH_2=48, PRINT_PARTIAL_CUT_2=0.
-// Без суффикса переменная действует на все принтеры (обратная совместимость).
+// списке (нумерация с 1): PRINT_LINE_WIDTH_2=48, PRINT_PARTIAL_CUT_2=0,
+// PRINT_FONT_B_2=0. Без суффикса переменная действует на все принтеры
+// (обратная совместимость).
 function buildPrinterEntry(raw, index) {
   const isCom = /^COM\d+$/i.test(raw);
   const isTcp = /^tcp:\/\//i.test(raw);
@@ -94,14 +95,26 @@ function buildPrinterEntry(raw, index) {
     process.env['PRINT_PARTIAL_CUT' + suffix] !== ''
       ? process.env['PRINT_PARTIAL_CUT' + suffix]
       : process.env.PRINT_PARTIAL_CUT;
-  const defWidth = hintsPortable ? 32 : 48;
+  // Font B (9 точек на символ вместо 12): единственная у ESC/POS ступень
+  // «чуть мельче» между нормальным и двойным размером. Буквы ~25% меньше,
+  // колонок на треть больше (58 мм: 42 вместо 32; 80 мм: 64 вместо 48) —
+  // длинные строки перестают переноситься. Вернуть крупный: PRINT_FONT_B=0.
+  const fontBEnvRaw =
+    process.env['PRINT_FONT_B' + suffix] !== undefined &&
+    process.env['PRINT_FONT_B' + suffix] !== ''
+      ? process.env['PRINT_FONT_B' + suffix]
+      : process.env.PRINT_FONT_B;
+  const fontB = envBool(fontBEnvRaw, true);
+  const maxWidth = fontB ? 64 : 48;
+  const defWidth = hintsPortable ? (fontB ? 42 : 32) : (fontB ? 64 : 48);
   return {
     raw,
     // Windows: "COM3" -> "\\.\COM3". Network: "tcp://..." stays. Name: as-is for driver.
     iface: isCom ? '\\\\.\\' + raw.toUpperCase() : raw,
     isCom,
     isByName,
-    width: Math.min(48, Math.max(24, parseInt(widthEnv || '', 10) || defWidth)),
+    fontB,
+    width: Math.min(maxWidth, Math.max(24, parseInt(widthEnv || '', 10) || defWidth)),
     partialCut:
       cutEnvRaw !== undefined && cutEnvRaw !== '' ? envBool(cutEnvRaw, false) : hintsPortable,
   };
@@ -165,6 +178,7 @@ function orderToNotification(order) {
       quantity: item.quantity,
       price: item.price,
       category: item.category, // имя категории для группировки
+      subcategory: item.subcategory, // метка внутри категории (подзаголовок)
       customizations: buildCustomizations(item)
     })),
     totalAmount: order.total,
@@ -215,6 +229,76 @@ function groupItemsByCategory(items) {
   return order.map((category) => ({ category, items: map.get(category) }));
 }
 
+// Внутри категории — группы по подкатегориям (меткам): сначала позиции БЕЗ
+// метки (сразу под заголовком категории), затем группы в порядке первого
+// появления. Для сборки заказа (суши по видам и т.п.).
+function groupItemsBySubcategory(items) {
+  const order = [];
+  const map = new Map();
+  for (const item of items || []) {
+    const sub = (item.subcategory && String(item.subcategory).trim()) || null;
+    if (!map.has(sub)) { map.set(sub, []); order.push(sub); }
+    map.get(sub).push(item);
+  }
+  order.sort((a, b) => (a === null ? -1 : b === null ? 1 : 0));
+  return order.map((subcategory) => ({ subcategory, items: map.get(subcategory) }));
+}
+
+// ---- Перенос строк и колонки «название …… цена» ----
+// Библиотечный printer.leftRight при переполнении печатает колонки ВПЛОТНУЮ
+// (счётчик пробелов уходит в минус и цикл просто не выполняется) — отсюда
+// «слипание» названия с ценой. Поэтому колонки собираются здесь: пробел перед
+// ценой гарантирован, длинное название переносится по словам, продолжение —
+// со следующей строки с отступом.
+const CONT_INDENT = '   ';
+
+function wrapWords(text, maxLen) {
+  const words = String(text == null ? '' : text).split(/\s+/).filter(Boolean);
+  const lines = [];
+  let line = '';
+  for (let w of words) {
+    while (w.length > maxLen) { // слово длиннее строки — режем жёстко
+      if (line) { lines.push(line); line = ''; }
+      lines.push(w.slice(0, maxLen));
+      w = w.slice(maxLen);
+    }
+    if (!w) continue;
+    if (!line) line = w;
+    else if (line.length + 1 + w.length <= maxLen) line += ' ' + w;
+    else { lines.push(line); line = w; }
+  }
+  if (line) lines.push(line);
+  return lines.length ? lines : [''];
+}
+
+function printColumns(printer, width, left, right) {
+  const l = String(left == null ? '' : left).trim();
+  const r = String(right == null ? '' : right);
+  if (!r) {
+    wrapWords(l, width).forEach((line, i) =>
+      printer.println(i === 0 ? line : CONT_INDENT + line)
+    );
+    return;
+  }
+  const firstMax = Math.max(8, width - r.length - 1);
+  const lines = wrapWords(l, firstMax);
+  const first = lines.shift();
+  const gap = Math.max(1, width - first.length - r.length);
+  printer.println(first + ' '.repeat(gap) + r);
+  if (lines.length) {
+    wrapWords(lines.join(' '), Math.max(8, width - CONT_INDENT.length)).forEach((line) =>
+      printer.println(CONT_INDENT + line)
+    );
+  }
+}
+
+// Допы («   - Sauce: Aioli») — тоже с переносом и выравниванием продолжения.
+function printAddon(printer, width, text) {
+  wrapWords(text, Math.max(8, width - 5)).forEach((line, i) =>
+    printer.println((i === 0 ? '   - ' : '     ') + line)
+  );
+}
+
 function formatDateTime(d) {
   const pad = (n) => String(n).padStart(2, '0');
   return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
@@ -227,6 +311,13 @@ async function printKitchenReceiptTo(entry, n) {
     if (!connected) throw new Error('Printer not connected: ' + entry.iface);
   }
 
+  // setTextNormal() шлёт ESC ! 0 и тем самым сбрасывает выбор шрифта обратно
+  // на Font A — поэтому шрифт B применяется заново после каждого сброса, и все
+  // сбросы в раскладке идут через textNormal(), не напрямую.
+  const applyFont = () => { if (entry.fontB) printer.setTypeFontB(); };
+  const textNormal = () => { printer.setTextNormal(); applyFont(); };
+  applyFont();
+
   // Шапка. ВНИМАНИЕ: в node-thermal-printer аргументы setTextSize(a, b)
   // физически означают (ШИРИНА, ВЫСОТА), вопреки её же документации: байт
   // GS ! n собирается как hex `${a}${b}`, а старший полубайт n — множитель
@@ -238,7 +329,7 @@ async function printKitchenReceiptTo(entry, n) {
   printer.bold(true);
   printer.println('DUMBO SLICE PIZZA');
   printer.bold(false);
-  printer.setTextNormal();
+  textNormal();
   printer.println('Kurhausstr. 11A - Bad Kissingen');
   printer.println('Tel: +49 163 2165979');
   printer.drawLine();
@@ -247,55 +338,54 @@ async function printKitchenReceiptTo(entry, n) {
   printer.alignLeft();
   printer.setTextSize(0, 1);
   printer.bold(true);
-  printer.leftRight('#' + n.orderId, formatDateTime(new Date()));
+  printColumns(printer, entry.width, '#' + n.orderId, formatDateTime(new Date()));
+  printer.setTextSize(1, 1);
   printer.println(n.deliveryType === 'pickup' ? 'ABHOLUNG' : 'LIEFERUNG');
+  printer.setTextSize(0, 1);
   printer.bold(false);
   if (n.desiredDeliveryTime) printer.println('Zeit: ' + n.desiredDeliveryTime);
   if (n.customerName) printer.println('Kunde: ' + n.customerName);
   if (n.phoneNumber) printer.println('Tel: ' + n.phoneNumber);
   if (n.deliveryType === 'delivery' && n.address) printer.println(n.address);
-  printer.setTextNormal();
+  textNormal();
   printer.drawLine();
 
-  // Позиции по категориям
+  // Позиции по категориям, внутри категории — по подкатегориям (меткам)
   for (const group of groupItemsByCategory(n.items)) {
     printer.setTextSize(1, 1); // КАТЕГОРИЯ — крупно, двойная высота и ширина
     printer.bold(true);
     printer.println(group.category);
     printer.bold(false);
     printer.setTextSize(0, 1); // позиции — двойная высота, полная ширина колонок
-    for (const item of group.items) {
-      const displayName = stripPromoLabels(item.name);
-      const lineTotal = (item.price != null ? item.price : 0) * item.quantity;
-      const right = item.price != null ? formatPrice(lineTotal) : '';
-      const left = item.quantity + 'x ' + displayName;
-      if (!right) {
-        printer.println(left);
-      } else if (left.length + right.length + 1 <= entry.width) {
-        printer.leftRight(left, right);
-      } else {
-        // Название длиннее строки: не рвём его посреди слова впритык к цене,
-        // а печатаем цену отдельной строкой, прижатой вправо.
-        printer.println(left);
-        printer.leftRight('', right);
+    for (const sub of groupItemsBySubcategory(group.items)) {
+      if (sub.subcategory) {
+        printer.bold(true);
+        printer.println('* ' + sub.subcategory + ' *'); // подзаголовок для сборки
+        printer.bold(false);
       }
-      (item.customizations || []).forEach((c) => printer.println('   - ' + c));
+      for (const item of sub.items) {
+        const displayName = stripPromoLabels(item.name);
+        const lineTotal = (item.price != null ? item.price : 0) * item.quantity;
+        const right = item.price != null ? formatPrice(lineTotal) : '';
+        printColumns(printer, entry.width, item.quantity + 'x ' + displayName, right);
+        (item.customizations || []).forEach((c) => printAddon(printer, entry.width, c));
+      }
     }
   }
-  printer.setTextNormal();
+  textNormal();
   printer.drawLine();
 
   // Итоги
   printer.setTextSize(0, 1);
   if (n.deliveryType === 'delivery' && (n.deliveryFee || 0) > 0) {
-    printer.leftRight('Lieferung:', formatEuro(n.deliveryFee || 0));
+    printColumns(printer, entry.width, 'Lieferung:', formatEuro(n.deliveryFee || 0));
   }
   printer.setTextSize(1, 1);
   printer.bold(true);
   // Не leftRight: при двойной ширине его паддинг до полной строки переносится.
   printer.println('GESAMT: ' + formatEuro(n.totalAmount));
   printer.bold(false);
-  printer.setTextNormal();
+  textNormal();
   printer.drawLine();
 
   // Оплата
@@ -303,7 +393,7 @@ async function printKitchenReceiptTo(entry, n) {
   printer.bold(true);
   printer.println('ZAHLUNG: ' + formatPaymentMethod(n.paymentMethod));
   printer.bold(false);
-  printer.setTextNormal();
+  textNormal();
 
   // Комментарий клиента — самый крупный блок чека: инвертированный заголовок
   // (белым по чёрному) + текст выше всех остальных строк и подчёркнут.
@@ -316,10 +406,12 @@ async function printKitchenReceiptTo(entry, n) {
     printer.invert(false);
     printer.setTextSize(0, 2); // тройная высота, обычная ширина: полные колонки
     printer.underline(true);
-    printer.println(String(n.notes).trim());
+    // Перенос по словам — принтер сам рвёт текст посреди слова.
+    wrapWords(String(n.notes).trim(), entry.width)
+      .forEach((line) => printer.println(line));
     printer.underline(false);
     printer.bold(false);
-    printer.setTextNormal();
+    textNormal();
   }
 
   // Подвал + отрез
