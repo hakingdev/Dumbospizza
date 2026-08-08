@@ -151,6 +151,40 @@ export async function POST(request: NextRequest) {
     const taxRateByProduct = new Map<string, number>();
     const categoryByProduct = new Map<string, string>();
     const subcategoryByProduct = new Map<string, string>();
+    // Имена категорий и подкатегорий (для группировки в кухонном чеке) + НДС.
+    // Подкатегория — метка из categories.subcategories; в позицию заказа
+    // пишем её ИМЯ на момент заказа (снимок, как и category).
+    const collectProductMeta = async (products: any[]) => {
+      const catIds = Array.from(
+        new Set(products.map((p) => String(p.category)).filter(Boolean))
+      );
+      const catNameById = new Map<string, string>();
+      const subNameByCatId = new Map<string, Map<string, string>>();
+      if (catIds.length > 0) {
+        const cats = await Category.find({ _id: { $in: catIds } })
+          .select('name subcategories')
+          .lean();
+        for (const c of cats) {
+          catNameById.set(String((c as any)._id), (c as any).name);
+          subNameByCatId.set(
+            String((c as any)._id),
+            new Map(readSubcategories(c as any).map((s) => [s.id, s.name]))
+          );
+        }
+      }
+      for (const p of products) {
+        const id = String(p._id);
+        if (typeof p.taxRate === 'number' && p.taxRate > 0) {
+          taxRateByProduct.set(id, p.taxRate);
+        }
+        const catName = catNameById.get(String(p.category));
+        if (catName) categoryByProduct.set(id, catName);
+        const subName = subNameByCatId
+          .get(String(p.category))
+          ?.get(String(p.subcategoryId || ''));
+        if (subName) subcategoryByProduct.set(id, subName);
+      }
+    };
     if (lineProductIds.length > 0) {
       const lineProducts = await Product.find({ _id: { $in: lineProductIds } })
         .select('taxRate category sizes subcategoryId')
@@ -204,38 +238,7 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Имена категорий и подкатегорий (для группировки в кухонном чеке).
-      // Подкатегория — метка из categories.subcategories; в позицию заказа
-      // пишем её ИМЯ на момент заказа (снимок, как и category).
-      const catIds = Array.from(
-        new Set(lineProducts.map((p) => String((p as any).category)).filter(Boolean))
-      );
-      const catNameById = new Map<string, string>();
-      const subNameByCatId = new Map<string, Map<string, string>>();
-      if (catIds.length > 0) {
-        const cats = await Category.find({ _id: { $in: catIds } })
-          .select('name subcategories')
-          .lean();
-        for (const c of cats) {
-          catNameById.set(String((c as any)._id), (c as any).name);
-          subNameByCatId.set(
-            String((c as any)._id),
-            new Map(readSubcategories(c as any).map((s) => [s.id, s.name]))
-          );
-        }
-      }
-
-      for (const p of lineProducts) {
-        if (typeof (p as any).taxRate === 'number' && (p as any).taxRate > 0) {
-          taxRateByProduct.set(String((p as any)._id), (p as any).taxRate);
-        }
-        const catName = catNameById.get(String((p as any).category));
-        if (catName) categoryByProduct.set(String((p as any)._id), catName);
-        const subName = subNameByCatId
-          .get(String((p as any).category))
-          ?.get(String((p as any).subcategoryId || ''));
-        if (subName) subcategoryByProduct.set(String((p as any)._id), subName);
-      }
+      await collectProductMeta(lineProducts as any[]);
     }
 
     // Transform items to match Order schema
@@ -444,12 +447,33 @@ export async function POST(request: NextRequest) {
       (p) => p.promotionType !== 'gratis_article' || resolvedGiftPromotionIds.has(p.promotionId)
     );
 
+    // Награды акций (вторая позиция BOGO, Gratis-Artikel) могут не входить в
+    // строки корзины — доснимаем их карточки, чтобы и у наград были категория/
+    // подкатегория (группировка кухонного чека) и НДС.
+    const promoProductIds = Array.from(
+      new Set(
+        [
+          ...bogoSecondItems.map((i) => String(i.productId || '')),
+          ...resolvedFreeGifts.map((g) => String(g.productId || '')),
+        ].filter((id) => id && !categoryByProduct.has(id))
+      )
+    );
+    if (promoProductIds.length > 0) {
+      const promoProducts = await Product.find({ _id: { $in: promoProductIds } })
+        .select('taxRate category subcategoryId')
+        .lean();
+      await collectProductMeta(promoProducts as any[]);
+    }
+
     const bogoOrderItems = bogoSecondItems.map((item) => ({
       product: item.productId,
       name: item.bogoMode === 'free' ? `[GRATIS] ${item.name}` : `[AKTION] ${item.name}`,
       quantity: item.quantity,
       price: item.unitPrice,
       totalPrice: item.unitPrice * item.quantity,
+      category: categoryByProduct.get(String(item.productId || '')),
+      subcategory: subcategoryByProduct.get(String(item.productId || '')),
+      taxRate: taxRateByProduct.get(String(item.productId || '')),
     }));
 
     const giftOrderItems = resolvedFreeGifts.map((g) => ({
@@ -458,6 +482,9 @@ export async function POST(request: NextRequest) {
       quantity: g.quantity,
       price: 0,
       totalPrice: 0,
+      category: categoryByProduct.get(String(g.productId || '')),
+      subcategory: subcategoryByProduct.get(String(g.productId || '')),
+      taxRate: taxRateByProduct.get(String(g.productId || '')),
     }));
 
     const orderItems = [...transformedItems, ...bogoOrderItems, ...giftOrderItems];
