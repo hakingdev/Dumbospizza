@@ -62,7 +62,7 @@ function getDeliveryTimeSlots(startHHmm: string, endHHmm: string, stepMinutes: n
   return slots;
 }
 
-function filterSlotsByCurrentTime(slots: string[], timeZone: string): string[] {
+function filterSlotsByCurrentTime(slots: string[], timeZone: string, minLeadMinutes: number): string[] {
   if (!timeZone || typeof timeZone !== 'string') return slots;
   try {
     const now = new Date();
@@ -74,15 +74,22 @@ function filterSlotsByCurrentTime(slots: string[], timeZone: string): string[] {
     }).formatToParts(now);
     const hour = parseInt(hm.find(p => p.type === 'hour')?.value ?? '0', 10);
     const minute = parseInt(hm.find(p => p.type === 'minute')?.value ?? '0', 10);
-    const currentMinutes = hour * 60 + minute;
+    const earliestMinutes = hour * 60 + minute + minLeadMinutes;
     return slots.filter((slot) => {
       const [h, m] = slot.split(':').map(Number);
       const slotMinutes = h * 60 + (m || 0);
-      return slotMinutes > currentMinutes;
+      return slotMinutes >= earliestMinutes;
     });
   } catch {
     return slots;
   }
+}
+
+// Кухне нужен запас до желаемого времени: минимум 60 минут от «сейчас»,
+// при большом заказе (больше 6 единиц товара) — 90.
+function minLeadMinutesForCart(items: Array<{ quantity?: number }>): number {
+  const units = items.reduce((n, item) => n + (item.quantity || 1), 0);
+  return units > 6 ? 90 : 60;
 }
 
 /** Фирменный знак PayPal — в списке методов у PayPal свой логотип, не общая иконка кошелька. */
@@ -583,6 +590,23 @@ export default function CheckoutPage() {
     setErrors({})
 
     try {
+      // Страховка: пока клиент заполнял форму, выбранный слот мог перестать
+      // проходить минимальный запас (60/90 мин) — тогда «как можно раньше».
+      const submitDesiredTime = (() => {
+        if (deliveryType !== 'delivery' || !desiredDeliveryTime) return undefined
+        const slots = getDeliveryTimeSlots(
+          orderSettings?.deliverySlotStart ?? '17:00',
+          orderSettings?.deliverySlotEnd ?? '21:30',
+          Number(orderSettings?.deliverySlotStepMinutes) || 5
+        )
+        const valid = filterSlotsByCurrentTime(
+          slots,
+          orderSettings?.ordersTimeZone || 'Europe/Berlin',
+          minLeadMinutesForCart(state.items)
+        )
+        return valid.includes(desiredDeliveryTime) ? desiredDeliveryTime : undefined
+      })()
+
       // Prepare order data
       const orderData = {
         items: state.items,
@@ -618,7 +642,7 @@ export default function CheckoutPage() {
           type: 'fixed' as const
         } : undefined,
         notes: contactDetails.notes || undefined,
-        desiredDeliveryTime: deliveryType === 'delivery' ? (desiredDeliveryTime || undefined) : undefined,
+        desiredDeliveryTime: submitDesiredTime,
         // выбор акций — чтобы заказ применил скидку и добавил BOGO/подарок (идёт в чек и Telegram)
         promotionPromoCode: state.promotionPromoCode || undefined,
         selectedBogoSecond: Object.entries(state.selectedBogoSecond || {}).flatMap(
@@ -934,8 +958,9 @@ export default function CheckoutPage() {
                     const end = orderSettings?.deliverySlotEnd ?? '21:30'
                     const step = Number(orderSettings?.deliverySlotStepMinutes) || 5
                     const timeZone = orderSettings?.ordersTimeZone || 'Europe/Berlin'
+                    const minLeadMinutes = minLeadMinutesForCart(state.items)
                     const slots = getDeliveryTimeSlots(start, end, step)
-                    const visibleSlots = filterSlotsByCurrentTime(slots, timeZone)
+                    const visibleSlots = filterSlotsByCurrentTime(slots, timeZone, minLeadMinutes)
                     return (
                       <div className="mt-4">
                         <label className="block text-gray-700 font-medium mb-2">{t('checkout.desired_delivery_time', 'Gewünschte Lieferzeit')}</label>
@@ -949,6 +974,9 @@ export default function CheckoutPage() {
                             <option key={slot} value={slot}>{slot}</option>
                           ))}
                         </select>
+                        <p className="text-xs text-gray-500 mt-1">
+                          {String(t('checkout.desired_time_min_lead', 'Wunschzeit frühestens in {min} Minuten')).replace('{min}', String(minLeadMinutes))}
+                        </p>
                       </div>
                     )
                   })()}

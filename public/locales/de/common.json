@@ -140,6 +140,7 @@
     "zone_label": "Liefergebiet auswählen:",
     "desired_delivery_time": "Gewünschte Lieferzeit",
     "as_soon_as_possible": "So schnell wie möglich",
+    "desired_time_min_lead": "Wunschzeit frühestens in {min} Minuten",
     "min_order_short": "Min.-Bestellwert",
     "min_order_zone": "Mindestbestellwert für dieses Gebiet",
     "min_order_missing": "Es fehlen",

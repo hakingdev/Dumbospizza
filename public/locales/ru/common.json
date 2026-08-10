@@ -165,6 +165,7 @@
     "zone_label": "Выберите район доставки:",
     "desired_delivery_time": "Желаемое время доставки",
     "as_soon_as_possible": "Как можно раньше",
+    "desired_time_min_lead": "Выбор времени — минимум через {min} минут",
     "min_order_short": "мин. заказ",
     "min_order_zone": "Минимальная сумма заказа для этой зоны",
     "min_order_missing": "Вам не хватает",
