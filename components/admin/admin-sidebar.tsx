@@ -101,7 +101,7 @@ export default function AdminSidebar() {
       icon: Star
     },
     {
-      name: 'SMS-Empfänger',
+      name: 'SMS-Rundsendung',
       href: '/admin/sms-empfaenger',
       icon: MessageSquare
     },
