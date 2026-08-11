@@ -8,6 +8,41 @@ export type EtaLoadLevel = 'normal' | 'busy' | 'peak';
 /** Станция кухни, на которой готовится позиция. */
 export type KitchenStation = 'pizza' | 'fryer' | 'sushi' | 'none';
 
+/**
+ * Один шаг плана кухни: какие заказы готовить (вместе) и каким рейсом везти.
+ */
+export interface KitchenPlanBatch {
+  /** Порядковый номер шага (1 = делать первым). */
+  step: number;
+  /** Номера заказов этого шага. */
+  orderNumbers: string[];
+  /** Город/направление рейса («Oerlenbach», «Bad Kissingen Zentrum»…), для самовывоза — «Abholung». */
+  area: string;
+  /** true — заказы шага готовить одновременно (поедут одним курьером). */
+  cookTogether: boolean;
+  /** Описание рейса курьера по-русски («рейс №1: Oerlenbach, 2 адреса»), null для самовывоза. */
+  courier: string | null;
+  /** Почему именно так (по-русски, коротко). */
+  rationale: string;
+}
+
+export interface KitchenPlan {
+  batches: KitchenPlanBatch[];
+  /** Итог для персонала по-русски (1-2 предложения). */
+  summary: string;
+  /** Рекомендация при перегрузе (стоп-бот, сдвиг обещаний), null когда всё ок. */
+  advisory: string | null;
+  loadLevel: EtaLoadLevel;
+  source: 'ai' | 'heuristic';
+  model?: string;
+  /** Сколько активных заказов анализировалось. */
+  queueSize: number;
+  /** Заказы уже в пути (курьер занят) — в шаги не входят. */
+  onTheRoad: string[];
+  /** Когда план построен (ISO). */
+  generatedAt: string;
+}
+
 export interface OrderEtaAnalysis {
   /** Обещанное клиенту время от текущего момента, мин (готовка + доставка). */
   etaMinutes: number;

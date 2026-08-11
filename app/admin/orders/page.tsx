@@ -4,6 +4,7 @@ import { Fragment, useState, useEffect } from 'react';
 import { Search, ShoppingBag, Eye, ChevronDown, ChevronUp, Download, Printer, Check } from 'lucide-react';
 import OrderTaxSummary from '../../../components/admin/OrderTaxSummary';
 import PaymentRefundPanel from '../../../components/admin/PaymentRefundPanel';
+import KitchenPlanPanel from '../../../components/admin/KitchenPlanPanel';
 const EXPORT_STATUSES = [
   { value: '', label: 'Все статусы' },
   { value: 'new', label: 'Новый' },
@@ -156,6 +157,8 @@ export default function OrdersPage() {
           />
         </div>
       </div>
+
+      <KitchenPlanPanel />
 
       <div className="mb-6 p-4 bg-white rounded-lg border border-gray-200 shadow-sm">
         <h2 className="text-sm font-semibold text-gray-800 mb-3">Выгрузка (CSV / Excel)</h2>
