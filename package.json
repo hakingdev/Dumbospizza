@@ -23,6 +23,7 @@
     }
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.116.0",
     "@headlessui/react": "^1.7.17",
     "@heroicons/react": "^2.0.18",
     "@next/third-parties": "^14.0.4",

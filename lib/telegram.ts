@@ -5,6 +5,7 @@ import { connectToDatabase } from './models';
 import { Order } from './models/order.model';
 import type { IOrder } from './models/order.model';
 import { sendOrderStatusNotification, sendOrderEtaNotification } from './whatsapp';
+import type { OrderEtaAnalysis } from './eta/types';
 import { earnForCompletedOrder, reverseOrder } from './loyalty/service';
 import { stripPromoLabels } from './orders/gift-label';
 import { requestKitchenReprint } from './orders/print-queue';
@@ -75,8 +76,10 @@ export interface OrderNotification {
   paymentMethod: string;
   deliveryType: 'delivery' | 'pickup';
   desiredDeliveryTime?: string;
-  /** Объявленное клиенту время готовности, мин (кнопка «⏱ Время готовности»). */
+  /** Объявленное клиенту время готовности, мин (AI или кнопка «⏱ Время готовности»). */
   etaMinutes?: number;
+  /** AI-оценка: разбивка готовка/доставка, расстояние, загрузка, советы. */
+  etaAnalysis?: OrderEtaAnalysis;
 }
 
 export interface PreOrderNotification {
@@ -117,7 +120,7 @@ function buildMapsUrl(address: string): string {
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
 }
 
-function escapeHtml(text: string): string {
+export function escapeHtml(text: string): string {
   return text
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -164,12 +167,28 @@ function buildOrderMessageText(order: OrderNotification): string {
     ? `\n⏱ Клиенту сообщено: ~${order.etaMinutes} мин`
     : '';
 
+  // Разбивка AI-оценки: готовка/доставка/км + подсказка маршрута + совет по
+  // загрузке. Персонал может поправить время кнопкой «⏱ Время готовности».
+  let etaDetails = '';
+  const analysis = order.etaAnalysis;
+  if (analysis) {
+    const parts = [`готовка ~${analysis.prepMinutes} мин`];
+    if (order.deliveryType === 'delivery' && analysis.deliveryMinutes > 0) {
+      const km = analysis.distanceKm != null ? `, ${analysis.distanceKm} км` : '';
+      parts.push(`доставка ~${analysis.deliveryMinutes} мин${km}`);
+    }
+    const sourceMark = analysis.source === 'ai' ? '🤖 AI' : '🤖 Оценка (без AI)';
+    etaDetails = `\n${sourceMark}: ${parts.join(', ')}`;
+    if (analysis.routeHint) etaDetails += `\n🗺 ${escapeHtml(analysis.routeHint)}`;
+    if (analysis.advisory) etaDetails += `\n⚠️ ${escapeHtml(analysis.advisory)}`;
+  }
+
   return `
 🔔 <b>НОВЫЙ ЗАКАЗ #${order.orderId}</b>
 
 👤 Клиент: ${escapeHtml(order.customerName)}
 📱 Телефон: ${escapeHtml(order.phoneNumber)}
-${addressInfo}${desiredTimeLine}${etaLine}
+${addressInfo}${desiredTimeLine}${etaLine}${etaDetails}
 ${sumsBlock}
 💳 Способ оплаты: ${escapeHtml(order.paymentMethod)}
 
@@ -282,8 +301,24 @@ function orderToNotification(order: IOrder): OrderNotification {
     paymentMethod: order.paymentMethod,
     deliveryType: order.deliveryType,
     desiredDeliveryTime: order.desiredDeliveryTime,
-    etaMinutes: order.etaMinutes
+    etaMinutes: order.etaMinutes,
+    etaAnalysis: order.etaAnalysis || undefined
   };
+}
+
+/**
+ * Служебное сообщение в основной чат заказов (HTML). Используется для
+ * алертов о пиковой загрузке кухни (lib/orders/finalize.ts).
+ */
+export async function sendPlainTelegramMessage(html: string): Promise<boolean> {
+  try {
+    const { bot, chatId } = await getTelegramConfig();
+    await bot.sendMessage(chatId, html, { parse_mode: 'HTML' });
+    return true;
+  } catch (error) {
+    console.error('Error sending Telegram message:', error);
+    return false;
+  }
 }
 
 /**

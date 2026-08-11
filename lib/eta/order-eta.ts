@@ -1,0 +1,533 @@
+/**
+ * AI-оценка времени заказа через Claude API: сколько готовить и везти.
+ *
+ * Модель кухни (со слов ресторана):
+ *   - пицца: один пиццайоло, ~8 мин на пиццу;
+ *   - фритюр/Beilagen (крылья, картошка и пр.): второй человек, ~8 мин на
+ *     позицию, работает ПАРАЛЛЕЛЬНО с пиццей;
+ *   - суши (категория MakiLove): своя станция, 2 человека, ~8 мин на позицию
+ *     на человека (две позиции одновременно);
+ *   - напитки/десерты: не готовятся.
+ *   - подряд идущие заказы не делаются вплотную: между ними 15–20 мин
+ *     (возврат курьера, ёмкость печи);
+ *   - самая дальняя доставка ~25 мин в одну сторону; адреса объединяются в
+ *     маршрут от ближнего к дальнему, если они «по пути».
+ *
+ * Claude получает новый заказ + очередь активных заказов + геоданные и отдаёт
+ * строгий JSON (structured outputs). При любом сбое — детерминированный
+ * эвристический fallback, чтобы клиент в любом случае получил время.
+ *
+ * Ключ ANTHROPIC_API_KEY живёт только на сервере (.env.local / Vercel env).
+ */
+
+import Anthropic from '@anthropic-ai/sdk';
+import { Order } from '../models/order.model';
+import { getSetting } from '../settings';
+import { restaurantLocation } from '../seed-products';
+import { geocodeAddress } from '../delivery/geocode';
+import { resolveRoadDistanceKm } from '../delivery/road-distance';
+import { normalizeDetourFactor } from '../delivery/detour';
+import type { EtaLoadLevel, KitchenStation, OrderEtaAnalysis } from './types';
+
+export type { OrderEtaAnalysis } from './types';
+
+// ---------------------------------------------------------------------------
+// Классификация позиций по станциям кухни
+// ---------------------------------------------------------------------------
+
+const SUSHI_MARKERS = ['maki', 'sushi'];
+const PIZZA_MARKERS = ['pizza', 'pizzen', 'calzone'];
+const NO_PREP_MARKERS = [
+  'getränk',
+  'getraenk',
+  'drink',
+  'wasser',
+  'cola',
+  'fanta',
+  'sprite',
+  'bier',
+  'wein',
+  'saft',
+  'dessert',
+  'eis',
+];
+
+/** По имени категории/подкатегории/товара решает, какая станция готовит позицию. */
+export function classifyStation(item: {
+  category?: string;
+  subcategory?: string;
+  name?: string;
+}): KitchenStation {
+  const haystack = [item.category, item.subcategory, item.name]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  if (!haystack) return 'fryer';
+
+  if (SUSHI_MARKERS.some((m) => haystack.includes(m))) return 'sushi';
+  if (NO_PREP_MARKERS.some((m) => haystack.includes(m))) return 'none';
+  if (PIZZA_MARKERS.some((m) => haystack.includes(m))) return 'pizza';
+  // Всё остальное (Beilagen, крылья, снэки, салаты…) делает «второй человек».
+  return 'fryer';
+}
+
+export interface StationUnits {
+  pizza: number;
+  fryer: number;
+  sushi: number;
+}
+
+/** Количество готовящихся единиц по станциям (с учётом quantity). */
+export function computeStationUnits(
+  items: Array<{ category?: string; subcategory?: string; name?: string; quantity?: number }>
+): StationUnits {
+  const units: StationUnits = { pizza: 0, fryer: 0, sushi: 0 };
+  for (const item of items || []) {
+    const qty = Math.max(1, Number(item.quantity) || 1);
+    const station = classifyStation(item);
+    if (station !== 'none') units[station] += qty;
+  }
+  return units;
+}
+
+// ---------------------------------------------------------------------------
+// Детерминированная эвристика (и fallback, и «подсказки» для AI)
+// ---------------------------------------------------------------------------
+
+const MINUTES_PER_UNIT = 8;
+/** Между подряд идущими заказами всегда есть зазор (со слов ресторана 15–20 мин). */
+const QUEUE_GAP_MINUTES = 15;
+
+/** Чистое время готовки заказа: станции работают параллельно. */
+export function heuristicPrepMinutes(units: StationUnits): number {
+  const pizza = units.pizza * MINUTES_PER_UNIT; // один пиццайоло
+  const fryer = units.fryer * MINUTES_PER_UNIT; // второй человек, параллельно
+  const sushi = Math.ceil(units.sushi / 2) * MINUTES_PER_UNIT; // 2 человека
+  const prep = Math.max(pizza, fryer, sushi);
+  return prep > 0 ? Math.max(prep, 10) : 5;
+}
+
+/** Оценка времени в пути в одну сторону по дорожному расстоянию. */
+export function driveMinutesFromKm(km: number): number {
+  // Городская езда Bad Kissingen: ~4 мин на выезд + ~1.7 мин/км.
+  // Самая дальняя зона (~12–16 км) упирается в потолок ~25–30 мин.
+  return Math.min(30, Math.max(5, Math.round(4 + km * 1.7)));
+}
+
+/** Округление обещания клиенту до 5 минут вверх. */
+export function roundEtaTo5(minutes: number): number {
+  return Math.ceil(minutes / 5) * 5;
+}
+
+// ---------------------------------------------------------------------------
+// Контекст: очередь активных заказов + геоданные нового адреса
+// ---------------------------------------------------------------------------
+
+const ACTIVE_STATUSES = ['new', 'preparing', 'ready_for_delivery', 'delivering'] as const;
+/** Заказы старше этого возраста в очередь не берём (зависшие статусы). */
+const QUEUE_LOOKBACK_MS = 3 * 60 * 60 * 1000;
+
+interface QueueOrderContext {
+  orderNumber: string;
+  status: string;
+  minutesAgo: number;
+  deliveryType: 'delivery' | 'pickup';
+  address?: string;
+  units: StationUnits;
+  itemCount: number;
+  promisedEtaMinutes?: number;
+  /** Сколько минут осталось от обещанного клиенту времени. */
+  promiseRemainingMinutes?: number;
+  distanceKm?: number;
+  coordinates?: { lat: number; lng: number };
+  desiredDeliveryTime?: string;
+}
+
+export interface EtaContext {
+  nowBerlin: string;
+  restaurantAddress: string;
+  newOrder: {
+    orderNumber: string;
+    deliveryType: 'delivery' | 'pickup';
+    address?: string;
+    desiredDeliveryTime?: string;
+    items: Array<{ name: string; quantity: number; station: KitchenStation }>;
+    units: StationUnits;
+    prepMinutesEstimate: number;
+    distanceKm?: number;
+    driveMinutesEstimate?: number;
+    coordinates?: { lat: number; lng: number };
+  };
+  queue: QueueOrderContext[];
+}
+
+function formatAddress(order: any): string | undefined {
+  if (order.deliveryType !== 'delivery' || !order.deliveryAddress) return undefined;
+  const a = order.deliveryAddress;
+  return `${a.street} ${a.houseNumber}, ${a.postalCode} ${a.city}`.trim();
+}
+
+function berlinNowString(now = new Date()): string {
+  return new Intl.DateTimeFormat('de-DE', {
+    timeZone: 'Europe/Berlin',
+    weekday: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(now);
+}
+
+/** Геокод + дорожное расстояние для адреса доставки (best effort, с кэшами внутри provider'ов). */
+async function resolveOrderGeo(
+  order: any,
+  storeSettings: Record<string, any>
+): Promise<{ distanceKm?: number; coordinates?: { lat: number; lng: number } }> {
+  const address = formatAddress(order);
+  if (!address) return {};
+  try {
+    const googleMapsApiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+    const restaurantAddress = storeSettings?.address || restaurantLocation.address;
+    const fullAddress = address.includes('Germany') ? address : `${address}, Germany`;
+
+    const [restaurantGeo, coords] = await Promise.all([
+      geocodeAddress(restaurantAddress, googleMapsApiKey).catch(() => null),
+      geocodeAddress(fullAddress, googleMapsApiKey).catch(() => null),
+    ]);
+    if (!coords) return {};
+
+    const road = await resolveRoadDistanceKm(
+      restaurantGeo ?? { lat: restaurantLocation.lat, lng: restaurantLocation.lng },
+      coords,
+      {
+        googleApiKey: storeSettings?.googleMapsApiKey || googleMapsApiKey,
+        detourFactor: normalizeDetourFactor(storeSettings?.deliveryDetourFactor),
+      }
+    ).catch(() => null);
+
+    return {
+      distanceKm: road ? Math.round(road.km * 10) / 10 : undefined,
+      coordinates: { lat: coords.lat, lng: coords.lng },
+    };
+  } catch {
+    return {};
+  }
+}
+
+/** Собирает контекст для оценки: новый заказ + активная очередь + геоданные. */
+export async function buildEtaContext(order: any): Promise<EtaContext> {
+  const storeSettings = await getSetting<Record<string, any>>('storeSettings', {});
+
+  const units = computeStationUnits(order.items || []);
+  const geo = await resolveOrderGeo(order, storeSettings || {});
+
+  const since = new Date(Date.now() - QUEUE_LOOKBACK_MS);
+  let activeOrders: any[] = [];
+  try {
+    activeOrders = await Order.find({
+      status: { $in: [...ACTIVE_STATUSES] },
+      createdAt: { $gte: since },
+    }).sort({ createdAt: 1 });
+  } catch (e) {
+    console.error('[eta] queue lookup failed:', (e as Error)?.message);
+  }
+
+  const now = Date.now();
+  const queue: QueueOrderContext[] = activeOrders
+    .filter((o) => String(o._id ?? o.id) !== String(order._id ?? order.id))
+    .map((o) => {
+      const createdMs = new Date(o.createdAt).getTime();
+      const minutesAgo = Math.max(0, Math.round((now - createdMs) / 60_000));
+      const promised = o.etaMinutes ?? undefined;
+      const etaSetMs = o.etaSetAt ? new Date(o.etaSetAt).getTime() : createdMs;
+      return {
+        orderNumber: o.orderNumber,
+        status: o.status,
+        minutesAgo,
+        deliveryType: o.deliveryType,
+        address: formatAddress(o),
+        units: computeStationUnits(o.items || []),
+        itemCount: (o.items || []).reduce(
+          (sum: number, it: any) => sum + (Number(it.quantity) || 1),
+          0
+        ),
+        promisedEtaMinutes: promised,
+        promiseRemainingMinutes:
+          promised != null
+            ? Math.round(promised - (now - etaSetMs) / 60_000)
+            : undefined,
+        distanceKm: o.etaAnalysis?.distanceKm,
+        coordinates: o.etaAnalysis?.coordinates,
+        desiredDeliveryTime: o.desiredDeliveryTime || undefined,
+      };
+    });
+
+  return {
+    nowBerlin: berlinNowString(),
+    restaurantAddress: storeSettings?.address || restaurantLocation.address,
+    newOrder: {
+      orderNumber: order.orderNumber,
+      deliveryType: order.deliveryType,
+      address: formatAddress(order),
+      desiredDeliveryTime: order.desiredDeliveryTime || undefined,
+      items: (order.items || []).map((it: any) => ({
+        name: it.name,
+        quantity: Math.max(1, Number(it.quantity) || 1),
+        station: classifyStation(it),
+      })),
+      units,
+      prepMinutesEstimate: heuristicPrepMinutes(units),
+      distanceKm: geo.distanceKm,
+      driveMinutesEstimate:
+        geo.distanceKm != null ? driveMinutesFromKm(geo.distanceKm) : undefined,
+      coordinates: geo.coordinates,
+    },
+    queue,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Эвристический fallback (когда AI недоступен)
+// ---------------------------------------------------------------------------
+
+export function heuristicEta(context: EtaContext): OrderEtaAnalysis {
+  const { newOrder, queue } = context;
+  // В очереди на кухню — только ещё не приготовленные заказы.
+  const cooking = queue.filter((o) => o.status === 'new' || o.status === 'preparing');
+  const queuePenalty = Math.min(cooking.length, 4) * QUEUE_GAP_MINUTES;
+
+  const prepMinutes = newOrder.prepMinutesEstimate + queuePenalty;
+  const driveMinutes =
+    newOrder.deliveryType === 'delivery'
+      ? newOrder.driveMinutesEstimate ?? driveMinutesFromKm(6) // без геоданных считаем среднюю зону
+      : 0;
+  // +5 мин на упаковку/передачу курьеру.
+  const deliveryMinutes = driveMinutes > 0 ? driveMinutes + 5 : 0;
+
+  const total = roundEtaTo5(prepMinutes + deliveryMinutes);
+  const loadLevel: EtaLoadLevel =
+    cooking.length >= 6 ? 'peak' : cooking.length >= 3 ? 'busy' : 'normal';
+
+  return {
+    etaMinutes: Math.min(Math.max(total, newOrder.deliveryType === 'delivery' ? 25 : 15), 150),
+    prepMinutes,
+    deliveryMinutes,
+    distanceKm: newOrder.distanceKm,
+    driveMinutes: driveMinutes || undefined,
+    loadLevel,
+    advisory:
+      loadLevel === 'peak'
+        ? `В очереди ${cooking.length} заказов — кухня перегружена. Рекомендую приостановить приём на 30–60 мин (стоп-бот) или объявлять время от ${Math.max(total, 90)} мин.`
+        : null,
+    routeHint: null,
+    reasoning: `Эвристика: готовка ${newOrder.prepMinutesEstimate} мин + очередь ${queuePenalty} мин + доставка ${deliveryMinutes} мин.`,
+    source: 'heuristic',
+    queueSize: queue.length,
+    coordinates: newOrder.coordinates,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// AI-оценка через Claude (structured outputs)
+// ---------------------------------------------------------------------------
+
+const ETA_SCHEMA = {
+  type: 'object',
+  properties: {
+    etaMinutes: {
+      type: 'integer',
+      description:
+        'Total minutes from NOW that we promise the customer (prep incl. queue + delivery for delivery orders; ready-for-pickup time for pickup). Round to a multiple of 5.',
+    },
+    prepMinutes: {
+      type: 'integer',
+      description: 'Minutes until the food is ready, incl. waiting for orders ahead in the queue',
+    },
+    deliveryMinutes: {
+      type: 'integer',
+      description: 'Minutes for the delivery leg incl. handover (0 for pickup)',
+    },
+    loadLevel: { type: 'string', enum: ['normal', 'busy', 'peak'] },
+    advisory: {
+      anyOf: [{ type: 'string' }, { type: 'null' }],
+      description:
+        'Staff recommendation in RUSSIAN when load is busy/peak (pause intake 30/60 min via stop-bot, or shift promises); null when normal',
+    },
+    routeHint: {
+      anyOf: [{ type: 'string' }, { type: 'null' }],
+      description:
+        'Route-combination hint in RUSSIAN (e.g. which pending order to combine this delivery with, near-to-far ordering); null if nothing to combine',
+    },
+    reasoning: {
+      type: 'string',
+      description: 'One-two sentences in RUSSIAN explaining the estimate for the staff',
+    },
+  },
+  required: [
+    'etaMinutes',
+    'prepMinutes',
+    'deliveryMinutes',
+    'loadLevel',
+    'advisory',
+    'routeHint',
+    'reasoning',
+  ],
+  additionalProperties: false,
+} as const;
+
+const SYSTEM_PROMPT = `You are the kitchen dispatcher of "Dumbos Pizza", Kurhausstr. 11A, 97688 Bad Kissingen, Germany.
+For every NEW order you estimate when the customer will get it, given the current queue.
+
+Kitchen model (fixed facts from the owner):
+- PIZZA station: one pizzaiolo, ~8 minutes per pizza on average, pizzas are made one after another.
+- FRYER/sides station ("fryer"): a second person makes Beilagen, wings, fries, snacks etc., ~8 minutes per item. Works IN PARALLEL with the pizza station.
+- SUSHI station (MakiLove category: rolls, sushi burgers, ...): 2 people, ~8 minutes per item per person, so two items in parallel. Independent of pizza/fryer.
+- Drinks and desserts need no preparation.
+- Back-to-back orders are NOT started immediately one after another: there is always a 15-20 minute spacing between consecutive orders (driver turnaround, oven capacity). Apply this when several orders are queued.
+
+Delivery model:
+- PICKUP orders (deliveryType "pickup"): etaMinutes is ONLY the preparation time incl. queue — when the food is ready at the counter. deliveryMinutes MUST be 0; never add driver or road time.
+- Use "distanceKm" / "driveMinutesEstimate" when provided. The farthest delivery zone is about 25 minutes one way.
+- A delivery round trip blocks the driver for roughly 2x the one-way time. Assume ONE driver on the road unless the queue clearly implies more.
+- Combine deliveries that go in the same direction (compare coordinates/addresses of pending deliveries): order stops from nearest to farthest. If this order should ride together with a queued order, say so in "routeHint" (mention the other order number).
+- If the customer chose a Wunschzeit (desiredDeliveryTime, HH:mm local time) later than your natural estimate, promise the Wunschzeit instead (etaMinutes = minutes from now until that time).
+
+Output rules:
+- etaMinutes is the promise to the customer measured FROM NOW. Be realistic and slightly pessimistic: arriving earlier than promised is fine, later is not. Round to a multiple of 5. Typical range: 20-45 min quiet, 60-120 min at peak.
+- "loadLevel": "peak" when the kitchen cannot keep its promises with the current queue (roughly 6+ orders cooking or promises slipping), "busy" when it is tight, otherwise "normal".
+- "advisory" (RUSSIAN, for the staff, null when normal): at busy/peak recommend concretely — e.g. after how many more orders to pause intake, or to pause for 30/60 minutes via the stop-bot, or by how much to shift promised times.
+- "advisory", "routeHint", "reasoning" are in Russian. Keep them short.
+- Do not invent orders, distances or times that are not in the data.`;
+
+export async function analyzeEtaWithClaude(context: EtaContext): Promise<OrderEtaAnalysis> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error('ANTHROPIC_API_KEY is not configured');
+
+  // Оценка идёт в критическом пути ответа чекаута → жёсткий таймаут, без ретраев.
+  const client = new Anthropic({ apiKey, timeout: 20_000, maxRetries: 0 });
+
+  const response = await client.messages.create({
+    model: 'claude-opus-5',
+    max_tokens: 4000,
+    // low effort: важна задержка — заказ ждёт подтверждения
+    output_config: {
+      effort: 'low',
+      format: { type: 'json_schema', schema: ETA_SCHEMA as any },
+    },
+    system: SYSTEM_PROMPT,
+    messages: [
+      {
+        role: 'user',
+        content: [
+          `Current local time: ${context.nowBerlin}`,
+          '',
+          'NEW ORDER (estimate this one):',
+          JSON.stringify(context.newOrder, null, 2),
+          '',
+          `ACTIVE QUEUE (${context.queue.length} orders, oldest first):`,
+          JSON.stringify(context.queue, null, 2),
+        ].join('\n'),
+      },
+    ],
+  } as any);
+
+  if (response.stop_reason === 'refusal') {
+    throw new Error('Claude declined the request');
+  }
+
+  const textBlock = response.content.find((block: any) => block.type === 'text') as
+    | { type: 'text'; text: string }
+    | undefined;
+  if (!textBlock?.text) throw new Error('Empty response from Claude');
+
+  const raw = JSON.parse(textBlock.text) as Partial<OrderEtaAnalysis>;
+  return normalizeEtaVerdict(raw, context);
+}
+
+/**
+ * Валидация и нормализация ответа модели. Инвариант самовывоза жёсткий:
+ * deliveryMinutes = 0, а если модель всё же вплела дорогу в etaMinutes —
+ * вычитаем её, чтобы клиенту не обещали лишнее время.
+ */
+export function normalizeEtaVerdict(
+  raw: Partial<OrderEtaAnalysis>,
+  context: EtaContext
+): OrderEtaAnalysis {
+  if (
+    !Number.isFinite(raw.etaMinutes) ||
+    !Number.isFinite(raw.prepMinutes) ||
+    !Number.isFinite(raw.deliveryMinutes)
+  ) {
+    throw new Error('Malformed ETA verdict');
+  }
+
+  const isPickup = context.newOrder.deliveryType === 'pickup';
+  let etaMinutes = Number(raw.etaMinutes);
+  let deliveryMinutes = Math.max(0, Math.round(Number(raw.deliveryMinutes)));
+  const prepMinutes = Math.max(0, Math.round(Number(raw.prepMinutes)));
+
+  if (isPickup && deliveryMinutes > 0) {
+    etaMinutes -= deliveryMinutes;
+    deliveryMinutes = 0;
+  }
+  // Самовывоз = только изготовление: обещание не может превышать prep-часть.
+  if (isPickup) {
+    etaMinutes = Math.min(etaMinutes, Math.max(prepMinutes, 10));
+  }
+  etaMinutes = Math.min(Math.max(roundEtaTo5(etaMinutes), 10), 180);
+
+  return {
+    etaMinutes,
+    prepMinutes,
+    deliveryMinutes,
+    distanceKm: isPickup ? undefined : context.newOrder.distanceKm,
+    driveMinutes: isPickup ? undefined : context.newOrder.driveMinutesEstimate,
+    loadLevel: (['normal', 'busy', 'peak'] as const).includes(raw.loadLevel as any)
+      ? (raw.loadLevel as EtaLoadLevel)
+      : 'normal',
+    advisory: typeof raw.advisory === 'string' && raw.advisory.trim() ? raw.advisory.trim() : null,
+    routeHint:
+      typeof raw.routeHint === 'string' && raw.routeHint.trim() ? raw.routeHint.trim() : null,
+    reasoning: typeof raw.reasoning === 'string' ? raw.reasoning : undefined,
+    source: 'ai',
+    model: 'claude-opus-5',
+    queueSize: context.queue.length,
+    coordinates: context.newOrder.coordinates,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Точка входа из finalizeOrderPlacement
+// ---------------------------------------------------------------------------
+
+/**
+ * Считает ETA (AI → эвристика), записывает на заказ (etaMinutes/etaSetAt/
+ * etaAnalysis) и сохраняет. Никогда не бросает — сбой оценки не должен
+ * ломать размещение заказа. Возвращает null только при полном сбое.
+ */
+export async function estimateAndApplyOrderEta(order: any): Promise<OrderEtaAnalysis | null> {
+  try {
+    const context = await buildEtaContext(order);
+
+    let analysis: OrderEtaAnalysis;
+    try {
+      analysis = await analyzeEtaWithClaude(context);
+    } catch (e) {
+      console.error('[eta] AI estimate failed, falling back to heuristic:', (e as Error)?.message);
+      analysis = heuristicEta(context);
+    }
+
+    order.etaMinutes = analysis.etaMinutes;
+    order.etaSetAt = new Date();
+    order.etaAnalysis = analysis;
+    await order.save();
+
+    console.log(
+      `[eta] order=${order.orderNumber} eta=${analysis.etaMinutes}min ` +
+        `(prep=${analysis.prepMinutes}, delivery=${analysis.deliveryMinutes}, ` +
+        `load=${analysis.loadLevel}, source=${analysis.source}, queue=${analysis.queueSize})`
+    );
+    return analysis;
+  } catch (e) {
+    console.error('[eta] estimation failed entirely:', e);
+    return null;
+  }
+}

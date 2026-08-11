@@ -4,9 +4,10 @@ import { redeemPointsForOrder } from '../loyalty/service';
 import { getLoyaltyRules } from '../loyalty/config';
 import { recordPromotionOrderAnalytics } from '../promotions/order-integration';
 import { sendServerPurchaseConversionEvents } from '../conversions/server-purchase-events';
-import { sendOrderNotification } from '../telegram';
+import { sendOrderNotification, sendPlainTelegramMessage, escapeHtml } from '../telegram';
 import { printOrderReceipts } from '../printing';
-import { sendOrderPlacedNotification } from '../whatsapp';
+import { sendOrderPlacedNotification, sendOrderEtaNotification } from '../whatsapp';
+import { estimateAndApplyOrderEta, type OrderEtaAnalysis } from '../eta/order-eta';
 import type { IOrder } from '../models/order.model';
 
 /** Сборка payload уведомления (Telegram / печать) из документа заказа. */
@@ -43,6 +44,8 @@ export function buildOrderNotification(order: any) {
     paymentMethod: order.paymentMethod,
     deliveryType: order.deliveryType,
     desiredDeliveryTime: order.desiredDeliveryTime,
+    etaMinutes: order.etaMinutes,
+    etaAnalysis: order.etaAnalysis || undefined,
   };
 }
 
@@ -121,11 +124,41 @@ export async function finalizeOrderPlacement(order: any, request: NextRequest): 
     }
   }
 
+  // AI-оценка времени (изготовление + доставка) с учётом очереди — ДО сборки
+  // уведомления, чтобы Telegram-карточка сразу содержала объявленное время.
+  // Внутри свой try/catch + эвристический fallback: сбой оценки заказ не валит.
+  let etaAnalysis: OrderEtaAnalysis | null = null;
+  try {
+    etaAnalysis = await estimateAndApplyOrderEta(order);
+  } catch (error) {
+    console.error('Error estimating order ETA:', error);
+  }
+
   const notification = buildOrderNotification(order);
 
   // ВАЖНО (Vercel serverless): уведомления нужно ДОЖДАТЬСЯ до ответа,
   // иначе функция замораживается и Telegram/WhatsApp/конверсии не отправляются.
   await Promise.all([
+    // WhatsApp клиенту с объявленным временем (шаблон ORDER_ETA) — тот же
+    // канал, что и кнопка «⏱ Время готовности» в Telegram.
+    etaAnalysis
+      ? sendOrderEtaNotification(
+          { phoneNumber: order.phoneNumber, orderNumber: order.orderNumber },
+          etaAnalysis.etaMinutes
+        ).catch((err) => {
+          console.error('Error sending WhatsApp ETA notification:', err);
+        })
+      : Promise.resolve(),
+    // Пиковая загрузка — отдельное громкое сообщение в Telegram с рекомендацией.
+    etaAnalysis?.loadLevel === 'peak' && etaAnalysis.advisory
+      ? sendPlainTelegramMessage(
+          `🔴 <b>Пиковая загрузка кухни</b>\n${escapeHtml(etaAnalysis.advisory)}`
+        ).catch(
+          (err) => {
+            console.error('Error sending peak-load advisory to Telegram:', err);
+          }
+        )
+      : Promise.resolve(),
     sendServerPurchaseConversionEvents(order.toObject() as IOrder, request).catch((err) => {
       console.error('Server conversion events (Meta / TikTok):', err);
     }),

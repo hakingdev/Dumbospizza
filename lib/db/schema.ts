@@ -136,6 +136,7 @@ type OrderItem = {
   quantity: number;
   price: number;
   category?: string;
+  subcategory?: string;
   taxRate?: number;
   size?: { id: string; name: string; size: string; price: number };
   extras?: {
@@ -212,6 +213,10 @@ export const orders = pgTable(
     // числу не должен слать клиенту второе WhatsApp-сообщение.
     etaMinutes: integer('eta_minutes'),
     etaSetAt: timestamp('eta_set_at', { withTimezone: true, mode: 'date' }),
+    // AI-оценка времени (lib/eta/order-eta.ts): разбивка готовка/доставка,
+    // расстояние, уровень загрузки и советы персоналу. Также источник
+    // distanceKm/coordinates для маршрутизации следующих заказов.
+    etaAnalysis: jsonb('eta_analysis').$type<import('../eta/types').OrderEtaAnalysis | null>(),
     telegramMessageId: bigint('telegram_message_id', { mode: 'number' }),
     mewsOrderId: text('mews_order_id'),
     kitchenPrintStatus: text('kitchen_print_status').default('pending'),

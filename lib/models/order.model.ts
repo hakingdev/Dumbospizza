@@ -105,9 +105,11 @@ export interface IOrder {
   notes?: string;
   /** Желаемое время доставки в формате HH:mm (например "16:45") */
   desiredDeliveryTime?: string;
-  /** Время готовности в минутах, объявленное клиенту из Telegram. */
+  /** Время готовности в минутах, объявленное клиенту (AI или из Telegram). */
   etaMinutes?: number;
   etaSetAt?: Date;
+  /** AI-оценка времени заказа (разбивка, расстояние, загрузка кухни). */
+  etaAnalysis?: import('../eta/types').OrderEtaAnalysis | null;
   telegramMessageId?: number;
   mewsOrderId?: string;
   kitchenPrintStatus?: 'pending' | 'printing' | 'completed' | 'failed';
