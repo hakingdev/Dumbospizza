@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { restaurantLocation, deliveryZones as seedZones } from '../../../../lib/seed-products';
+import { restaurantLocation } from '../../../../lib/seed-products';
 import { connectToDatabase } from '../../../../lib/models';
 import { DeliveryZone } from '../../../../lib/models/delivery-zone.model';
 import { getSetting } from '../../../../lib/settings';
@@ -7,10 +7,11 @@ import {
   selectDeliveryZone,
   matchZoneByAddress,
   roundKm,
-  type GeoLocationParts,
 } from '../../../../lib/delivery/zone-match';
+import { geocodeAddress, type GeocodeResult } from '../../../../lib/delivery/geocode';
 import { resolveRoadDistanceKm } from '../../../../lib/delivery/road-distance';
 import { normalizeDetourFactor } from '../../../../lib/delivery/detour';
+import { loadActiveDeliveryZones } from '../../../../lib/delivery/zones-db';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,98 +25,23 @@ export async function POST(request: NextRequest) {
     }
 
     const fullAddress = address.includes('Germany') ? address : `${address}, Germany`;
-    await connectToDatabase();
-
-    let zonesFromDb = await DeliveryZone.find({ active: true }).sort({ sortOrder: 1, name: 1 });
-    if (zonesFromDb.length === 0 && seedZones.length > 0) {
-      const docs = seedZones.map((zone, index) => ({
-        name: zone.name,
-        minOrderAmount: zone.minOrderAmount,
-        deliveryFee: zone.deliveryFee || 0,
-        maxDistance: zone.maxDistance || 0,
-        active: true,
-        sortOrder: index,
-      }));
-      await DeliveryZone.insertMany(docs);
-      zonesFromDb = await DeliveryZone.find({ active: true }).sort({ sortOrder: 1, name: 1 });
-    }
+    const zonesFromDb = await loadActiveDeliveryZones();
 
     const storeSettings = await getSetting<Record<string, any>>('storeSettings', {});
     const googleMapsApiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
 
-    type GeoResult = { lat: number; lng: number } & GeoLocationParts;
-
-    const geocodeAddress = async (targetAddress: string): Promise<GeoResult | null> => {
-      if (googleMapsApiKey) {
-        const geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(targetAddress)}&key=${googleMapsApiKey}`;
-        const response = await fetch(geocodeUrl);
-        const data = await response.json();
-        if (data.status === 'OK' && data.results.length > 0) {
-          const res = data.results[0];
-          const comps: any[] = res.address_components || [];
-          const byType = (type: string) =>
-            comps.find((c) => Array.isArray(c.types) && c.types.includes(type))?.long_name as
-              | string
-              | undefined;
-          const localities = [
-            byType('sublocality'),
-            byType('sublocality_level_1'),
-            byType('neighborhood'),
-            byType('locality'),
-            byType('administrative_area_level_3'),
-          ].filter(Boolean) as string[];
-          return {
-            lat: res.geometry.location.lat,
-            lng: res.geometry.location.lng,
-            postcode: byType('postal_code'),
-            localities,
-          };
-        }
-        return null;
-      }
-
-      const nominatimUrl = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=1&q=${encodeURIComponent(targetAddress)}&email=info@dumbospizza.de`;
-      const response = await fetch(nominatimUrl, {
-        headers: {
-          'User-Agent': 'DumbosPizza/1.0 (info@dumbospizza.de)',
-          'Accept-Language': 'de',
-        },
-      });
-      const results = await response.json();
-      if (Array.isArray(results) && results.length > 0) {
-        const a = results[0].address || {};
-        const localities = [
-          a.suburb,
-          a.city_district,
-          a.neighbourhood,
-          a.quarter,
-          a.hamlet,
-          a.village,
-          a.town,
-          a.city,
-          a.municipality,
-        ].filter(Boolean) as string[];
-        return {
-          lat: Number(results[0].lat),
-          lng: Number(results[0].lon),
-          postcode: a.postcode,
-          localities,
-        };
-      }
-      return null;
-    };
-
     // Координаты ресторана (из настроек, иначе из сидов).
     const restaurantAddress = storeSettings?.address || restaurantLocation.address;
-    let restaurantCoords = await geocodeAddress(restaurantAddress).catch(() => null);
-    if (!restaurantCoords) {
-      restaurantCoords = { lat: restaurantLocation.lat, lng: restaurantLocation.lng };
-    }
+    const restaurantCoords =
+      (await geocodeAddress(restaurantAddress, googleMapsApiKey).catch(() => null)) ?? {
+        lat: restaurantLocation.lat,
+        lng: restaurantLocation.lng,
+      };
 
     // Геокодинг адреса клиента.
-    let coords: GeoResult | null = null;
+    let coords: GeocodeResult | null = null;
     try {
-      coords = await geocodeAddress(fullAddress);
+      coords = await geocodeAddress(fullAddress, googleMapsApiKey);
     } catch (error) {
       console.error('Geocoding error:', error);
       coords = null;

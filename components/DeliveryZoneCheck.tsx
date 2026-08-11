@@ -47,7 +47,8 @@ export default function DeliveryZoneCheck() {
     setResult(null);
 
     try {
-      const response = await fetch('/api/delivery/check-zone', {
+      // AI-анализ адреса (Claude + геометрический fallback на сервере)
+      const response = await fetch('/api/delivery/analyze-address', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ address })

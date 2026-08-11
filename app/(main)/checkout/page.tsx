@@ -465,24 +465,24 @@ export default function CheckoutPage() {
     return Object.keys(newErrors).length === 0
   }
   
-  // Проверка адреса доставки через /api/delivery/check-zone.
-  const handleCheckZone = async () => {
+  // AI-проверка адреса доставки через /api/delivery/analyze-address (Claude
+  // анализирует зоны из админки; на сервере есть геометрический fallback).
+  // Запускается автоматически, без кнопки — см. debounce-эффект ниже.
+  const zoneRequestIdRef = useRef(0)
+  const runZoneAnalysis = useCallback(async () => {
     const { street, houseNumber, postalCode, city } = contactDetails
-    if (!street.trim() || !houseNumber.trim() || !postalCode.trim() || !city.trim()) {
-      setErrors(prev => ({ ...prev, zone: t('checkout.errors.address_for_check', 'Bitte zuerst die Lieferadresse ausfüllen.') }))
-      return
-    }
+    const requestId = ++zoneRequestIdRef.current
     setErrors(prev => { const n = { ...prev }; delete n.zone; return n })
     setCheckingZone(true)
-    setZoneCheck(null)
     try {
-      const address = `${street} ${houseNumber}, ${postalCode} ${city}`
-      const res = await fetch('/api/delivery/check-zone', {
+      const address = `${street.trim()} ${houseNumber.trim()}, ${postalCode.trim()} ${city.trim()}`
+      const res = await fetch('/api/delivery/analyze-address', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ address }),
       })
       const data = await res.json()
+      if (zoneRequestIdRef.current !== requestId) return // адрес уже изменился — ответ устарел
       if (data.success && data.canDeliver && data.zone) {
         setZoneCheck({ canDeliver: true, zone: data.zone, distance: data.distance, message: data.message })
         setDeliveryZone(String(data.zone.id)) // существующий effect запишет зону/fee в корзину
@@ -491,11 +491,26 @@ export default function CheckoutPage() {
         setDeliveryZone('')
       }
     } catch (_err) {
+      if (zoneRequestIdRef.current !== requestId) return
       setZoneCheck({ canDeliver: false, message: t('checkout.zone_check_error', 'Fehler bei der Adressprüfung.') })
     } finally {
-      setCheckingZone(false)
+      if (zoneRequestIdRef.current === requestId) setCheckingZone(false)
     }
-  }
+  }, [contactDetails, t])
+
+  // Автозапуск анализа: адрес заполнен полностью → через паузу проверяем.
+  // Изменение любого поля адреса сбрасывает zoneCheck (см. handleContactDetailChange),
+  // поэтому эффект перезапускается сам; готовый результат повторно не проверяем.
+  useEffect(() => {
+    if (deliveryType !== 'delivery') return
+    if (zoneCheck) return
+    const { street, houseNumber, postalCode, city } = contactDetails
+    const addressComplete =
+      street.trim() && houseNumber.trim() && /^\d{5}$/.test(postalCode.trim()) && city.trim()
+    if (!addressComplete) return
+    const timer = setTimeout(() => { runZoneAnalysis() }, 800)
+    return () => clearTimeout(timer)
+  }, [contactDetails, deliveryType, zoneCheck, runZoneAnalysis])
 
   // Правило перехода на шаге доставки (pickup — без проверки зоны).
   const deliveryGate = evaluateDeliveryGate({
@@ -520,7 +535,9 @@ export default function CheckoutPage() {
               ? `Mindestbestellwert für diese Zone: ${(zoneCheck?.zone?.minOrderAmount ?? 0).toFixed(2)} €. Es fehlen noch ${(deliveryGate.shortfall ?? 0).toFixed(2)} €.`
               : deliveryGate.reason === 'outside_zone'
                 ? t('checkout.zone_outside', 'Ihre Adresse liegt außerhalb des Liefergebiets.')
-                : t('checkout.zone_check_required', 'Bitte prüfen Sie zuerst Ihre Lieferadresse.'),
+                : checkingZone
+                  ? t('checkout.zone_check_running', 'Ihre Adresse wird gerade geprüft – einen Moment bitte.')
+                  : t('checkout.zone_check_required', 'Bitte geben Sie Ihre vollständige Lieferadresse ein – sie wird automatisch geprüft.'),
         }))
         return
       }
@@ -1114,24 +1131,23 @@ export default function CheckoutPage() {
                     />
                   </div>
 
-                  {/* Проверка зоны доставки по адресу */}
+                  {/* Автоматическая AI-проверка зоны доставки по адресу (без кнопки) */}
                   <div className="mb-6">
-                    <button
-                      type="button"
-                      onClick={handleCheckZone}
-                      disabled={checkingZone}
-                      className="inline-flex min-h-[40px] items-center justify-center rounded-md border border-primary-600 px-4 py-2 text-center leading-tight text-primary-600 hover:bg-primary-50 disabled:opacity-50"
-                    >
-                      {checkingZone ? <Loader2 className="mr-2 h-4 w-4 shrink-0 animate-spin" /> : null}
-                      {t('checkout.check_zone', 'Liefergebiet prüfen')}
-                    </button>
+                    {checkingZone && (
+                      <p className="flex items-center text-sm text-gray-600">
+                        <Loader2 className="mr-2 h-4 w-4 shrink-0 animate-spin" />
+                        {t('checkout.zone_checking', 'Ihre Adresse wird geprüft…')}
+                      </p>
+                    )}
 
                     {errors.zone && <p className="mt-2 text-sm text-red-600">{errors.zone}</p>}
 
-                    {zoneCheck?.canDeliver && zoneCheck.message && (
-                      <p className="mt-2 text-sm text-green-700">{zoneCheck.message}</p>
+                    {!checkingZone && zoneCheck?.canDeliver && (
+                      <p className="mt-2 text-sm text-green-700">
+                        {zoneCheck.message || t('checkout.zone_ok', 'Lieferung möglich.')}
+                      </p>
                     )}
-                    {zoneCheck && !zoneCheck.canDeliver && zoneCheck.message && (
+                    {!checkingZone && zoneCheck && !zoneCheck.canDeliver && zoneCheck.message && (
                       <p className="mt-2 text-sm text-red-600">{zoneCheck.message}</p>
                     )}
 
