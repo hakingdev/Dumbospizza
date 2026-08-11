@@ -73,7 +73,10 @@ const { sendOrderNotification, printedReceipts } = vi.hoisted(() => ({
 }));
 
 vi.mock('../../telegram', () => ({ sendOrderNotification }));
-vi.mock('../../whatsapp', () => ({ sendOrderPlacedNotification: vi.fn(async () => true) }));
+vi.mock('../../whatsapp', () => ({
+  sendOrderPlacedNotification: vi.fn(async () => true),
+  sendOrderEtaNotification: vi.fn(async () => true),
+}));
 vi.mock('../../conversions/server-purchase-events', () => ({
   sendServerPurchaseConversionEvents: vi.fn(async () => undefined),
 }));
