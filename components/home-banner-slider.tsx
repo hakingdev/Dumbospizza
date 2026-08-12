@@ -139,7 +139,15 @@ export function HomeBannerSlider() {
     if (!autoplay) return;
 
     const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const apply = () => (mq.matches ? autoplay.stop() : autoplay.play());
+    const apply = () => {
+      // При ≤1 слайде init() у embla-autoplay обрывается до заполнения своего
+      // внутреннего массива delay, и play() падает с «Cannot read properties of
+      // undefined (reading '0')». Эффект ловил это, когда в админке оставался
+      // один активный баннер: витрина целиком уходила в error boundary.
+      if (emblaApi.scrollSnapList().length <= 1) return;
+      if (mq.matches) autoplay.stop();
+      else autoplay.play();
+    };
     apply();
 
     // MediaQueryList.addEventListener есть только с Safari 14 / iOS 14; раньше

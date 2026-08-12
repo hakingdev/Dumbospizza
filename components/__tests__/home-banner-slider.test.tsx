@@ -34,6 +34,7 @@ function mockBanners(banners: unknown[]) {
 
 beforeEach(() => {
   // jsdom kennt matchMedia nicht — der Slider fragt prefers-reduced-motion ab.
+  // matches: false → der Effekt geht in den autoplay.play()-Zweig.
   window.matchMedia = vi.fn().mockReturnValue({
     matches: false,
     addEventListener: vi.fn(),
@@ -51,6 +52,22 @@ describe('HomeBannerSlider', () => {
     });
     expect(screen.getByText('Getränk GRATIS')).toBeInTheDocument();
     expect(screen.getAllByRole('group')).toHaveLength(2);
+  });
+
+  // Regression: embla-carousel-autoplay bricht init() bei ≤1 Slide ab und lässt
+  // sein delay-Array undefined. autoplay.play() las dann delay[0] von undefined —
+  // TypeError im Effect → error boundary → weiße Startseite. Trat in Produktion
+  // auf, sobald in der Admin nur EIN Banner aktiv/terminiert war.
+  it('überlebt genau EIN aktives Banner (autoplay.play() bei ≤1 Slide)', async () => {
+    mockBanners([BANNERS[0]]);
+    render(<HomeBannerSlider />);
+
+    await waitFor(() => {
+      expect(screen.getByText('2+1 auf alle Pizzen')).toBeInTheDocument();
+    });
+    expect(screen.getAllByRole('group')).toHaveLength(1);
+    // Bei einem Banner gibt es weder Pfeile noch Punkte.
+    expect(screen.queryByRole('button', { name: /Angebot/ })).not.toBeInTheDocument();
   });
 
   it('lädt nur den ersten Slide eager — er ist der LCP-Kandidat', async () => {
@@ -133,7 +150,6 @@ describe('HomeBannerSlider', () => {
   // TypeError im Effect → React hängt den ganzen Baum ab → «Application error:
   // a client-side exception» statt Startseite. Desktop war nie betroffen, also sah
   // es exakt wie «lädt nur am PC, nicht am Handy» aus.
-  // Der Mock oben in beforeEach hatte addEventListener — deshalb blieb das unentdeckt.
   it('läuft auf altem iOS ohne MediaQueryList.addEventListener weiter', async () => {
     const addListener = vi.fn();
     const removeListener = vi.fn();
