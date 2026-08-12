@@ -112,6 +112,8 @@ export interface IOrder {
   etaAnalysis?: import('../eta/types').OrderEtaAnalysis | null;
   telegramMessageId?: number;
   mewsOrderId?: string;
+  /** Канал заказа: сайт или чек Lieferando, распознанный ботом-диспетчером. */
+  source?: 'website' | 'lieferando';
   kitchenPrintStatus?: 'pending' | 'printing' | 'completed' | 'failed';
   /** Номер задания печати кухонного чека: 0 — первичное, +1 на каждый Nachdruck. */
   kitchenPrintSeq?: number;

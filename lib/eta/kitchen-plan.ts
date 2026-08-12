@@ -38,9 +38,15 @@ import {
   DEFAULT_STAFFING,
   StationUnits,
 } from './order-eta';
-import type { EtaLoadLevel, KitchenPlan, KitchenPlanBatch, KitchenStaffing } from './types';
+import type {
+  EtaLoadLevel,
+  KitchenPlan,
+  KitchenPlanBatch,
+  KitchenPlanLateOrder,
+  KitchenStaffing,
+} from './types';
 
-export type { KitchenPlan, KitchenPlanBatch } from './types';
+export type { KitchenPlan, KitchenPlanBatch, KitchenPlanLateOrder } from './types';
 
 // ---------------------------------------------------------------------------
 // ✏️ НАСТРОЙКИ — правь здесь
@@ -61,6 +67,11 @@ export const PLAN_TUNING = {
   /** С этого числа готовящихся заказов считаем «busy», с большего — «peak». */
   busyAtOrders: 3,
   peakAtOrders: 6,
+  /**
+   * Осталось меньше этого от обещания (мин) → заказ попадает в lateOrders:
+   * панель/бот предлагают отправить гостю WhatsApp «заказ опаздывает на +N мин».
+   */
+  lateSoonMinutes: 5,
 } as const;
 
 /** Ключ настройки «курьеров на смене» (ставится селектором в панели плана). */
@@ -103,7 +114,13 @@ const PLAN_STATUSES = ['new', 'preparing', 'ready_for_delivery', 'delivering'] a
 const PLAN_LOOKBACK_MS = 3 * 60 * 60 * 1000;
 
 export interface PlanOrderContext {
+  /** id заказа в БД — для действий из панели (не отправляется в промпт). */
+  id?: string;
   orderNumber: string;
+  /** Канал заказа: сайт (по умолчанию) или чек Lieferando. */
+  source?: 'website' | 'lieferando';
+  /** Есть ли телефон гостя — нужен для WhatsApp о задержке (не отправляется в промпт). */
+  hasPhone?: boolean;
   status: string;
   minutesAgo: number;
   deliveryType: 'delivery' | 'pickup';
@@ -187,7 +204,10 @@ export async function buildKitchenPlanContext(): Promise<KitchenPlanContext> {
     const distanceKm = o.etaAnalysis?.distanceKm;
 
     orders.push({
+      id: String(o._id ?? o.id ?? ''),
       orderNumber: o.orderNumber,
+      source: o.source === 'lieferando' ? 'lieferando' : 'website',
+      hasPhone: Boolean(String(o.phoneNumber ?? '').trim()),
       status: o.status,
       minutesAgo: Math.max(0, Math.round((now - createdMs) / 60_000)),
       deliveryType: o.deliveryType,
@@ -218,6 +238,31 @@ export async function buildKitchenPlanContext(): Promise<KitchenPlanContext> {
     orders,
     onTheRoad,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Опаздывающие заказы: считаются детерминированно (не AI) и прикладываются
+// к плану — панель и Telegram-бот рисуют по ним кнопки «опаздывает на +N мин»
+// ---------------------------------------------------------------------------
+
+/** Заказы, у которых обещание просрочено или истекает (≤ lateSoonMinutes). */
+export function computeLateOrders(context: KitchenPlanContext): KitchenPlanLateOrder[] {
+  const late: KitchenPlanLateOrder[] = [];
+  for (const o of context.orders) {
+    const remaining = o.promiseRemainingMinutes;
+    if (remaining == null || remaining > PLAN_TUNING.lateSoonMinutes) continue;
+    late.push({
+      orderId: o.id ?? '',
+      orderNumber: o.orderNumber,
+      source: o.source === 'lieferando' ? 'lieferando' : 'website',
+      minutesLate: Math.max(0, -remaining),
+      promiseRemainingMinutes: remaining,
+      hasPhone: o.hasPhone ?? true,
+    });
+  }
+  // Сильнее всего просроченные — первыми.
+  late.sort((a, b) => b.minutesLate - a.minutesLate);
+  return late;
 }
 
 // ---------------------------------------------------------------------------
@@ -305,6 +350,7 @@ export function heuristicKitchenPlan(context: KitchenPlanContext): KitchenPlan {
 
   return {
     batches,
+    lateOrders: computeLateOrders(context),
     summary:
       batches.length === 0
         ? 'Активных заказов нет.'
@@ -380,6 +426,10 @@ const PLAN_SCHEMA = {
 function buildSystemPrompt(courierCount: number, staffing: KitchenStaffing): string {
   return `You are the kitchen dispatcher of "Dumbos Pizza", Kurhausstr. 11A, 97688 Bad Kissingen, Germany.
 You receive ALL active orders (queue) with addresses, coordinates, road distances and promise timers.
+Orders come from two sales channels (field "source"): "website" — the restaurant's own site, and
+"lieferando" — receipts from the Lieferando marketplace scanned by the staff (their numbers start with "L-").
+Treat both channels equally when sequencing and routing; mention the channel in "summary"/"rationale"
+when it helps the staff (e.g. "заказ с Lieferando").
 Produce the optimal execution plan: in which sequence to cook the orders and how to combine deliveries into courier trips.
 
 Kitchen model (staffing set by the staff for the current shift):
@@ -427,7 +477,12 @@ export async function analyzeKitchenPlanWithClaude(
           `Kitchen staff on shift: ${context.staffing.pizzaCooks} pizza cook(s), ${context.staffing.fryerHelpers} fryer helper(s), ${context.staffing.sushiChefs} sushi chef(s)`,
           '',
           `ACTIVE ORDERS (${context.orders.length}, oldest first):`,
-          JSON.stringify(context.orders, null, 2),
+          // id/hasPhone — служебные поля для панели, модели они не нужны.
+          JSON.stringify(
+            context.orders.map(({ id, hasPhone, ...rest }) => rest),
+            null,
+            2
+          ),
           '',
           `ALREADY ON THE ROAD (courier busy): ${
             context.onTheRoad.length ? context.onTheRoad.join(', ') : 'none'
@@ -493,6 +548,7 @@ export function normalizePlanVerdict(raw: any, context: KitchenPlanContext): Kit
 
   return {
     batches,
+    lateOrders: computeLateOrders(context),
     summary: typeof raw.summary === 'string' && raw.summary.trim() ? raw.summary.trim() : '',
     advisory:
       typeof raw.advisory === 'string' && raw.advisory.trim() ? raw.advisory.trim() : null,

@@ -40,8 +40,29 @@ export interface KitchenPlanBatch {
   rationale: string;
 }
 
+/**
+ * Заказ, который опаздывает (или вот-вот опоздает) относительно обещания
+ * клиенту. Панель плана и Telegram-бот показывают для него кнопки
+ * «Заказ опаздывает на +N мин» — гостю уходит WhatsApp на немецком (Twilio).
+ */
+export interface KitchenPlanLateOrder {
+  /** id заказа в БД — для POST /api/orders/[id]/delay. Пустой в синтетических контекстах. */
+  orderId: string;
+  orderNumber: string;
+  /** Канал заказа: сайт или чек Lieferando. */
+  source: 'website' | 'lieferando';
+  /** На сколько минут обещание уже просрочено (>0); 0 — ещё не просрочен, но впритык. */
+  minutesLate: number;
+  /** Осталось минут до обещанного времени (может быть < 0). */
+  promiseRemainingMinutes: number;
+  /** Есть ли телефон гостя (без него WhatsApp не отправить). */
+  hasPhone: boolean;
+}
+
 export interface KitchenPlan {
   batches: KitchenPlanBatch[];
+  /** Заказы с просроченным/истекающим обещанием — кандидаты на WhatsApp о задержке. */
+  lateOrders: KitchenPlanLateOrder[];
   /** Итог для персонала по-русски (1-2 предложения). */
   summary: string;
   /** Рекомендация при перегрузе (стоп-бот, сдвиг обещаний), null когда всё ок. */

@@ -1,17 +1,17 @@
 /**
  * Бот-диспетчер кухни — ОТДЕЛЬНЫЙ Telegram-бот (третий: заказы / stop / план).
  *
- * Сегодня: команда /plan (и кнопка «Пересчитать») выдаёт тот же AI-план кухни,
- * что панель в админке (lib/eta/kitchen-plan.ts) — что готовить, в каком
- * порядке и какие доставки объединять в рейсы. Заказы сайта берутся из БД
- * (активная очередь), персонал/курьеры — из настроек панели.
- *
- * ✏️  ЗАДЕЛ НА БУДУЩЕЕ — ЧЕКИ LIEFERANDO:
- * бот принимает фото/документы уже сейчас; обработчик handleReceiptUpload()
- * пока заглушка. Когда займёмся распознаванием: скачать файл по file_id
- * (getFile → https://api.telegram.org/file/bot<token>/<file_path>), прогнать
- * через Claude vision и добавить заказ в очередь плана как источник
- * "lieferando". Точка входа одна — расширять только handleReceiptUpload.
+ * Умеет:
+ *   - /plan (и кнопка «Пересчитать») — тот же AI-план кухни, что панель в
+ *     админке (lib/eta/kitchen-plan.ts): что готовить, в каком порядке и какие
+ *     доставки объединять в рейсы. Анализируются ОБА канала: заказы сайта и
+ *     чеки Lieferando.
+ *   - 📸 фото чека Lieferando → Claude Vision распознаёт чек и создаёт заказ
+ *     source='lieferando' (lib/lieferando/receipt-import.ts) — он попадает в
+ *     план наравне с заказами сайта.
+ *   - ⏰ кнопки «#N +10/+15/+20/+30 мин» под планом для опаздывающих заказов —
+ *     сдвигают обещание и шлют гостю WhatsApp о задержке на немецком через
+ *     Twilio (lib/orders/delay.ts).
  *
  * Отдельный токен/секрет/чат: storeSettings.telegramPlanBotToken /
  * telegramPlanChatId / telegramPlanWebhookSecret, фолбэк — env
@@ -22,12 +22,22 @@
 import { getSetting } from './settings';
 import { buildKitchenPlan } from './eta/kitchen-plan';
 import type { KitchenPlan } from './eta/types';
+import {
+  parseLieferandoReceipt,
+  importLieferandoReceipt,
+  type ReceiptImage,
+  type ReceiptImageMediaType,
+  type ReceiptImportResult,
+} from './lieferando/receipt-import';
+import { applyOrderDelay, ORDER_DELAY_CHOICES, type OrderDelayResult } from './orders/delay';
 
 const STORE_SETTINGS_KEY = 'storeSettings';
 const TZ = 'Europe/Berlin';
 
-/** callback_data кнопки (префикс plan_ — не пересекается с status_/eta_/ctrl_). */
+/** callback_data кнопок (префикс plan_ — не пересекается с status_/eta_/ctrl_). */
 export const PLAN_REFRESH = 'plan_refresh';
+/** «Заказ опаздывает»: plan_delay_<orderId>_<минуты>. */
+export const PLAN_DELAY_PREFIX = 'plan_delay_';
 
 export interface PlanBotConfig {
   botToken: string;
@@ -104,6 +114,21 @@ export function buildPlanMessageText(plan: KitchenPlan, timeZone = TZ): string {
   if (plan.onTheRoad.length > 0) {
     lines.push('', `🚚 Уже в пути: ${plan.onTheRoad.map((n) => `#${n}`).join(', ')}`);
   }
+
+  const late = plan.lateOrders ?? [];
+  if (late.length > 0) {
+    lines.push('', '⏰ <b>Опаздывают:</b>');
+    for (const lo of late) {
+      const src = lo.source === 'lieferando' ? 'Lieferando' : 'сайт';
+      const state = lo.minutesLate > 0 ? `просрочка ${lo.minutesLate} мин` : 'впритык к обещанию';
+      const phone = lo.hasPhone ? '' : ' · нет телефона гостя';
+      lines.push(`#${escapeHtml(lo.orderNumber)} (${src}) — ${state}${phone}`);
+    }
+    if (late.some((lo) => lo.hasPhone && lo.orderId)) {
+      lines.push('Кнопки ниже сдвинут обещание и отправят гостю WhatsApp о задержке (на немецком).');
+    }
+  }
+
   if (plan.advisory) {
     lines.push('', `⚠️ ${escapeHtml(plan.advisory)}`);
   }
@@ -111,49 +136,143 @@ export function buildPlanMessageText(plan: KitchenPlan, timeZone = TZ): string {
   return lines.join('\n');
 }
 
-export function buildPlanKeyboard() {
-  return {
-    inline_keyboard: [[{ text: '🔄 Пересчитать план', callback_data: PLAN_REFRESH }]],
-  };
+export type TgInlineKeyboard = {
+  inline_keyboard: { text: string; callback_data: string }[][];
+};
+
+/**
+ * Клавиатура под планом: «Пересчитать» + по строке кнопок задержки на каждый
+ * опаздывающий заказ (только если есть id и телефон гостя — иначе слать нечего/некому).
+ */
+export function buildPlanKeyboard(plan?: KitchenPlan | null): TgInlineKeyboard {
+  const rows: TgInlineKeyboard['inline_keyboard'] = [
+    [{ text: '🔄 Пересчитать план', callback_data: PLAN_REFRESH }],
+  ];
+  for (const late of plan?.lateOrders ?? []) {
+    if (!late.orderId || !late.hasPhone) continue;
+    rows.push(
+      ORDER_DELAY_CHOICES.map((minutes, i) => ({
+        text: i === 0 ? `⏰ #${late.orderNumber} +${minutes} мин` : `+${minutes} мин`,
+        callback_data: `${PLAN_DELAY_PREFIX}${late.orderId}_${minutes}`,
+      }))
+    );
+  }
+  return { inline_keyboard: rows };
 }
 
 const HELP_TEXT = [
   '👨‍🍳 <b>Бот-диспетчер Dumbos Pizza</b>',
   '',
-  '/plan — AI-план кухни: что готовить, в каком порядке, какие доставки объединить в рейс (то же, что панель в админке).',
+  '/plan — AI-план кухни по ВСЕМ заказам (сайт + Lieferando): что готовить, в каком порядке, какие доставки объединить в рейс (то же, что панель в админке).',
   '',
-  '📸 Чеки Lieferando: пришлите фото чека — учёт в плане в разработке.',
+  '📸 Пришлите фото чека Lieferando — заказ будет распознан и добавлен в план.',
+  '',
+  '⏰ Если заказ опаздывает, под планом появятся кнопки «+10/+15/+20/+30 мин» — гость получит WhatsApp о задержке на немецком.',
 ].join('\n');
 
-// --- заглушка приёма чеков Lieferando ---------------------------------------
+// --- приём чеков Lieferando ---------------------------------------------------
+
+/** Формат денег для ответа персоналу: 12,50 €. */
+function formatEuro(value: number): string {
+  return `${value.toFixed(2).replace('.', ',')} €`;
+}
 
 /**
- * ✏️ ТОЧКА РАСШИРЕНИЯ: сюда придёт каждое фото/документ из чата.
- * Сейчас — только подтверждение приёма. Дальше: getFile по file_id, скачать,
- * распознать Claude'ом, добавить заказ в план как источник "lieferando".
+ * Фото/документ из чата → распознать чек Lieferando и создать заказ в плане.
+ * Скачивание+распознавание инжектится через deps.importReceipt (тестируется без сети).
  */
-export async function handleReceiptUpload(
-  message: any,
-  deps: PlanBotDeps
-): Promise<void> {
+export async function handleReceiptUpload(message: any, deps: PlanBotDeps): Promise<PlanBotResult> {
+  const chatId = message.chat.id;
   const photo = Array.isArray(message?.photo) ? message.photo[message.photo.length - 1] : null;
   const document = message?.document ?? null;
-  const fileId: string | undefined = photo?.file_id || document?.file_id;
+
+  let fileId: string | undefined = photo?.file_id;
+  if (!fileId && document?.file_id) {
+    const mime = String(document.mime_type || '');
+    if (!mime.startsWith('image/')) {
+      await deps.sendMessage(
+        chatId,
+        '📄 Такой файл не распознать — пришлите чек Lieferando как фото (JPG/PNG).'
+      );
+      return { handled: true, reason: 'receipt_rejected' };
+    }
+    fileId = document.file_id;
+  }
+  if (!fileId) {
+    await deps.sendMessage(chatId, '🤔 Не вижу файла — пришлите фото чека Lieferando.');
+    return { handled: true, reason: 'receipt_rejected' };
+  }
+
   deps.log?.('receipt upload received', { fileId, hasPhoto: !!photo, hasDocument: !!document });
+  await deps.sendMessage(chatId, '🔍 Распознаю чек Lieferando…');
+
+  let result: ReceiptImportResult;
+  try {
+    result = await deps.importReceipt(fileId);
+  } catch (e) {
+    deps.log?.('importReceipt failed', (e as Error)?.message);
+    result = { ok: false, reason: 'error' };
+  }
+
+  if (result.ok && result.order) {
+    const o = result.order;
+    const lines = [
+      `✅ Заказ <b>#${escapeHtml(result.orderNumber ?? '')}</b> добавлен в план`,
+      `👤 ${escapeHtml(o.customerName)} · ${o.deliveryType === 'pickup' ? '🏃 самовывоз' : '🛵 доставка'}`,
+    ];
+    if (o.address) lines.push(`📍 ${escapeHtml(o.address)}`);
+    lines.push(`🧾 ${o.itemsCount} поз. · ${formatEuro(o.total)}`);
+    if (o.etaMinutes != null) lines.push(`⏱ обещание ~${o.etaMinutes} мин`);
+    if (!o.hasPhone) {
+      lines.push('📵 Телефона на чеке нет — WhatsApp о задержке будет недоступен.');
+    }
+    lines.push('', 'Нажмите «Пересчитать план», чтобы включить заказ в маршруты.');
+    await deps.sendMessage(chatId, lines.join('\n'), buildPlanKeyboard());
+    return { handled: true, reason: 'receipt_imported' };
+  }
+
+  if (result.reason === 'duplicate') {
+    await deps.sendMessage(
+      chatId,
+      `♻️ Этот чек уже учтён — заказ <b>#${escapeHtml(result.orderNumber ?? '')}</b> есть в плане.`
+    );
+    return { handled: true, reason: 'receipt_duplicate' };
+  }
+  if (result.reason === 'not_receipt' || result.reason === 'no_items') {
+    await deps.sendMessage(
+      chatId,
+      '🤔 Не похоже на чек Lieferando — заказ не создан. Пришлите фото самого чека (Bestellbon).'
+    );
+    return { handled: true, reason: 'receipt_rejected' };
+  }
 
   await deps.sendMessage(
-    message.chat.id,
-    '📸 Чек получен. Распознавание чеков Lieferando ещё в разработке — пока учитываю только заказы сайта. /plan — текущий план.'
+    chatId,
+    '⚠️ Не удалось распознать чек — попробуйте ещё раз (фото чётче и ближе, без бликов).'
   );
+  return { handled: true, reason: 'receipt_error' };
 }
 
 // --- ядро обработки (изолировано от Telegram/БД через deps — тестируется) ---
 
 export interface PlanBotDeps {
   answerCallbackQuery: (id: string, text?: string) => PromiseLike<unknown>;
-  sendMessage: (chatId: number | string, text: string, withKeyboard?: boolean) => PromiseLike<unknown>;
-  editMessage: (chatId: number | string, messageId: number, text: string) => PromiseLike<unknown>;
+  sendMessage: (
+    chatId: number | string,
+    text: string,
+    keyboard?: TgInlineKeyboard
+  ) => PromiseLike<unknown>;
+  editMessage: (
+    chatId: number | string,
+    messageId: number,
+    text: string,
+    keyboard?: TgInlineKeyboard
+  ) => PromiseLike<unknown>;
   buildPlan: () => PromiseLike<KitchenPlan>;
+  /** Скачать файл Telegram по file_id, распознать чек Lieferando и создать заказ. */
+  importReceipt: (fileId: string) => PromiseLike<ReceiptImportResult>;
+  /** «Заказ опаздывает на N минут»: сдвиг обещания + WhatsApp гостю. */
+  applyDelay: (orderId: string, delayMinutes: number) => PromiseLike<OrderDelayResult>;
   allowedChatId: string;
   log?: (...args: any[]) => void;
 }
@@ -164,7 +283,12 @@ export type PlanBotResult = {
     | 'plan_sent'
     | 'plan_refreshed'
     | 'help'
-    | 'receipt_stub'
+    | 'receipt_imported'
+    | 'receipt_duplicate'
+    | 'receipt_rejected'
+    | 'receipt_error'
+    | 'delay_applied'
+    | 'delay_failed'
     | 'wrong_chat'
     | 'not_ours'
     | 'error';
@@ -193,7 +317,45 @@ export async function handlePlanUpdate(update: any, deps: PlanBotDeps): Promise<
       await ack('⛔️ Недостаточно прав');
       return { handled: false, reason: 'wrong_chat' };
     }
-    if (cbq?.data !== PLAN_REFRESH) {
+
+    const data: string = typeof cbq?.data === 'string' ? cbq.data : '';
+    const messageId = cbq?.message?.message_id;
+
+    /** Пересобрать план и отредактировать сообщение с кнопками (best-effort). */
+    const refreshMessage = async () => {
+      if (messageId == null) return;
+      try {
+        const plan = await deps.buildPlan();
+        // «message is not modified» при неизменном плане — глотаем.
+        await deps.editMessage(chatId, messageId, buildPlanMessageText(plan), buildPlanKeyboard(plan));
+      } catch (e) {
+        log('refresh message failed', (e as Error)?.message);
+      }
+    };
+
+    // «Заказ опаздывает на N минут» — сдвиг обещания + WhatsApp гостю.
+    const delayMatch = data.match(/^plan_delay_([A-Za-z0-9-]+)_(\d+)$/);
+    if (delayMatch) {
+      let result: OrderDelayResult;
+      try {
+        result = await deps.applyDelay(delayMatch[1], Number(delayMatch[2]));
+      } catch (e) {
+        log('applyDelay failed', (e as Error)?.message);
+        result = { ok: false, reason: 'error', whatsappSent: false };
+      }
+      if (!result.ok) {
+        await ack('⚠️ Не удалось применить задержку');
+        return { handled: false, reason: 'delay_failed' };
+      }
+      await ack(
+        `✅ #${result.orderNumber}: +${Number(delayMatch[2])} мин` +
+          (result.whatsappSent ? ', гость получил WhatsApp' : ' (WhatsApp не отправлен)')
+      );
+      await refreshMessage();
+      return { handled: true, reason: 'delay_applied' };
+    }
+
+    if (data !== PLAN_REFRESH) {
       await ack();
       return { handled: false, reason: 'not_ours' };
     }
@@ -208,11 +370,10 @@ export async function handlePlanUpdate(update: any, deps: PlanBotDeps): Promise<
     }
 
     await ack('🔄 План пересчитан');
-    const messageId = cbq?.message?.message_id;
     if (messageId != null) {
       try {
         // best-effort: «message is not modified» при неизменном плане — глотаем.
-        await deps.editMessage(chatId, messageId, buildPlanMessageText(plan));
+        await deps.editMessage(chatId, messageId, buildPlanMessageText(plan), buildPlanKeyboard(plan));
       } catch (e) {
         log('editMessage failed', (e as Error)?.message);
       }
@@ -230,14 +391,14 @@ export async function handlePlanUpdate(update: any, deps: PlanBotDeps): Promise<
       return { handled: false, reason: 'wrong_chat' };
     }
 
-    // Фото/документ → приём чека Lieferando (пока заглушка).
+    // Фото/документ → распознавание чека Lieferando и создание заказа.
     if (msg?.photo || msg?.document) {
       try {
-        await handleReceiptUpload(msg, deps);
+        return await handleReceiptUpload(msg, deps);
       } catch (e) {
         log('handleReceiptUpload failed', (e as Error)?.message);
+        return { handled: true, reason: 'receipt_error' };
       }
-      return { handled: true, reason: 'receipt_stub' };
     }
 
     const command = parsePlanCommand(msg?.text);
@@ -245,7 +406,7 @@ export async function handlePlanUpdate(update: any, deps: PlanBotDeps): Promise<
 
     if (command === 'help') {
       try {
-        await deps.sendMessage(chatId, HELP_TEXT, false);
+        await deps.sendMessage(chatId, HELP_TEXT);
       } catch (e) {
         log('sendMessage(help) failed', (e as Error)?.message);
       }
@@ -259,14 +420,14 @@ export async function handlePlanUpdate(update: any, deps: PlanBotDeps): Promise<
     } catch (e) {
       log('buildPlan failed', (e as Error)?.message);
       try {
-        await deps.sendMessage(chatId, '⚠️ Не удалось построить план — попробуйте ещё раз.', false);
+        await deps.sendMessage(chatId, '⚠️ Не удалось построить план — попробуйте ещё раз.');
       } catch {
         /* best-effort */
       }
       return { handled: false, reason: 'error' };
     }
     try {
-      await deps.sendMessage(chatId, buildPlanMessageText(plan), true);
+      await deps.sendMessage(chatId, buildPlanMessageText(plan), buildPlanKeyboard(plan));
     } catch (e) {
       log('sendMessage(plan) failed', (e as Error)?.message);
       return { handled: false, reason: 'error' };
@@ -289,6 +450,32 @@ async function tgApi(token: string, method: string, body: Record<string, any>): 
   return res.json();
 }
 
+/** media_type для Claude Vision по расширению file_path Telegram'а. */
+function mediaTypeFromPath(filePath: string): ReceiptImageMediaType {
+  const ext = filePath.split('.').pop()?.toLowerCase();
+  if (ext === 'png') return 'image/png';
+  if (ext === 'webp') return 'image/webp';
+  if (ext === 'gif') return 'image/gif';
+  return 'image/jpeg'; // фото Telegram всегда пережимает в JPEG
+}
+
+/** Скачивает файл по file_id: getFile → https://api.telegram.org/file/bot<token>/<path>. */
+async function downloadTelegramFile(token: string, fileId: string): Promise<ReceiptImage | null> {
+  const info = await tgApi(token, 'getFile', { file_id: fileId });
+  const filePath: string | undefined = info?.result?.file_path;
+  if (!filePath) {
+    console.error('[tg-plan] getFile failed:', JSON.stringify(info?.description ?? info));
+    return null;
+  }
+  const res = await fetch(`https://api.telegram.org/file/bot${token}/${filePath}`);
+  if (!res.ok) {
+    console.error('[tg-plan] file download failed:', res.status);
+    return null;
+  }
+  const buf = Buffer.from(await res.arrayBuffer());
+  return { base64: buf.toString('base64'), mediaType: mediaTypeFromPath(filePath) };
+}
+
 /** Точка входа из вебхука: собирает deps на живом Bot API и вызывает ядро. */
 export async function processPlanUpdate(
   update: any,
@@ -300,22 +487,29 @@ export async function processPlanUpdate(
   const deps: PlanBotDeps = {
     answerCallbackQuery: (cbId, text) =>
       tgApi(token, 'answerCallbackQuery', { callback_query_id: cbId, ...(text ? { text } : {}) }),
-    sendMessage: (chatId, text, withKeyboard = true) =>
+    sendMessage: (chatId, text, keyboard) =>
       tgApi(token, 'sendMessage', {
         chat_id: chatId,
         text,
         parse_mode: 'HTML',
-        ...(withKeyboard ? { reply_markup: buildPlanKeyboard() } : {}),
+        ...(keyboard ? { reply_markup: keyboard } : {}),
       }),
-    editMessage: (chatId, messageId, text) =>
+    editMessage: (chatId, messageId, text, keyboard) =>
       tgApi(token, 'editMessageText', {
         chat_id: chatId,
         message_id: messageId,
         text,
         parse_mode: 'HTML',
-        reply_markup: buildPlanKeyboard(),
+        ...(keyboard ? { reply_markup: keyboard } : {}),
       }),
     buildPlan: () => buildKitchenPlan(),
+    importReceipt: async (fileId) => {
+      const image = await downloadTelegramFile(token, fileId);
+      if (!image) return { ok: false, reason: 'error' };
+      const parsed = await parseLieferandoReceipt(image);
+      return importLieferandoReceipt(parsed);
+    },
+    applyDelay: (orderId, delayMinutes) => applyOrderDelay(orderId, delayMinutes),
     allowedChatId: config.chatId,
   };
 

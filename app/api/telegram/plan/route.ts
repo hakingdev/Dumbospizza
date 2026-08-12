@@ -3,13 +3,15 @@ import { connectToDatabase } from '../../../../lib/models';
 import { getPlanBotConfig, processPlanUpdate } from '../../../../lib/telegram-plan';
 
 export const dynamic = 'force-dynamic';
-// /plan строит AI-план (Claude, до ~25 c) синхронно до ответа Telegram.
+// /plan строит AI-план (Claude, до ~25 c) синхронно до ответа Telegram;
+// фото чека — скачивание + Claude Vision + оценка ETA (суммарно до ~50 с).
 export const maxDuration = 60;
 
 /**
  * Вебхук бота-диспетчера кухни (третий бот: заказы / stop / план).
- * /plan и кнопка «Пересчитать» выдают AI-план кухни; фото — приём чеков
- * Lieferando (пока заглушка, см. lib/telegram-plan.ts → handleReceiptUpload).
+ * /plan и кнопка «Пересчитать» выдают AI-план кухни (сайт + Lieferando);
+ * фото чека Lieferando → распознавание и создание заказа; кнопки «+N мин» —
+ * WhatsApp гостю о задержке (см. lib/telegram-plan.ts).
  * Регистрация: node scripts/telegram-webhook.mjs plan set https://www.dumbospizza.de/api/telegram/plan
  */
 export async function POST(request: NextRequest) {

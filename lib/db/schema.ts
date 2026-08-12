@@ -219,6 +219,9 @@ export const orders = pgTable(
     etaAnalysis: jsonb('eta_analysis').$type<import('../eta/types').OrderEtaAnalysis | null>(),
     telegramMessageId: bigint('telegram_message_id', { mode: 'number' }),
     mewsOrderId: text('mews_order_id'),
+    // Канал заказа: 'website' — собственный сайт, 'lieferando' — чек Lieferando,
+    // распознанный ботом-диспетчером (lib/lieferando/receipt-import.ts).
+    source: text('source').notNull().default('website'),
     kitchenPrintStatus: text('kitchen_print_status').default('pending'),
     // Номер задания печати кухонного чека: 0 — первичная печать, +1 на каждый
     // Nachdruck из админки. Входит в идемпотентный ключ агента, поэтому повторная

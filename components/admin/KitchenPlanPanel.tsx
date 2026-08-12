@@ -10,8 +10,11 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { Bot, RefreshCw, Bike, ChefHat, AlertTriangle, Users } from 'lucide-react';
-import type { KitchenPlan, KitchenStaffing } from '../../lib/eta/types';
+import { Bot, RefreshCw, Bike, ChefHat, AlertTriangle, Users, Clock } from 'lucide-react';
+import type { KitchenPlan, KitchenPlanLateOrder, KitchenStaffing } from '../../lib/eta/types';
+
+/** Кнопки «заказ опаздывает на …» — тот же список, что в Telegram-боте (lib/orders/delay.ts). */
+const DELAY_CHOICES = [10, 15, 20, 30];
 
 const LOAD_BADGE: Record<string, { label: string; className: string }> = {
   normal: { label: 'нагрузка: норма', className: 'bg-green-100 text-green-700' },
@@ -27,6 +30,8 @@ export default function KitchenPlanPanel() {
   const [savingCouriers, setSavingCouriers] = useState(false);
   const [staffing, setStaffing] = useState<KitchenStaffing | null>(null);
   const [savingStaffing, setSavingStaffing] = useState(false);
+  /** id заказа, для которого сейчас отправляется задержка (блокирует его кнопки). */
+  const [delaySendingId, setDelaySendingId] = useState<string | null>(null);
 
   const fetchPlan = useCallback(async (refresh: boolean) => {
     setLoading(true);
@@ -108,6 +113,42 @@ export default function KitchenPlanPanel() {
       alert('Не удалось сохранить персонал — проверь соединение');
     } finally {
       setSavingStaffing(false);
+    }
+  };
+
+  /**
+   * «Заказ опаздывает на +N мин»: сдвигает обещание и шлёт гостю WhatsApp
+   * на немецком через Twilio (POST /api/orders/[id]/delay).
+   */
+  const handleDelay = async (lateOrder: KitchenPlanLateOrder, minutes: number) => {
+    const ok = confirm(
+      `Заказ #${lateOrder.orderNumber} опаздывает на ~${minutes} мин?\n` +
+        `Гость получит WhatsApp-сообщение о задержке на немецком.`
+    );
+    if (!ok) return;
+    setDelaySendingId(lateOrder.orderId);
+    try {
+      const response = await fetch(`/api/orders/${lateOrder.orderId}/delay`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ delayMinutes: minutes }),
+      });
+      const data = await response.json();
+      if (!data.success) {
+        alert('Не удалось применить задержку: ' + (data.error || 'неизвестная ошибка'));
+        return;
+      }
+      alert(
+        data.whatsappSent
+          ? `Готово: #${data.orderNumber} +${minutes} мин, гость получил WhatsApp.`
+          : `Время сдвинуто (#${data.orderNumber} +${minutes} мин), но WhatsApp не отправлен ` +
+              `(нет телефона / Twilio выключен).`
+      );
+      await fetchPlan(true);
+    } catch {
+      alert('Не удалось применить задержку — проверь соединение');
+    } finally {
+      setDelaySendingId(null);
     }
   };
 
@@ -221,6 +262,57 @@ export default function KitchenPlanPanel() {
         <p className="text-sm text-gray-500">Анализирую очередь и маршруты…</p>
       )}
       {error && <p className="text-sm text-red-600">{error}</p>}
+
+      {plan && (plan.lateOrders?.length ?? 0) > 0 && (
+        <div
+          className="mb-3 p-3 bg-orange-50 border border-orange-200 rounded-lg"
+          data-testid="kitchen-plan-late"
+        >
+          <div className="flex items-center gap-2 text-sm font-medium text-orange-800 mb-2">
+            <Clock className="h-4 w-4 shrink-0" />
+            Опаздывают — сообщить гостю о задержке (WhatsApp на немецком)
+          </div>
+          <ul className="space-y-2">
+            {plan.lateOrders.map((lo) => (
+              <li
+                key={lo.orderId || lo.orderNumber}
+                className="flex flex-wrap items-center gap-2 text-sm"
+                data-testid={`kitchen-plan-late-${lo.orderNumber}`}
+              >
+                <span className="font-medium">#{lo.orderNumber}</span>
+                <span className="px-1.5 py-0.5 rounded bg-orange-100 text-orange-800 text-xs">
+                  {lo.source === 'lieferando' ? 'Lieferando' : 'Сайт'}
+                </span>
+                <span className="text-orange-800">
+                  {lo.minutesLate > 0
+                    ? `просрочка ${lo.minutesLate} мин`
+                    : 'впритык к обещанию'}
+                </span>
+                {lo.hasPhone && lo.orderId ? (
+                  <span className="flex items-center gap-1">
+                    <span className="text-xs text-gray-500">опаздывает на:</span>
+                    {DELAY_CHOICES.map((m) => (
+                      <button
+                        key={m}
+                        onClick={() => handleDelay(lo, m)}
+                        disabled={delaySendingId === lo.orderId}
+                        className="px-2 py-0.5 border border-orange-300 rounded text-xs text-orange-800 hover:bg-orange-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                        title={`Гость получит WhatsApp: заказ опаздывает на ~${m} минут`}
+                      >
+                        +{m} мин
+                      </button>
+                    ))}
+                  </span>
+                ) : (
+                  <span className="text-xs text-gray-500">
+                    нет телефона гостя — WhatsApp недоступен
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {plan && plan.batches.length === 0 && !loading && (
         <p className="text-sm text-gray-500">Активных заказов нет — планировать нечего.</p>

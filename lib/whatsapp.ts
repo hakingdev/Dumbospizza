@@ -313,6 +313,55 @@ export async function sendOrderEtaNotification(
 }
 
 /**
+ * «Заказ опаздывает на ~N минут» — кнопка в панели AI-плана кухни и в
+ * Telegram-боте-диспетчере (POST /api/orders/[id]/delay → lib/orders/delay.ts).
+ *
+ * Только Twilio (как и ETA: воркер мёртв, у Meta нет шаблона). Без одобренного
+ * шаблона TWILIO_CONTENT_SID_ORDER_DELAY текст дойдёт только в песочнице/24h-окне.
+ * Fire-and-forget, never throws.
+ */
+export async function sendOrderDelayNotification(
+  order: OrderForWhatsApp,
+  delayMinutes: number
+): Promise<boolean> {
+  try {
+    await connectToDatabase();
+    const storeSettings = await getSetting<Record<string, any>>('storeSettings', {});
+    const enabled = storeSettings?.whatsappOrderNotificationsEnabled ?? false;
+    if (!enabled) return false;
+
+    const twilio = getTwilioConfig();
+    if (!twilio) {
+      console.error('WhatsApp delay: Twilio не настроен (TWILIO_ACCOUNT_SID/TWILIO_WHATSAPP_FROM)');
+      return false;
+    }
+
+    const contentSid = process.env.TWILIO_CONTENT_SID_ORDER_DELAY?.trim() || undefined;
+    if (!contentSid) {
+      console.warn(
+        'WhatsApp delay: TWILIO_CONTENT_SID_ORDER_DELAY не задан — уйдёт plain text (только песочница/24h-окно)'
+      );
+    }
+
+    return sendViaTwilio(twilio, {
+      phone: order.phoneNumber,
+      defaultCountryCode:
+        (storeSettings?.whatsappDefaultCountryCode as string)?.trim() || DEFAULT_COUNTRY_CODE,
+      contentSid,
+      contentVariables: { '1': order.orderNumber, '2': String(delayMinutes) },
+      // Дословно как в шаблоне bestellung_verspaetet — чтобы песочница и прод
+      // не расходились текстом.
+      fallbackText:
+        `Leider verzögert sich Ihre Bestellung ${order.orderNumber} um ca. ${delayMinutes} Minuten. ` +
+        `Wir bitten um Ihr Verständnis. Ihr Dumbo Pizza Team`,
+    });
+  } catch (error) {
+    console.error('Error sending WhatsApp delay notification:', error);
+    return false;
+  }
+}
+
+/**
  * Send order status update to customer via WhatsApp.
  * Mode: WhatsApp Web worker (if enabled) or Meta Cloud API. Fire-and-forget, never throws.
  */

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildDispatchRules,
+  computeLateOrders,
   heuristicKitchenPlan,
   normalizeCity,
   normalizeCourierCount,
@@ -131,6 +132,44 @@ describe('heuristicKitchenPlan', () => {
     const plan = heuristicKitchenPlan(context(many));
     expect(plan.loadLevel).toBe('peak');
     expect(plan.advisory).toBeTruthy();
+  });
+});
+
+describe('computeLateOrders', () => {
+  it('в списке — просроченные и «впритык» (≤ lateSoonMinutes), сильнее просроченные первыми', () => {
+    const late = computeLateOrders(
+      context([
+        order({ orderNumber: '701', id: 'a1', promiseRemainingMinutes: 40 }), // не опаздывает
+        order({ orderNumber: '702', id: 'a2', promiseRemainingMinutes: -12, source: 'lieferando', hasPhone: false }),
+        order({ orderNumber: '703', id: 'a3', promiseRemainingMinutes: 3 }), // впритык
+        order({ orderNumber: '704', id: 'a4', promiseRemainingMinutes: -5 }),
+        order({ orderNumber: '705' }), // без обещания — не учитывается
+      ])
+    );
+
+    expect(late.map((l) => l.orderNumber)).toEqual(['702', '704', '703']);
+    expect(late[0]).toEqual({
+      orderId: 'a2',
+      orderNumber: '702',
+      source: 'lieferando',
+      minutesLate: 12,
+      promiseRemainingMinutes: -12,
+      hasPhone: false,
+    });
+    // «Впритык» — ещё не просрочен: minutesLate 0.
+    expect(late[2].minutesLate).toBe(0);
+    // Дефолты: канал сайта, телефон считается имеющимся.
+    expect(late[1].source).toBe('website');
+    expect(late[1].hasPhone).toBe(true);
+  });
+
+  it('план (эвристика) содержит lateOrders', () => {
+    const plan = heuristicKitchenPlan(
+      context([order({ orderNumber: '801', id: 'b1', promiseRemainingMinutes: -7 })])
+    );
+    expect(plan.lateOrders).toHaveLength(1);
+    expect(plan.lateOrders[0].orderNumber).toBe('801');
+    expect(plan.lateOrders[0].minutesLate).toBe(7);
   });
 });
 
