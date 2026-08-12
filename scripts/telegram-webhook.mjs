@@ -58,6 +58,16 @@ const BOT_KINDS = {
     setChat: 'telegramControlChatId',
     path: '/api/telegram/control',
   },
+  // Бот-диспетчер кухни: /plan → AI-план (lib/telegram-plan.ts), приём чеков Lieferando.
+  plan: {
+    envToken: 'TELEGRAM_PLAN_BOT_TOKEN',
+    envSecret: 'TELEGRAM_PLAN_WEBHOOK_SECRET',
+    envChat: 'TELEGRAM_PLAN_CHAT_ID',
+    setToken: 'telegramPlanBotToken',
+    setSecret: 'telegramPlanWebhookSecret',
+    setChat: 'telegramPlanChatId',
+    path: '/api/telegram/plan',
+  },
 };
 
 async function getTelegramConfig(kind = 'main') {
@@ -99,7 +109,7 @@ async function info(token) {
 async function main() {
   let args = process.argv.slice(2);
   let kind = 'main';
-  if (args[0] === 'control' || args[0] === 'main') {
+  if (args[0] === 'control' || args[0] === 'main' || args[0] === 'plan') {
     kind = args[0];
     args = args.slice(1);
   }
@@ -135,7 +145,7 @@ async function main() {
     return;
   }
 
-  console.log('Команды: [control] info | set <url> | delete');
+  console.log('Команды: [control|plan] info | set <url> | delete');
 }
 
 main().catch((e) => {
