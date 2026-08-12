@@ -32,9 +32,13 @@ import {
   computeStationUnits,
   heuristicPrepMinutes,
   driveMinutesFromKm,
+  buildKitchenModelLines,
+  normalizeStaffing,
+  KITCHEN_STAFFING_KEY,
+  DEFAULT_STAFFING,
   StationUnits,
 } from './order-eta';
-import type { EtaLoadLevel, KitchenPlan, KitchenPlanBatch } from './types';
+import type { EtaLoadLevel, KitchenPlan, KitchenPlanBatch, KitchenStaffing } from './types';
 
 export type { KitchenPlan, KitchenPlanBatch } from './types';
 
@@ -122,6 +126,8 @@ export interface KitchenPlanContext {
   restaurantAddress: string;
   /** Курьеров на смене (настройка из панели, дефолт PLAN_TUNING.courierCount). */
   courierCount: number;
+  /** Персонал кухни на смене (настройка из панели, дефолт DEFAULT_STAFFING). */
+  staffing: KitchenStaffing;
   orders: PlanOrderContext[];
   /** Номера заказов в пути (курьер занят). */
   onTheRoad: string[];
@@ -146,10 +152,12 @@ export function normalizeCity(city: unknown): string {
 
 /** Собирает контекст плана из активных заказов. Геоданные — из etaAnalysis заказа. */
 export async function buildKitchenPlanContext(): Promise<KitchenPlanContext> {
-  const [storeSettings, courierSetting] = await Promise.all([
+  const [storeSettings, courierSetting, staffingSetting] = await Promise.all([
     getSetting<Record<string, any>>('storeSettings', {}),
     getSetting<number>(COURIER_COUNT_KEY, PLAN_TUNING.courierCount),
+    getSetting<KitchenStaffing>(KITCHEN_STAFFING_KEY, DEFAULT_STAFFING),
   ]);
+  const staffing = normalizeStaffing(staffingSetting);
   const since = new Date(Date.now() - PLAN_LOOKBACK_MS);
 
   let activeOrders: any[] = [];
@@ -191,7 +199,7 @@ export async function buildKitchenPlanContext(): Promise<KitchenPlanContext> {
         (it: any) => `${Math.max(1, Number(it.quantity) || 1)}x ${it.name}`
       ),
       units,
-      prepMinutesEstimate: heuristicPrepMinutes(units),
+      prepMinutesEstimate: heuristicPrepMinutes(units, staffing),
       promisedEtaMinutes: promised,
       promiseRemainingMinutes:
         promised != null ? Math.round(promised - (now - etaSetMs) / 60_000) : undefined,
@@ -206,6 +214,7 @@ export async function buildKitchenPlanContext(): Promise<KitchenPlanContext> {
     nowBerlin: berlinNowString(),
     restaurantAddress: storeSettings?.address || restaurantLocation.address,
     courierCount: normalizeCourierCount(courierSetting),
+    staffing,
     orders,
     onTheRoad,
   };
@@ -368,17 +377,16 @@ const PLAN_SCHEMA = {
   additionalProperties: false,
 } as const;
 
-function buildSystemPrompt(courierCount: number): string {
+function buildSystemPrompt(courierCount: number, staffing: KitchenStaffing): string {
   return `You are the kitchen dispatcher of "Dumbos Pizza", Kurhausstr. 11A, 97688 Bad Kissingen, Germany.
 You receive ALL active orders (queue) with addresses, coordinates, road distances and promise timers.
 Produce the optimal execution plan: in which sequence to cook the orders and how to combine deliveries into courier trips.
 
-Kitchen model (fixed facts from the owner):
-- PIZZA station: one pizzaiolo, ~8 min per pizza, pizzas one after another.
-- FRYER/sides station: a second person, ~8 min per item, works IN PARALLEL with pizza.
-- SUSHI station (MakiLove): 2 people, ~8 min per item per person (two items in parallel), independent.
-- Drinks/desserts need no preparation.
-- "units" per order = items per station; "prepMinutesEstimate" = net cooking time of that order alone.
+Kitchen model (staffing set by the staff for the current shift):
+${buildKitchenModelLines(staffing)
+  .map((l) => `- ${l}`)
+  .join('\n')}
+- "units" per order = items per station; "prepMinutesEstimate" = net cooking time of that order alone (already accounts for the staffing above).
 
 Dispatch rules:
 ${buildDispatchRules(courierCount)
@@ -408,7 +416,7 @@ export async function analyzeKitchenPlanWithClaude(
       effort: 'low',
       format: { type: 'json_schema', schema: PLAN_SCHEMA as any },
     },
-    system: buildSystemPrompt(context.courierCount),
+    system: buildSystemPrompt(context.courierCount, context.staffing),
     messages: [
       {
         role: 'user',
@@ -416,6 +424,7 @@ export async function analyzeKitchenPlanWithClaude(
           `Current local time: ${context.nowBerlin}`,
           `Restaurant: ${context.restaurantAddress}`,
           `Couriers on shift: ${context.courierCount}`,
+          `Kitchen staff on shift: ${context.staffing.pizzaCooks} pizza cook(s), ${context.staffing.fryerHelpers} fryer helper(s), ${context.staffing.sushiChefs} sushi chef(s)`,
           '',
           `ACTIVE ORDERS (${context.orders.length}, oldest first):`,
           JSON.stringify(context.orders, null, 2),

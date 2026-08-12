@@ -9,8 +9,13 @@ import {
   COURIER_COUNT_KEY,
   PLAN_TUNING,
 } from '../../../../lib/eta/kitchen-plan';
+import {
+  normalizeStaffing,
+  KITCHEN_STAFFING_KEY,
+  DEFAULT_STAFFING,
+} from '../../../../lib/eta/order-eta';
 import { setSetting } from '../../../../lib/settings';
-import type { KitchenPlan } from '../../../../lib/eta/types';
+import type { KitchenPlan, KitchenStaffing } from '../../../../lib/eta/types';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
@@ -38,11 +43,12 @@ export async function GET(request: NextRequest) {
     const refresh = request.nextUrl.searchParams.get('refresh') === '1';
     const context = await buildKitchenPlanContext();
 
-    // Отпечаток очереди: тот же состав, статусы и число курьеров → тот же план.
+    // Отпечаток очереди: тот же состав, статусы, число курьеров и персонал → тот же план.
     const fingerprint = [
       ...context.orders.map((o) => `${o.orderNumber}:${o.status}`),
       `road:${context.onTheRoad.join(',')}`,
       `couriers:${context.courierCount}`,
+      `staff:${context.staffing.pizzaCooks}/${context.staffing.fryerHelpers}/${context.staffing.sushiChefs}`,
     ].join('|');
 
     if (
@@ -55,6 +61,7 @@ export async function GET(request: NextRequest) {
         success: true,
         plan: cache.plan,
         courierCount: context.courierCount,
+        staffing: context.staffing,
         cached: true,
       });
     }
@@ -66,6 +73,7 @@ export async function GET(request: NextRequest) {
       success: true,
       plan,
       courierCount: context.courierCount,
+      staffing: context.staffing,
       cached: false,
     });
   } catch (error: any) {
@@ -75,9 +83,10 @@ export async function GET(request: NextRequest) {
 }
 
 /**
- * POST /api/admin/kitchen-plan — установить число курьеров на смене.
- * Тело: { courierCount: number } (1…6). Сбрасывает кэш плана — следующий GET
- * пересчитает с новым числом.
+ * POST /api/admin/kitchen-plan — настройки смены: число курьеров и/или персонал
+ * кухни. Тело: { courierCount?: number, staffing?: { pizzaCooks, fryerHelpers,
+ * sushiChefs } }. Сбрасывает кэш плана — следующий GET пересчитает.
+ * Персонал влияет и на AI-оценку времени новых заказов (lib/eta/order-eta.ts).
  */
 export async function POST(request: NextRequest) {
   try {
@@ -89,32 +98,63 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json().catch(() => ({}));
-    const raw = Number(body?.courierCount);
-    if (!Number.isFinite(raw)) {
+    const hasCouriers = body?.courierCount !== undefined;
+    const hasStaffing = body?.staffing !== undefined;
+    if (!hasCouriers && !hasStaffing) {
       return NextResponse.json(
-        { success: false, error: 'courierCount must be a number (1…6)' },
+        { success: false, error: 'Provide courierCount and/or staffing' },
         { status: 400 }
       );
     }
-    // normalizeCourierCount мусор превращает в дефолт — здесь явный отказ честнее.
-    if (Math.round(raw) < 1 || Math.round(raw) > 6) {
-      return NextResponse.json(
-        { success: false, error: 'courierCount must be between 1 and 6' },
-        { status: 400 }
-      );
-    }
-    const courierCount = normalizeCourierCount(raw);
 
-    await setSetting(COURIER_COUNT_KEY, courierCount);
+    let courierCount: number | undefined;
+    if (hasCouriers) {
+      const raw = Number(body.courierCount);
+      // normalize* мусор превращает в дефолт — здесь явный отказ честнее.
+      if (!Number.isFinite(raw) || Math.round(raw) < 1 || Math.round(raw) > 6) {
+        return NextResponse.json(
+          { success: false, error: 'courierCount must be between 1 and 6' },
+          { status: 400 }
+        );
+      }
+      courierCount = normalizeCourierCount(raw);
+      await setSetting(COURIER_COUNT_KEY, courierCount);
+    }
+
+    let staffing: KitchenStaffing | undefined;
+    if (hasStaffing) {
+      const s = body.staffing ?? {};
+      const inRange = (v: unknown, min: number, max: number) => {
+        const n = Number(v);
+        return Number.isFinite(n) && Math.round(n) >= min && Math.round(n) <= max;
+      };
+      if (
+        !inRange(s.pizzaCooks, 1, 4) ||
+        !inRange(s.fryerHelpers, 0, 3) ||
+        !inRange(s.sushiChefs, 1, 4)
+      ) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'staffing: pizzaCooks 1…4, fryerHelpers 0…3, sushiChefs 1…4',
+          },
+          { status: 400 }
+        );
+      }
+      staffing = normalizeStaffing(s);
+      await setSetting(KITCHEN_STAFFING_KEY, staffing);
+    }
+
     cache = null;
 
     return NextResponse.json({
       success: true,
-      courierCount,
-      default: PLAN_TUNING.courierCount,
+      ...(courierCount !== undefined ? { courierCount } : {}),
+      ...(staffing ? { staffing } : {}),
+      defaults: { courierCount: PLAN_TUNING.courierCount, staffing: DEFAULT_STAFFING },
     });
   } catch (error: any) {
-    console.error('[kitchen-plan] courier update failed:', error);
+    console.error('[kitchen-plan] shift settings update failed:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }

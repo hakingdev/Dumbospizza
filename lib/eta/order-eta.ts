@@ -27,9 +27,63 @@ import { restaurantLocation } from '../seed-products';
 import { geocodeAddress } from '../delivery/geocode';
 import { resolveRoadDistanceKm } from '../delivery/road-distance';
 import { normalizeDetourFactor } from '../delivery/detour';
-import type { EtaLoadLevel, KitchenStation, OrderEtaAnalysis } from './types';
+import type { EtaLoadLevel, KitchenStaffing, KitchenStation, OrderEtaAnalysis } from './types';
 
-export type { OrderEtaAnalysis } from './types';
+export type { KitchenStaffing, OrderEtaAnalysis } from './types';
+
+// ---------------------------------------------------------------------------
+// Персонал на смене (меняется селекторами в панели AI-плана кухни)
+// ---------------------------------------------------------------------------
+
+/** Ключ настройки «персонал кухни на смене». */
+export const KITCHEN_STAFFING_KEY = 'kitchenStaffing';
+
+/** Дефолт = исходная модель со слов ресторана: повар + помощник + 2 суши. */
+export const DEFAULT_STAFFING: KitchenStaffing = {
+  pizzaCooks: 1,
+  fryerHelpers: 1,
+  sushiChefs: 2,
+};
+
+const clampInt = (value: unknown, min: number, max: number, fallback: number): number => {
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n) || n < min || n > max) return fallback;
+  return n;
+};
+
+/** Настройка из БД может быть мусором — приводим к безопасным диапазонам. */
+export function normalizeStaffing(value: unknown): KitchenStaffing {
+  const v = (value ?? {}) as Partial<KitchenStaffing>;
+  return {
+    pizzaCooks: clampInt(v.pizzaCooks, 1, 4, DEFAULT_STAFFING.pizzaCooks),
+    fryerHelpers: clampInt(v.fryerHelpers, 0, 3, DEFAULT_STAFFING.fryerHelpers),
+    sushiChefs: clampInt(v.sushiChefs, 1, 4, DEFAULT_STAFFING.sushiChefs),
+  };
+}
+
+/**
+ * Модель кухни для промптов (общая для оценки времени и плана кухни).
+ * Меняется вместе с персоналом на смене.
+ */
+export function buildKitchenModelLines(staffing: KitchenStaffing): string[] {
+  const { pizzaCooks, fryerHelpers, sushiChefs } = staffing;
+  const lines = [
+    pizzaCooks > 1
+      ? `PIZZA station: ${pizzaCooks} cooks, ~8 minutes per pizza per cook — up to ${pizzaCooks} pizzas in parallel.`
+      : 'PIZZA station: one cook, ~8 minutes per pizza on average, pizzas are made one after another.',
+    fryerHelpers > 0
+      ? `FRYER/sides station ("fryer"): ${fryerHelpers} helper(s) make Beilagen, wings, fries, snacks etc., ~8 minutes per item each. Works IN PARALLEL with the pizza station.`
+      : 'FRYER/sides: NO separate helper right now — the pizza cook(s) also make Beilagen/wings/fries themselves, each side item ADDS ~8 minutes to the pizza station workload (no parallelism between pizza and sides).',
+    `SUSHI station (MakiLove category: rolls, sushi burgers, ...): ${sushiChefs} ${
+      sushiChefs > 1 ? 'people' : 'person'
+    }, ~8 minutes per item per person${
+      sushiChefs > 1 ? `, so ${sushiChefs} items in parallel` : ''
+    }. Independent of pizza/fryer.`,
+    'Drinks and desserts need no preparation.',
+    'This staffing is what the staff set for the CURRENT shift (it changes during the day) — respect it, do not assume more hands.',
+  ];
+  return lines;
+}
 
 // ---------------------------------------------------------------------------
 // Классификация позиций по станциям кухни
@@ -98,11 +152,26 @@ const MINUTES_PER_UNIT = 8;
 /** Между подряд идущими заказами всегда есть зазор (со слов ресторана 15–20 мин). */
 const QUEUE_GAP_MINUTES = 15;
 
-/** Чистое время готовки заказа: станции работают параллельно. */
-export function heuristicPrepMinutes(units: StationUnits): number {
-  const pizza = units.pizza * MINUTES_PER_UNIT; // один пиццайоло
-  const fryer = units.fryer * MINUTES_PER_UNIT; // второй человек, параллельно
-  const sushi = Math.ceil(units.sushi / 2) * MINUTES_PER_UNIT; // 2 человека
+/**
+ * Чистое время готовки заказа с учётом персонала на смене.
+ * Станции работают параллельно; без помощника гарнир делает сам повар
+ * (добавляется к его очереди пицц).
+ */
+export function heuristicPrepMinutes(
+  units: StationUnits,
+  staffing: KitchenStaffing = DEFAULT_STAFFING
+): number {
+  let pizza: number;
+  let fryer: number;
+  if (staffing.fryerHelpers > 0) {
+    pizza = Math.ceil(units.pizza / staffing.pizzaCooks) * MINUTES_PER_UNIT;
+    fryer = Math.ceil(units.fryer / staffing.fryerHelpers) * MINUTES_PER_UNIT;
+  } else {
+    // Помощника нет: пицца и гарнир — одни руки, последовательно.
+    pizza = Math.ceil((units.pizza + units.fryer) / staffing.pizzaCooks) * MINUTES_PER_UNIT;
+    fryer = 0;
+  }
+  const sushi = Math.ceil(units.sushi / Math.max(1, staffing.sushiChefs)) * MINUTES_PER_UNIT;
   const prep = Math.max(pizza, fryer, sushi);
   return prep > 0 ? Math.max(prep, 10) : 5;
 }
@@ -146,6 +215,8 @@ interface QueueOrderContext {
 export interface EtaContext {
   nowBerlin: string;
   restaurantAddress: string;
+  /** Персонал на смене (настройка из панели плана кухни). */
+  staffing: KitchenStaffing;
   newOrder: {
     orderNumber: string;
     deliveryType: 'delivery' | 'pickup';
@@ -214,7 +285,11 @@ async function resolveOrderGeo(
 
 /** Собирает контекст для оценки: новый заказ + активная очередь + геоданные. */
 export async function buildEtaContext(order: any): Promise<EtaContext> {
-  const storeSettings = await getSetting<Record<string, any>>('storeSettings', {});
+  const [storeSettings, staffingSetting] = await Promise.all([
+    getSetting<Record<string, any>>('storeSettings', {}),
+    getSetting<KitchenStaffing>(KITCHEN_STAFFING_KEY, DEFAULT_STAFFING),
+  ]);
+  const staffing = normalizeStaffing(staffingSetting);
 
   const units = computeStationUnits(order.items || []);
   const geo = await resolveOrderGeo(order, storeSettings || {});
@@ -263,6 +338,7 @@ export async function buildEtaContext(order: any): Promise<EtaContext> {
   return {
     nowBerlin: berlinNowString(),
     restaurantAddress: storeSettings?.address || restaurantLocation.address,
+    staffing,
     newOrder: {
       orderNumber: order.orderNumber,
       deliveryType: order.deliveryType,
@@ -274,7 +350,7 @@ export async function buildEtaContext(order: any): Promise<EtaContext> {
         station: classifyStation(it),
       })),
       units,
-      prepMinutesEstimate: heuristicPrepMinutes(units),
+      prepMinutesEstimate: heuristicPrepMinutes(units, staffing),
       distanceKm: geo.distanceKm,
       driveMinutesEstimate:
         geo.distanceKm != null ? driveMinutesFromKm(geo.distanceKm) : undefined,
@@ -373,14 +449,14 @@ const ETA_SCHEMA = {
   additionalProperties: false,
 } as const;
 
-const SYSTEM_PROMPT = `You are the kitchen dispatcher of "Dumbos Pizza", Kurhausstr. 11A, 97688 Bad Kissingen, Germany.
+function buildEtaSystemPrompt(staffing: KitchenStaffing): string {
+  return `You are the kitchen dispatcher of "Dumbos Pizza", Kurhausstr. 11A, 97688 Bad Kissingen, Germany.
 For every NEW order you estimate when the customer will get it, given the current queue.
 
-Kitchen model (fixed facts from the owner):
-- PIZZA station: one pizzaiolo, ~8 minutes per pizza on average, pizzas are made one after another.
-- FRYER/sides station ("fryer"): a second person makes Beilagen, wings, fries, snacks etc., ~8 minutes per item. Works IN PARALLEL with the pizza station.
-- SUSHI station (MakiLove category: rolls, sushi burgers, ...): 2 people, ~8 minutes per item per person, so two items in parallel. Independent of pizza/fryer.
-- Drinks and desserts need no preparation.
+Kitchen model (staffing set by the staff for the current shift):
+${buildKitchenModelLines(staffing)
+  .map((l) => `- ${l}`)
+  .join('\n')}
 - Back-to-back orders are NOT started immediately one after another: there is always a 15-20 minute spacing between consecutive orders (driver turnaround, oven capacity). Apply this when several orders are queued.
 
 Delivery model:
@@ -396,6 +472,7 @@ Output rules:
 - "advisory" (RUSSIAN, for the staff, null when normal): at busy/peak recommend concretely — e.g. after how many more orders to pause intake, or to pause for 30/60 minutes via the stop-bot, or by how much to shift promised times.
 - "advisory", "routeHint", "reasoning" are in Russian. Keep them short.
 - Do not invent orders, distances or times that are not in the data.`;
+}
 
 export async function analyzeEtaWithClaude(context: EtaContext): Promise<OrderEtaAnalysis> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -412,12 +489,13 @@ export async function analyzeEtaWithClaude(context: EtaContext): Promise<OrderEt
       effort: 'low',
       format: { type: 'json_schema', schema: ETA_SCHEMA as any },
     },
-    system: SYSTEM_PROMPT,
+    system: buildEtaSystemPrompt(context.staffing),
     messages: [
       {
         role: 'user',
         content: [
           `Current local time: ${context.nowBerlin}`,
+          `Kitchen staff on shift: ${context.staffing.pizzaCooks} pizza cook(s), ${context.staffing.fryerHelpers} fryer helper(s), ${context.staffing.sushiChefs} sushi chef(s)`,
           '',
           'NEW ORDER (estimate this one):',
           JSON.stringify(context.newOrder, null, 2),

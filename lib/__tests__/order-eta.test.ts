@@ -7,6 +7,8 @@ import {
   roundEtaTo5,
   heuristicEta,
   normalizeEtaVerdict,
+  normalizeStaffing,
+  DEFAULT_STAFFING,
   type EtaContext,
 } from '../eta/order-eta';
 
@@ -62,6 +64,46 @@ describe('computeStationUnits / heuristicPrepMinutes', () => {
   });
 });
 
+describe('heuristicPrepMinutes — персонал на смене', () => {
+  it('2 повара: 4 пиццы за 2 такта вместо 4', () => {
+    const units = { pizza: 4, fryer: 0, sushi: 0 };
+    expect(heuristicPrepMinutes(units)).toBe(32); // дефолт: 1 повар
+    expect(heuristicPrepMinutes(units, { pizzaCooks: 2, fryerHelpers: 1, sushiChefs: 2 })).toBe(16);
+  });
+
+  it('без помощника гарнир делает повар — последовательно с пиццей', () => {
+    const units = { pizza: 2, fryer: 2, sushi: 0 };
+    // С помощником: max(16, 16) = 16. Без: (2+2)/1 * 8 = 32.
+    expect(heuristicPrepMinutes(units)).toBe(16);
+    expect(heuristicPrepMinutes(units, { pizzaCooks: 1, fryerHelpers: 0, sushiChefs: 2 })).toBe(32);
+    // Но два повара без помощника разбирают общую очередь вдвоём: 4/2 * 8 = 16.
+    expect(heuristicPrepMinutes(units, { pizzaCooks: 2, fryerHelpers: 0, sushiChefs: 2 })).toBe(16);
+  });
+
+  it('один человек на суши: 4 ролла = 4 такта', () => {
+    const units = { pizza: 0, fryer: 0, sushi: 4 };
+    expect(heuristicPrepMinutes(units, { pizzaCooks: 1, fryerHelpers: 1, sushiChefs: 1 })).toBe(32);
+  });
+});
+
+describe('normalizeStaffing', () => {
+  it('валидные значения проходят как есть', () => {
+    expect(normalizeStaffing({ pizzaCooks: 2, fryerHelpers: 0, sushiChefs: 1 })).toEqual({
+      pizzaCooks: 2,
+      fryerHelpers: 0,
+      sushiChefs: 1,
+    });
+  });
+
+  it('мусор и выход за диапазон → дефолты по полю', () => {
+    expect(normalizeStaffing(undefined)).toEqual(DEFAULT_STAFFING);
+    expect(normalizeStaffing({ pizzaCooks: 0, fryerHelpers: 9, sushiChefs: 'abc' })).toEqual(
+      DEFAULT_STAFFING
+    );
+    expect(normalizeStaffing({ pizzaCooks: 3 })).toEqual({ ...DEFAULT_STAFFING, pizzaCooks: 3 });
+  });
+});
+
 describe('driveMinutesFromKm / roundEtaTo5', () => {
   it('ближний адрес — минимум 5 мин, дальний упирается в 30', () => {
     expect(driveMinutesFromKm(0.3)).toBe(5);
@@ -81,6 +123,7 @@ function makeContext(overrides: Partial<EtaContext['newOrder']> = {}, queue: Eta
   return {
     nowBerlin: 'Mo., 18:00',
     restaurantAddress: 'Kurhausstr. 11A, 97688 Bad Kissingen',
+    staffing: DEFAULT_STAFFING,
     newOrder: {
       orderNumber: '250811001',
       deliveryType: 'delivery',

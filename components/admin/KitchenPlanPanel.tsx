@@ -11,7 +11,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { Bot, RefreshCw, Bike, ChefHat, AlertTriangle, Users } from 'lucide-react';
-import type { KitchenPlan } from '../../lib/eta/types';
+import type { KitchenPlan, KitchenStaffing } from '../../lib/eta/types';
 
 const LOAD_BADGE: Record<string, { label: string; className: string }> = {
   normal: { label: 'нагрузка: норма', className: 'bg-green-100 text-green-700' },
@@ -25,6 +25,8 @@ export default function KitchenPlanPanel() {
   const [error, setError] = useState<string | null>(null);
   const [courierCount, setCourierCount] = useState<number | null>(null);
   const [savingCouriers, setSavingCouriers] = useState(false);
+  const [staffing, setStaffing] = useState<KitchenStaffing | null>(null);
+  const [savingStaffing, setSavingStaffing] = useState(false);
 
   const fetchPlan = useCallback(async (refresh: boolean) => {
     setLoading(true);
@@ -37,6 +39,7 @@ export default function KitchenPlanPanel() {
       if (data.success && data.plan) {
         setPlan(data.plan);
         if (typeof data.courierCount === 'number') setCourierCount(data.courierCount);
+        if (data.staffing) setStaffing(data.staffing);
       } else {
         setError(data.error || 'Не удалось построить план');
       }
@@ -77,6 +80,62 @@ export default function KitchenPlanPanel() {
     }
   };
 
+  /**
+   * Смена персонала кухни (повара/помощник/суши): сохранить и пересчитать план.
+   * Настройка влияет и на AI-оценку времени НОВЫХ заказов.
+   */
+  const handleStaffingChange = async (patch: Partial<KitchenStaffing>) => {
+    if (!staffing) return;
+    const previous = staffing;
+    const next = { ...staffing, ...patch };
+    setStaffing(next);
+    setSavingStaffing(true);
+    try {
+      const response = await fetch('/api/admin/kitchen-plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ staffing: next }),
+      });
+      const data = await response.json();
+      if (!data.success) {
+        setStaffing(previous);
+        alert('Не удалось сохранить персонал: ' + (data.error || 'неизвестная ошибка'));
+        return;
+      }
+      await fetchPlan(true);
+    } catch {
+      setStaffing(previous);
+      alert('Не удалось сохранить персонал — проверь соединение');
+    } finally {
+      setSavingStaffing(false);
+    }
+  };
+
+  const staffingSelect = (
+    label: string,
+    title: string,
+    field: keyof KitchenStaffing,
+    options: number[]
+  ) => (
+    <label className="flex items-center gap-1 text-xs text-gray-600" title={title}>
+      {label}
+      <select
+        value={staffing ? staffing[field] : ''}
+        onChange={(e) => handleStaffingChange({ [field]: Number(e.target.value) })}
+        disabled={savingStaffing || staffing == null}
+        data-testid={`kitchen-plan-${field}`}
+        className="px-1.5 py-0.5 border rounded text-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        {staffing == null && <option value="">…</option>}
+        {options.map((n) => (
+          <option key={n} value={n}>
+            {n}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+
   const load = plan ? LOAD_BADGE[plan.loadLevel] ?? LOAD_BADGE.normal : null;
 
   return (
@@ -103,7 +162,26 @@ export default function KitchenPlanPanel() {
             </span>
           )}
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <span
+            className="flex items-center gap-1 text-xs text-gray-400"
+            title="Персонал на смене: влияет на AI-оценку времени новых заказов и на план кухни"
+          >
+            <ChefHat className="h-4 w-4" />
+          </span>
+          {staffingSelect(
+            'Повара:',
+            'Поваров на пицце сейчас (двое делают две пиццы параллельно)',
+            'pizzaCooks',
+            [1, 2, 3, 4]
+          )}
+          {staffingSelect(
+            'Помощник:',
+            'Помощников на фритюре/Beilagen; 0 — гарнир делает сам повар (время готовки растёт)',
+            'fryerHelpers',
+            [0, 1, 2, 3]
+          )}
+          {staffingSelect('Суши:', 'Людей на суши-станции MakiLove', 'sushiChefs', [1, 2, 3, 4])}
           <label
             className="flex items-center gap-1.5 text-xs text-gray-600"
             title="Сколько курьеров сейчас на смене — план строит столько параллельных рейсов"

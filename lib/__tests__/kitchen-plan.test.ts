@@ -28,6 +28,7 @@ function context(orders: PlanOrderContext[], onTheRoad: string[] = []): KitchenP
     nowBerlin: 'Mo., 18:00',
     restaurantAddress: 'Kurhausstr. 11A, 97688 Bad Kissingen',
     courierCount: 1,
+    staffing: { pizzaCooks: 1, fryerHelpers: 1, sushiChefs: 2 },
     orders,
     onTheRoad,
   };

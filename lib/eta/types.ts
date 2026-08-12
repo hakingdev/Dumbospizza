@@ -9,6 +9,20 @@ export type EtaLoadLevel = 'normal' | 'busy' | 'peak';
 export type KitchenStation = 'pizza' | 'fryer' | 'sushi' | 'none';
 
 /**
+ * Персонал на смене — меняется селекторами в панели AI-плана кухни
+ * (настройка kitchenStaffing, см. KITCHEN_STAFFING_KEY в order-eta.ts).
+ * Влияет и на оценку времени заказа, и на план кухни.
+ */
+export interface KitchenStaffing {
+  /** Поваров на пицце (1…4): двое делают две пиццы параллельно. */
+  pizzaCooks: number;
+  /** Помощников на фритюре/Beilagen (0…3): 0 — гарнир делает сам повар (последовательно с пиццей). */
+  fryerHelpers: number;
+  /** Людей на суши-станции MakiLove (1…4). */
+  sushiChefs: number;
+}
+
+/**
  * Один шаг плана кухни: какие заказы готовить (вместе) и каким рейсом везти.
  */
 export interface KitchenPlanBatch {

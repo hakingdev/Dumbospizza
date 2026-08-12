@@ -48,6 +48,7 @@ async function main() {
           nowBerlin: 'Mo., 18:05',
           restaurantAddress: 'Kurhausstr. 11A, 97688 Bad Kissingen',
           courierCount: couriers,
+          staffing: { pizzaCooks: 1, fryerHelpers: 1, sushiChefs: 2 },
           onTheRoad: [],
           orders: [
             {
