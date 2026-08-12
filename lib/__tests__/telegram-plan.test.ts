@@ -296,10 +296,20 @@ describe('handlePlanUpdate: чеки Lieferando', () => {
     );
   });
 
-  it('документ не-картинка (PDF) — отклоняется без распознавания', async () => {
+  it('PDF из портала Lieferando — распознаётся как и фото', async () => {
     const deps = makeDeps();
     const res = await handlePlanUpdate(
       { message: { chat, document: { file_id: 'd1', mime_type: 'application/pdf' } } },
+      deps
+    );
+    expect(res).toEqual({ handled: true, reason: 'receipt_imported' });
+    expect(deps.importReceipt).toHaveBeenCalledWith('d1');
+  });
+
+  it('документ неподдерживаемого типа — отклоняется без распознавания', async () => {
+    const deps = makeDeps();
+    const res = await handlePlanUpdate(
+      { message: { chat, document: { file_id: 'd2', mime_type: 'application/zip' } } },
       deps
     );
     expect(res).toEqual({ handled: true, reason: 'receipt_rejected' });

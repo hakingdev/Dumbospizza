@@ -6,7 +6,7 @@
  *     админке (lib/eta/kitchen-plan.ts): что готовить, в каком порядке и какие
  *     доставки объединять в рейсы. Анализируются ОБА канала: заказы сайта и
  *     чеки Lieferando.
- *   - 📸 фото чека Lieferando → Claude Vision распознаёт чек и создаёт заказ
+ *   - 📸 фото или PDF чека Lieferando → Claude Vision распознаёт чек и создаёт заказ
  *     source='lieferando' (lib/lieferando/receipt-import.ts) — он попадает в
  *     план наравне с заказами сайта.
  *   - ⏰ кнопки «#N +10/+15/+20/+30 мин» под планом для опаздывающих заказов —
@@ -165,7 +165,7 @@ const HELP_TEXT = [
   '',
   '/plan — AI-план кухни по ВСЕМ заказам (сайт + Lieferando): что готовить, в каком порядке, какие доставки объединить в рейс (то же, что панель в админке).',
   '',
-  '📸 Пришлите фото чека Lieferando — заказ будет распознан и добавлен в план.',
+  '📸 Пришлите фото или PDF чека Lieferando — заказ будет распознан и добавлен в план.',
   '',
   '⏰ Если заказ опаздывает, под планом появятся кнопки «+10/+15/+20/+30 мин» — гость получит WhatsApp о задержке на немецком.',
 ].join('\n');
@@ -188,11 +188,12 @@ export async function handleReceiptUpload(message: any, deps: PlanBotDeps): Prom
 
   let fileId: string | undefined = photo?.file_id;
   if (!fileId && document?.file_id) {
+    // Портал Lieferando отдаёт чек как receipt-XXXX.pdf — принимаем и его.
     const mime = String(document.mime_type || '');
-    if (!mime.startsWith('image/')) {
+    if (!mime.startsWith('image/') && mime !== 'application/pdf') {
       await deps.sendMessage(
         chatId,
-        '📄 Такой файл не распознать — пришлите чек Lieferando как фото (JPG/PNG).'
+        '📄 Такой файл не распознать — пришлите чек Lieferando как фото (JPG/PNG) или PDF.'
       );
       return { handled: true, reason: 'receipt_rejected' };
     }
@@ -453,6 +454,7 @@ async function tgApi(token: string, method: string, body: Record<string, any>): 
 /** media_type для Claude Vision по расширению file_path Telegram'а. */
 function mediaTypeFromPath(filePath: string): ReceiptImageMediaType {
   const ext = filePath.split('.').pop()?.toLowerCase();
+  if (ext === 'pdf') return 'application/pdf';
   if (ext === 'png') return 'image/png';
   if (ext === 'webp') return 'image/webp';
   if (ext === 'gif') return 'image/gif';

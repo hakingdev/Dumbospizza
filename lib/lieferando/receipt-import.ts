@@ -20,7 +20,13 @@ import Anthropic from '@anthropic-ai/sdk';
 import { Order } from '../models/order.model';
 import { estimateAndApplyOrderEta } from '../eta/order-eta';
 
-export type ReceiptImageMediaType = 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif';
+export type ReceiptImageMediaType =
+  | 'image/jpeg'
+  | 'image/png'
+  | 'image/webp'
+  | 'image/gif'
+  /** PDF из портала Lieferando (receipt-XXXX.pdf) — уходит в Claude document-блоком. */
+  | 'application/pdf';
 
 export interface ReceiptImage {
   base64: string;
@@ -176,10 +182,15 @@ export async function parseLieferandoReceipt(image: ReceiptImage): Promise<Liefe
       {
         role: 'user',
         content: [
-          {
-            type: 'image',
-            source: { type: 'base64', media_type: image.mediaType, data: image.base64 },
-          },
+          image.mediaType === 'application/pdf'
+            ? {
+                type: 'document',
+                source: { type: 'base64', media_type: 'application/pdf', data: image.base64 },
+              }
+            : {
+                type: 'image',
+                source: { type: 'base64', media_type: image.mediaType, data: image.base64 },
+              },
           { type: 'text', text: 'Extract this Lieferando receipt.' },
         ],
       },
