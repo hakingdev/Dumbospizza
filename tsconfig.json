@@ -41,7 +41,8 @@
     "additional.d.ts",
     ".next-claude/types/**/*.ts",
     ".next-claude-b/types/**/*.ts",
-    ".next-buildcheck/types/**/*.ts"
+    ".next-buildcheck/types/**/*.ts",
+    ".next-preview/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

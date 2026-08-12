@@ -31,6 +31,15 @@ function todayAt(hhmm: string, minusDays = 0): string {
   return date.toISOString();
 }
 
+/** Локальный YYYY-MM-DD, как date у реального getDailySales (to_char). */
+function dayKey(minusDays: number): string {
+  const date = new Date();
+  date.setDate(date.getDate() - minusDays);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(
+    date.getDate()
+  ).padStart(2, '0')}`;
+}
+
 const ORDERS = [
   {
     _id: 'prev-1042',
@@ -205,13 +214,21 @@ const STATS = {
     todayOrders: 47,
     todaySales: 1284.4,
   },
-  // Ключи как у реального getDailySales (totalSales/count) — фикстура с
-  // выдуманными полями уже замаскировала баг №4 (график нулей)
-  salesData: [6, 5, 4, 3, 2, 1, 0].map((minusDays, i) => ({
-    date: todayAt('12:00', minusDays),
-    totalSales: [812.4, 640.1, 118.9, 924.6, 1310.2, 1178.4, 1284.4][i],
-    count: [31, 24, 5, 35, 51, 44, 47][i],
-  })),
+  // Ключи и формат как у реального getDailySales (date=YYYY-MM-DD,
+  // totalSales/count) — фикстура с выдуманными полями уже замаскировала
+  // баг №4 (график нулей). 14 дней: аналитика сравнивает недели (?days=14).
+  salesData: [
+    ...[13, 12, 11, 10, 9, 8, 7].map((minusDays, i) => ({
+      date: dayKey(minusDays),
+      totalSales: [702.2, 748.9, 401.6, 981.3, 1188.6, 1391.0, 1064.5][i],
+      count: [27, 29, 15, 38, 46, 54, 41][i],
+    })),
+    ...[6, 5, 4, 3, 2, 1, 0].map((minusDays, i) => ({
+      date: dayKey(minusDays),
+      totalSales: [812.4, 640.1, 118.9, 924.6, 1310.2, 1178.4, 1284.4][i],
+      count: [31, 24, 5, 35, 51, 44, 47][i],
+    })),
+  ],
 };
 
 const USERS = [
@@ -220,6 +237,7 @@ const USERS = [
   { _id: 'u3', name: 'Anja Vogt', email: 'anja@dumbospizza.de', role: 'staff' },
 ];
 
+// Поля как у toPromotionAdminView: orderCount/revenueTotal/weekdayLabel
 const PROMOTIONS = [
   {
     _id: 'p1',
@@ -228,6 +246,9 @@ const PROMOTIONS = [
     enabled: true,
     validFrom: todayAt('00:00', 30),
     validTo: todayAt('23:59', -21),
+    weekdayLabel: 'Mo, Di, Mi, Do',
+    orderCount: 142,
+    revenueTotal: 3214,
   },
   {
     _id: 'p2',
@@ -235,15 +256,18 @@ const PROMOTIONS = [
     type: 'gratis',
     enabled: true,
     validFrom: todayAt('00:00', 10),
-    validTo: todayAt('23:59', -3),
+    // ~2,5 дня до конца → карточка «Заканчивается», как в канве D8
+    validTo: todayAt('23:59', -2),
+    orderCount: 86,
+    revenueTotal: 2480,
   },
   { _id: 'p3', name: '3 Pizzen zum halben Preis', type: 'percent', enabled: false },
 ];
 
 const COUPONS = [
-  { _id: 'c1', code: 'DUMBO10', discountType: 'percentage', discountValue: 10, active: true },
-  { _id: 'c2', code: 'SUSHI5', discountType: 'fixed', discountValue: 5, minOrderAmount: 30, active: false },
-  { _id: 'c3', code: 'WELCOME', discountType: 'percentage', discountValue: 15, active: true },
+  { _id: 'c1', code: 'DUMBO10', discountType: 'percentage', discountValue: 10, usageCount: 84, active: true },
+  { _id: 'c2', code: 'SUSHI5', discountType: 'fixed', discountValue: 5, minOrderAmount: 30, usageCount: 12, active: false },
+  { _id: 'c3', code: 'WELCOME', discountType: 'percentage', discountValue: 15, usageCount: 208, active: true },
 ];
 
 const ZONES = [

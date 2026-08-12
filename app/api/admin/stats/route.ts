@@ -23,9 +23,12 @@ export async function GET(request: NextRequest) {
     
     // Get basic dashboard stats
     const stats = await getAdminDashboardStats();
-    
-    // Get sales data for the past week
-    const salesData = await getDailySales(7);
+
+    // Sales data window: default one week, ?days=14 lets the portal
+    // compare the current week against the previous one
+    const daysParam = Number(request.nextUrl.searchParams.get('days'));
+    const days = Number.isFinite(daysParam) ? Math.min(90, Math.max(1, Math.trunc(daysParam))) : 7;
+    const salesData = await getDailySales(days);
     
     return NextResponse.json({
       success: true,

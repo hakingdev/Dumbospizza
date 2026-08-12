@@ -368,7 +368,7 @@ export async function saveDeliveryZone(zone: AdminZone): Promise<boolean> {
 
 /* ---- Статистика ---- */
 
-export function useAdminStats(pollMs?: number) {
+export function useAdminStats(pollMs?: number, days?: number) {
   const state = useJson<{
     stats: {
       totalOrders: number;
@@ -378,9 +378,9 @@ export function useAdminStats(pollMs?: number) {
       todayOrders: number;
       todaySales: number;
     };
-    /** getDailySales(7): суммы дня в totalSales, число заказов — count. */
+    /** getDailySales(days=7): суммы дня в totalSales, число заказов — count. */
     salesData: { date: string; totalSales: number; count: number }[];
-  }>(`/api/admin/stats`, pollMs);
+  }>(days ? `/api/admin/stats?days=${days}` : `/api/admin/stats`, pollMs);
   return { ...state, stats: state.data?.stats ?? null, salesData: state.data?.salesData ?? [] };
 }
 

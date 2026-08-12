@@ -1,8 +1,9 @@
 'use client';
 
 /**
- * Маркетинг (канва D8 / 09). Акции, промокоды и баннер — реальные данные;
- * штампкарты и push — демо (таких механик пока нет).
+ * Маркетинг (канва D8, узел 40:1755). Акции, промокоды и баннер — реальные
+ * данные (показатели акций — orderCount/revenueTotal из админ-вью, применения
+ * промокодов — usageCount); штампкарты и push — демо (таких механик пока нет).
  */
 
 import { useState } from 'react';
@@ -18,6 +19,7 @@ import {
   Icon,
   LoadError,
   Loading,
+  btnGhost,
   btnOutline,
   btnPrimary,
   btnSoft,
@@ -69,19 +71,56 @@ function Toggle({
   );
 }
 
-function promoScheduleLine(promo: any): string {
-  const from = promo.validFrom ? dateDDMMYYYY(promo.validFrom) : null;
-  const to = promo.validTo ? dateDDMMYYYY(promo.validTo) : null;
-  if (from && to) return `${from} – ${to}`;
-  if (to) return `до ${to}`;
-  if (from) return `с ${from}`;
-  return 'без ограничения по датам';
+/**
+ * Статус карточки акции по канве D8: бейдж + подпись справа + набор действий.
+ * Считается на клиенте из enabled/validFrom/validTo, чтобы не зависеть от
+ * серверного lifecycle (у него !enabled = 'expired').
+ */
+function promoStatus(promo: any): {
+  kind: 'active' | 'scheduled' | 'ending' | 'expired' | 'off';
+  badge: { label: string; bg: string; fg: string };
+  note: string | null;
+} {
+  const now = Date.now();
+  const from = promo.validFrom ? new Date(promo.validFrom).getTime() : null;
+  const to = promo.validTo ? new Date(promo.validTo).getTime() : null;
+  if (!promo.enabled) {
+    return { kind: 'off', badge: { label: 'Выключена', bg: '#F3F4F6', fg: '#4B5563' }, note: null };
+  }
+  if (from && now < from) {
+    return {
+      kind: 'scheduled',
+      badge: { label: 'Запланирована', bg: '#F3F4F6', fg: '#4B5563' },
+      note: `с ${dateDDMMYYYY(promo.validFrom)}`,
+    };
+  }
+  if (to && now > to) {
+    return {
+      kind: 'expired',
+      badge: { label: 'Завершена', bg: '#F3F4F6', fg: '#4B5563' },
+      note: `до ${dateDDMMYYYY(promo.validTo)}`,
+    };
+  }
+  const daysLeft = to ? Math.ceil((to - now) / 86400000) : null;
+  if (daysLeft !== null && daysLeft <= 3) {
+    return {
+      kind: 'ending',
+      badge: { label: 'Заканчивается', bg: '#FEF9C3', fg: '#713F12' },
+      note: `осталось ${daysLeft} ${plural(daysLeft, 'день', 'дня', 'дней')}`,
+    };
+  }
+  return {
+    kind: 'active',
+    badge: { label: PROMO_TYPE_LABELS[promo.type] || 'Промо', bg: '#D42A47', fg: '#FFFFFF' },
+    note: 'Активна',
+  };
 }
 
-function promoDaysLeft(promo: any): number | null {
-  if (!promo.validTo) return null;
-  const diff = Math.ceil((new Date(promo.validTo).getTime() - Date.now()) / 86400000);
-  return diff;
+/** «Mo, Di · до 31.08.2026» — дни из weekdayLabel админ-вью, даты кампании. */
+function promoScheduleLine(promo: any): string {
+  const days = promo.weekdayLabel || 'Все дни';
+  const to = promo.validTo ? `до ${dateDDMMYYYY(promo.validTo)}` : 'без срока';
+  return `${days} · ${to}`;
 }
 
 export default function MarketingPage() {
@@ -172,15 +211,12 @@ export default function MarketingPage() {
             )}
           </p>
         </div>
-        <div className="hidden items-center gap-3 lg:flex">
-          <a href="/admin/coupons/new" className={`${btnOutline} h-12 px-6 text-lg no-underline`}>
-            Новый промокод
-          </a>
-          <a href="/admin/promotions/new" className={`${btnPrimary} h-12 px-6 text-lg no-underline`}>
-            <Icon d="M5 12h14 M12 5v14" size={20} />
-            Создать акцию
-          </a>
-        </div>
+        <a
+          href="/admin/coupons/new"
+          className={`${btnPrimary} hidden h-12 px-6 text-lg no-underline lg:inline-flex`}
+        >
+          Новый промокод
+        </a>
       </div>
 
       {/* Акции */}
@@ -191,55 +227,90 @@ export default function MarketingPage() {
       ) : promotions.promotions.length ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 lg:gap-6">
           {promotions.promotions.slice(0, 6).map((promo: any) => {
-            const daysLeft = promoDaysLeft(promo);
-            const ending = promo.enabled && daysLeft !== null && daysLeft >= 0 && daysLeft <= 3;
             const id = promo._id || promo.id;
+            const status = promoStatus(promo);
+            const hasMetrics = (Number(promo.orderCount) || 0) > 0 || (Number(promo.revenueTotal) || 0) > 0;
             return (
               <Card
                 key={id}
-                className="flex flex-col gap-4 p-4 transition hover:-translate-y-0.5 hover:shadow-[0_4px_16px_rgba(17,24,39,.10)] lg:p-6"
+                className="flex flex-col gap-3 p-4 transition hover:-translate-y-0.5 hover:shadow-[0_4px_16px_rgba(17,24,39,.10)] lg:p-5"
               >
-                <div className="flex items-center gap-2">
-                  <span className="inline-flex h-6 items-center rounded-full bg-[#D42A47] px-2.5 text-xs font-bold leading-4 text-white">
-                    {PROMO_TYPE_LABELS[promo.type] || 'Промо'}
+                <div className="flex items-center gap-3">
+                  <span
+                    className="inline-flex h-6 flex-none items-center rounded-full px-2.5 text-xs font-bold leading-4"
+                    style={{ background: status.badge.bg, color: status.badge.fg }}
+                  >
+                    {status.badge.label}
                   </span>
-                  <div className="flex-1" />
-                  {ending ? (
-                    <span className="inline-flex h-6 items-center rounded-full bg-[#FEF9C3] px-2.5 text-xs font-bold leading-4 text-[#713F12]">
-                      Заканчивается
-                    </span>
-                  ) : promo.enabled ? (
-                    <span className="inline-flex h-6 items-center rounded-full bg-[#DCFCE7] px-2.5 text-xs font-bold leading-4 text-[#15803D]">
-                      Активна
-                    </span>
-                  ) : (
-                    <span className="inline-flex h-6 items-center rounded-full bg-gray-100 px-2.5 text-xs font-bold leading-4 text-gray-600">
-                      Выключена
+                  {status.note && (
+                    <span className="min-w-0 flex-1 text-xs font-bold leading-4 text-gray-600">
+                      {status.note}
                     </span>
                   )}
                 </div>
-                <div>
+                <div className="flex flex-col gap-0.5">
                   <div className="text-lg font-bold leading-6 text-gray-900">
                     {promo.name || promo.internalName}
                   </div>
                   <div className="text-sm leading-5 text-gray-600">
-                    {promoScheduleLine(promo)}
-                    {ending && daysLeft !== null ? ` · осталось ${daysLeft} дн.` : ''}
+                    {status.kind === 'off' ? `Не запущена · ${promoScheduleLine(promo)}` : promoScheduleLine(promo)}
                   </div>
                 </div>
-                <div className="mt-auto flex items-center gap-2">
-                  <a
-                    href={`/admin/promotions/edit/${id}`}
-                    className="inline-flex h-8 flex-1 cursor-pointer items-center justify-center rounded-xl px-3 text-sm font-bold leading-5 text-gray-900 no-underline transition hover:bg-[#FAF7F2]"
-                  >
-                    Редактировать
-                  </a>
-                  <Toggle
-                    on={!!promo.enabled}
-                    busy={busyId === id}
-                    label={promo.enabled ? 'Остановить акцию' : 'Запустить акцию'}
-                    onChange={(next) => togglePromotion(promo, next)}
-                  />
+                {hasMetrics && (
+                  <div className="flex items-center gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs font-bold uppercase leading-4 tracking-[.04em] text-gray-600">
+                        Заказов
+                      </div>
+                      <div className="text-xl font-extrabold leading-6 tracking-[-.01em] text-gray-900 tabular-nums">
+                        {Number(promo.orderCount) || 0}
+                      </div>
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs font-bold uppercase leading-4 tracking-[.04em] text-gray-600">
+                        Выручка
+                      </div>
+                      <div className="text-xl font-extrabold leading-6 tracking-[-.01em] text-gray-900 tabular-nums">
+                        {euro(promo.revenueTotal)}
+                      </div>
+                    </div>
+                  </div>
+                )}
+                <div className="mt-auto flex items-center gap-3 pt-1">
+                  {status.kind === 'off' ? (
+                    <button
+                      type="button"
+                      disabled={busyId === id}
+                      onClick={() => togglePromotion(promo, true)}
+                      className={`${btnPrimary} h-10 flex-1 px-4 text-base`}
+                    >
+                      Запустить акцию
+                    </button>
+                  ) : status.kind === 'ending' || status.kind === 'expired' ? (
+                    <a
+                      href={`/admin/promotions/edit/${id}`}
+                      className={`${btnSoft} h-10 flex-1 px-4 text-base no-underline`}
+                    >
+                      Продлить акцию
+                    </a>
+                  ) : (
+                    <>
+                      <a
+                        href={`/admin/promotions/edit/${id}`}
+                        className={`${btnGhost} h-10 px-4 text-base no-underline`}
+                      >
+                        Редактировать
+                      </a>
+                      <button
+                        type="button"
+                        disabled={busyId === id}
+                        onClick={() => togglePromotion(promo, false)}
+                        className={`${btnGhost} h-10 px-4 text-base`}
+                      >
+                        Остановить
+                      </button>
+                    </>
+                  )}
                 </div>
               </Card>
             );
@@ -254,148 +325,155 @@ export default function MarketingPage() {
         </Card>
       )}
 
-      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2 lg:gap-6">
-        {/* Промокоды */}
-        <Card>
-          <div className="flex items-center justify-between gap-4 border-b border-gray-200 p-4 lg:p-6">
-            <h2 className="m-0 text-xl font-extrabold leading-7 tracking-[-.01em] text-gray-900 lg:text-2xl lg:leading-[30px]">
-              Промокоды
-            </h2>
-            <a href="/admin/coupons" className={`${btnSoft} h-8 px-3 text-sm no-underline`}>
-              Все промокоды
-            </a>
-          </div>
-          {coupons.loading && !coupons.data ? (
-            <Loading />
-          ) : couponsFailed ? (
-            <LoadError framed={false} title="Промокоды не загрузились" detail={coupons.error} onRetry={coupons.reload} />
-          ) : coupons.coupons.length ? (
-            coupons.coupons.slice(0, 5).map((coupon: any, i: number) => (
-              <div
-                key={coupon._id}
-                className={`flex items-center gap-3 px-4 py-4 transition hover:bg-[#FAF7F2] lg:gap-4 lg:px-6 ${
-                  i === Math.min(coupons.coupons.length, 5) - 1 ? '' : 'border-b border-gray-200'
-                }`}
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="text-base font-bold uppercase leading-6 tracking-[.04em] text-gray-900">
+      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_380px] lg:gap-6">
+        {/* Левая колонка: промокоды + штампкарты */}
+        <div className="flex min-w-0 flex-col gap-4 lg:gap-6">
+          <Card className="flex flex-col gap-3 p-4 lg:p-6">
+            <div className="flex items-center gap-3">
+              <h2 className="m-0 flex-1 text-xl font-extrabold leading-7 tracking-[-.01em] text-gray-900 lg:text-2xl lg:leading-[30px]">
+                Промокоды
+              </h2>
+              <a href="/admin/coupons" className={`${btnGhost} h-8 px-3 text-sm no-underline`}>
+                Все коды
+              </a>
+            </div>
+            <div className="flex items-center gap-3 text-xs font-bold uppercase leading-4 tracking-[.04em] text-gray-600">
+              <span className="w-24 flex-none lg:w-[120px]">Код</span>
+              <span className="min-w-0 flex-1">Условие</span>
+              <span className="hidden w-[120px] flex-none text-right sm:block">Применений</span>
+              <span className="w-16 flex-none text-right lg:w-[100px]">Скидка</span>
+              <span className="w-[52px] flex-none text-right lg:w-[60px]">Вкл.</span>
+            </div>
+            {coupons.loading && !coupons.data ? (
+              <Loading />
+            ) : couponsFailed ? (
+              <LoadError framed={false} title="Промокоды не загрузились" detail={coupons.error} onRetry={coupons.reload} />
+            ) : coupons.coupons.length ? (
+              coupons.coupons.slice(0, 5).map((coupon: any) => (
+                <div
+                  key={coupon._id}
+                  className="flex items-center gap-3 border-t border-gray-200 py-2 transition hover:bg-[#FAF7F2]"
+                >
+                  <span className="w-24 flex-none overflow-hidden text-ellipsis whitespace-nowrap text-base font-bold uppercase leading-6 text-[#7C6145] lg:w-[120px]">
                     {coupon.code}
-                  </div>
-                  <div className="text-sm leading-5 text-gray-600">
+                  </span>
+                  <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-base leading-6 text-gray-600">
                     {coupon.minOrderAmount ? `От ${euro(coupon.minOrderAmount)}` : 'Все заказы'}
                     {coupon.usageLimit ? ` · лимит ${coupon.usageLimit}` : ''}
-                  </div>
+                  </span>
+                  <span className="hidden w-[120px] flex-none text-right text-base font-bold leading-6 text-gray-900 tabular-nums sm:block">
+                    {Number(coupon.usageCount) || 0}
+                  </span>
+                  <span className="w-16 flex-none text-right text-base font-bold leading-6 text-gray-900 tabular-nums lg:w-[100px]">
+                    −
+                    {coupon.discountType === 'percentage'
+                      ? `${Number(coupon.discountValue) || 0} %`
+                      : euro(coupon.discountValue)}
+                  </span>
+                  <span className="flex w-[52px] flex-none justify-end lg:w-[60px]">
+                    <Toggle
+                      on={coupon.active !== false}
+                      busy={busyId === coupon._id}
+                      label={coupon.active !== false ? 'Выключить промокод' : 'Включить промокод'}
+                      onChange={(next) => toggleCoupon(coupon, next)}
+                    />
+                  </span>
                 </div>
-                <span className="text-base font-bold leading-6 text-[#D42A47] tabular-nums">
-                  −
-                  {coupon.discountType === 'percentage'
-                    ? `${Number(coupon.discountValue) || 0} %`
-                    : euro(coupon.discountValue)}
-                </span>
-                <Toggle
-                  on={coupon.active !== false}
-                  busy={busyId === coupon._id}
-                  label={coupon.active !== false ? 'Выключить промокод' : 'Включить промокод'}
-                  onChange={(next) => toggleCoupon(coupon, next)}
-                />
+              ))
+            ) : (
+              <div className="border-t border-gray-200 py-8 text-center text-gray-500">
+                Промокодов пока нет
               </div>
-            ))
-          ) : (
-            <div className="p-8 text-center text-gray-500">Промокодов пока нет</div>
-          )}
-        </Card>
+            )}
+          </Card>
 
-        <div className="flex flex-col gap-4 lg:gap-6">
           {/* Штампкарты — демо */}
-          <div className="flex flex-col gap-4 rounded-2xl border border-[#EBE0CE] bg-[#F5F0E8] p-4 lg:flex-row lg:items-center lg:gap-6 lg:p-6">
-            <span className="flex-none text-[40px]">🎁</span>
-            <div className="flex-1">
-              <h3 className="m-0 mb-1 flex items-center gap-2 text-lg font-bold leading-6 text-gray-900">
+          <div className="flex flex-col gap-4 rounded-2xl border border-[#EBE0CE] bg-[#F5F0E8] p-4 lg:flex-row lg:items-center lg:px-6 lg:py-5">
+            <span className="flex-none text-4xl leading-10">🎁</span>
+            <div className="min-w-0 flex-1">
+              <h3 className="m-0 flex items-center gap-2 text-lg font-bold leading-6 text-gray-900">
                 Штампкарты · 10-я пицца бесплатно <DemoTag />
               </h3>
               <p className="m-0 text-sm leading-5 text-gray-600">
                 Механики штампов пока нет — работают Treuepunkte (бонусные баллы) в личном кабинете
               </p>
             </div>
-            <a
-              href="/admin/loyalty"
-              className="inline-flex h-10 flex-none cursor-pointer items-center justify-center rounded-xl border border-[#DCC9A9] bg-[#F5F0E8] px-4 text-base font-bold leading-5 text-[#7C6145] no-underline transition hover:bg-[#EBE0CE]"
-            >
-              Настроить баллы
+            <a href="/admin/loyalty" className={`${btnOutline} h-10 flex-none px-4 text-base no-underline`}>
+              Настроить
             </a>
           </div>
+        </div>
 
-          {/* Продвижение */}
-          <Card className="flex flex-col gap-4 p-4 lg:p-6">
-            <h2 className="m-0 text-xl font-extrabold leading-7 tracking-[-.01em] text-gray-900 lg:text-2xl lg:leading-[30px]">
-              Продвижение
-            </h2>
-            <div className="flex items-center gap-4 border-b border-gray-200 pb-4">
-              <div className="min-w-0 flex-1">
-                <div className="text-base font-bold leading-6 text-gray-900">
-                  Баннер на главной витрине
-                </div>
-                <div className="overflow-hidden text-ellipsis whitespace-nowrap text-sm leading-5 text-gray-600">
-                  {mainBanner
-                    ? mainBanner.title || mainBanner.name || 'Первый баннер ленты'
-                    : bannersFailed
-                      ? 'Баннеры не загрузились'
-                      : bannersState.data
-                        ? 'Баннеров пока нет'
-                        : 'Загрузка…'}
-                </div>
+        {/* Правая колонка 380px: продвижение */}
+        <Card className="flex flex-col gap-3 p-4 lg:p-6">
+          <h2 className="m-0 text-xl font-extrabold leading-7 tracking-[-.01em] text-gray-900 lg:text-2xl lg:leading-[30px]">
+            Продвижение
+          </h2>
+          <div className="flex items-center gap-3 border-t border-gray-200 py-2">
+            <div className="min-w-0 flex-1">
+              <div className="text-base font-bold leading-6 text-gray-900">
+                Баннер на главной витрине
               </div>
-              {mainBanner ? (
-                <Toggle
-                  on={mainBanner.enabled !== false}
-                  busy={busyId === mainBanner._id}
-                  label={mainBanner.enabled !== false ? 'Выключить баннер' : 'Включить баннер'}
-                  onChange={(next) => toggleBanner(mainBanner, next)}
-                />
-              ) : bannersFailed ? (
-                <button type="button" onClick={bannersState.reload} className={`${btnSoft} h-8 px-3 text-sm`}>
-                  Повторить
-                </button>
-              ) : (
-                <a href="/admin/banners" className={`${btnSoft} h-8 px-3 text-sm no-underline`}>
-                  Создать
-                </a>
-              )}
+              <div className="overflow-hidden text-ellipsis whitespace-nowrap text-xs leading-4 text-gray-600">
+                {mainBanner
+                  ? mainBanner.title || mainBanner.name || 'Первый баннер ленты'
+                  : bannersFailed
+                    ? 'Баннеры не загрузились'
+                    : bannersState.data
+                      ? 'Баннеров пока нет'
+                      : 'Загрузка…'}
+              </div>
             </div>
-            <div className="flex items-center gap-4 border-b border-gray-200 pb-4">
-              <div className="min-w-0 flex-1">
-                <div className="text-base font-bold leading-6 text-gray-900">SMS-рассылка</div>
-                <div className="text-sm leading-5 text-gray-600">
-                  Twilio · получатели с согласием из чекаута
-                </div>
-              </div>
-              <a href="/admin/notifications" className={`${btnSoft} h-8 flex-none px-3 text-sm no-underline`}>
+            {mainBanner ? (
+              <Toggle
+                on={mainBanner.enabled !== false}
+                busy={busyId === mainBanner._id}
+                label={mainBanner.enabled !== false ? 'Выключить баннер' : 'Включить баннер'}
+                onChange={(next) => toggleBanner(mainBanner, next)}
+              />
+            ) : bannersFailed ? (
+              <button type="button" onClick={bannersState.reload} className={`${btnSoft} h-8 px-3 text-sm`}>
+                Повторить
+              </button>
+            ) : (
+              <a href="/admin/banners" className={`${btnSoft} h-8 px-3 text-sm no-underline`}>
                 Создать
               </a>
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 text-base font-bold leading-6 text-gray-900">
-                  Push-уведомления <DemoTag />
-                </div>
-                <div className="text-sm leading-5 text-gray-600">
-                  Появятся вместе с мобильным приложением
-                </div>
+            )}
+          </div>
+          <div className="flex items-center gap-3 border-t border-gray-200 py-2">
+            <div className="min-w-0 flex-1">
+              <div className="text-base font-bold leading-6 text-gray-900">SMS-рассылка</div>
+              <div className="text-xs leading-4 text-gray-600">
+                Twilio · получатели с согласием из чекаута
               </div>
-              <Toggle on={false} busy label="Недоступно" onChange={() => {}} />
             </div>
-          </Card>
-        </div>
+            <a href="/admin/notifications" className={`${btnSoft} h-8 flex-none px-3 text-sm no-underline`}>
+              Создать
+            </a>
+          </div>
+          <div className="flex items-center gap-3 border-t border-gray-200 py-2">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 text-base font-bold leading-6 text-gray-900">
+                Push-уведомления <DemoTag />
+              </div>
+              <div className="text-xs leading-4 text-gray-600">
+                Появятся вместе с мобильным приложением
+              </div>
+            </div>
+            <Toggle on={false} busy label="Недоступно" onChange={() => {}} />
+          </div>
+        </Card>
       </div>
 
-      {/* Мобилка: нижние действия */}
+      {/* Мобилка: нижние действия (на десктопе — в шапке по канве) */}
       <div className="flex flex-col gap-3 lg:hidden">
-        <a href="/admin/promotions/new" className={`${btnPrimary} h-12 w-full text-lg no-underline`}>
+        <a href="/admin/coupons/new" className={`${btnPrimary} h-12 w-full text-lg no-underline`}>
+          Новый промокод
+        </a>
+        <a href="/admin/promotions/new" className={`${btnOutline} h-12 w-full text-lg no-underline`}>
           <Icon d="M5 12h14 M12 5v14" size={20} />
           Создать акцию
-        </a>
-        <a href="/admin/coupons/new" className={`${btnOutline} h-12 w-full text-lg no-underline`}>
-          Новый промокод
         </a>
       </div>
     </div>
