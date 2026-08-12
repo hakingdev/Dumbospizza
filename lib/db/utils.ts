@@ -6,6 +6,7 @@ import { Category } from '../models/category.model';
 import { Order } from '../models/order.model';
 import { User } from '../models/user.model';
 import { LoyaltyProgram } from '../models/loyalty.model';
+import { PENDING_PAYMENT_STATUS } from '../orders/payment-draft';
 
 /**
  * Database utility functions for common operations.
@@ -94,7 +95,9 @@ export async function getDailySales(days = 7) {
            SUM(total) AS "totalSales",
            COUNT(*)::int AS count
     FROM orders
-    WHERE created_at >= ${date.toISOString()}::timestamptz AND status <> 'cancelled'
+    WHERE created_at >= ${date.toISOString()}::timestamptz
+      AND status <> 'cancelled'
+      AND status <> ${PENDING_PAYMENT_STATUS}
     GROUP BY 1
     ORDER BY 1
   `);
@@ -120,27 +123,45 @@ export async function getUserWithOrders(userId: string) {
 
 // Statistics
 export async function getAdminDashboardStats() {
-  const totalOrders = await Order.countDocuments();
+  /*
+   * Считаем ТОЛЬКО видимые заказы: невидимые драфты онлайн-оплаты
+   * (pending_payment) не попадают ни в тоталы, ни в выручку — иначе
+   * цифры расходятся с /api/orders, а неоплаченные корзины раздувают
+   * «Выручку за смену» (баг-репорт №10: totalOrders 762 vs orders.total 742).
+   */
+  const totalOrders = await Order.countDocuments({
+    status: { $ne: PENDING_PAYMENT_STATUS },
+  });
   const totalProducts = await Product.countDocuments();
   const totalCategories = await Category.countDocuments();
   const totalUsers = await User.countDocuments();
   const totalLoyaltyUsers = await LoyaltyProgram.countDocuments();
 
-  const pendingOrders = await Order.countDocuments({
-    status: { $in: ['new', 'preparing', 'ready_for_delivery', 'delivering'] },
-  });
-
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
 
+  /*
+   * «Ожидают обработки» — активные статусы ЗА СЕГОДНЯ, как на дашборде.
+   * Без ограничения по дате счётчик тянул зависшие заказы прошлых недель
+   * (37 шт.), пока дашборд по свежей ленте честно писал «всё принято».
+   * Старые зависшие видны во вкладке «Архив».
+   */
+  const pendingOrders = await Order.countDocuments({
+    status: { $in: ['new', 'preparing', 'ready_for_delivery', 'delivering'] },
+    createdAt: { $gte: todayStart },
+  });
+
   const todayOrders = await Order.countDocuments({
     createdAt: { $gte: todayStart },
+    status: { $ne: PENDING_PAYMENT_STATUS },
   });
 
   const salesRows: any = await db.execute(sql`
     SELECT COALESCE(SUM(total), 0) AS total
     FROM orders
-    WHERE created_at >= ${todayStart.toISOString()}::timestamptz AND status <> 'cancelled'
+    WHERE created_at >= ${todayStart.toISOString()}::timestamptz
+      AND status <> 'cancelled'
+      AND status <> ${PENDING_PAYMENT_STATUS}
   `);
   const salesList: any[] = Array.isArray(salesRows) ? salesRows : salesRows?.rows ?? [];
   const todaySales = Number(salesList[0]?.total) || 0;

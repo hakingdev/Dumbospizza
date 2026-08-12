@@ -6,6 +6,10 @@
 
 const nextConfig = {
   reactStrictMode: true,
+  // Несколько параллельных `next dev` на одном .next дают ложные 500
+  // (см. заметку next-dev-shared-cache-500) — второй инстанс запускать
+  // с NEXT_DIST_DIR=.next-<имя>
+  distDir: process.env.NEXT_DIST_DIR || '.next',
   images: {
     remotePatterns: [
       { protocol: 'https', hostname: '**.supabase.co' },
