@@ -1,11 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  buildLieferandoListMessage,
   buildPlanKeyboard,
   buildPlanMessageText,
   handlePlanUpdate,
   parsePlanCommand,
   PLAN_DELAY_PREFIX,
+  PLAN_LIEFERANDO_DONE_PREFIX,
+  PLAN_LIEFERANDO_LIST,
   PLAN_REFRESH,
+  type LieferandoActiveOrder,
   type PlanBotDeps,
 } from '../telegram-plan';
 import type { KitchenPlan } from '../eta/types';
@@ -91,11 +95,32 @@ function makeDeps(overrides: Partial<PlanBotDeps> = {}): PlanBotDeps {
       etaMinutes: 25,
       whatsappSent: true,
     })),
+    listLieferandoOrders: vi.fn(async () => LIEF_ORDERS),
+    completeOrder: vi.fn(async () => ({ ok: true, orderNumber: 'L-DQFFY3' })),
     allowedChatId: '-100123',
     log: () => {},
     ...overrides,
   };
 }
+
+const LIEF_ORDERS: LieferandoActiveOrder[] = [
+  {
+    id: 'lief1',
+    orderNumber: 'L-DQFFY3',
+    customerName: 'Erika Muster',
+    total: 24.9,
+    status: 'preparing',
+    createdAt: '2026-08-12T14:40:00.000Z',
+  },
+  {
+    id: 'lief2',
+    orderNumber: 'L-AB12',
+    customerName: 'Hans Wurst',
+    total: 12.5,
+    status: 'new',
+    createdAt: '2026-08-12T15:00:00.000Z',
+  },
+];
 
 describe('parsePlanCommand', () => {
   it('распознаёт /plan, /start, /help (в т.ч. с @botname)', () => {
@@ -385,5 +410,69 @@ describe('handlePlanUpdate: «заказ опаздывает»', () => {
     );
     expect(res).toEqual({ handled: false, reason: 'wrong_chat' });
     expect(deps.applyDelay).not.toHaveBeenCalled();
+  });
+});
+
+describe('handlePlanUpdate: «Заказы Lieferando»', () => {
+  const cb = (data: string) => ({
+    callback_query: {
+      id: 'cb1',
+      data,
+      message: { message_id: 42, chat: { id: -100123 } },
+    },
+  });
+
+  it('кнопка списка шлёт отдельное сообщение с заказами и кнопками «Завершить»', async () => {
+    const deps = makeDeps();
+    const res = await handlePlanUpdate(cb(PLAN_LIEFERANDO_LIST), deps);
+    expect(res).toEqual({ handled: true, reason: 'lieferando_list' });
+    expect(deps.listLieferandoOrders).toHaveBeenCalled();
+    const [, text, keyboard] = (deps.sendMessage as any).mock.calls[0];
+    expect(text).toContain('Заказы Lieferando в работе');
+    expect(text).toContain('#L-DQFFY3');
+    expect(text).toContain('24,90 €');
+    const flat = (keyboard.inline_keyboard as any[]).flat();
+    expect(flat.some((b) => b.callback_data === `${PLAN_LIEFERANDO_DONE_PREFIX}lief1`)).toBe(true);
+    expect(flat.some((b) => b.callback_data === PLAN_REFRESH)).toBe(true);
+  });
+
+  it('пустой список — отдельное сообщение «активных нет», без кнопок завершения', async () => {
+    const deps = makeDeps({ listLieferandoOrders: vi.fn(async () => []) });
+    const res = await handlePlanUpdate(cb(PLAN_LIEFERANDO_LIST), deps);
+    expect(res).toEqual({ handled: true, reason: 'lieferando_list' });
+    const [, text, keyboard] = (deps.sendMessage as any).mock.calls[0];
+    expect(text).toContain('Активных заказов Lieferando нет');
+    const flat = (keyboard.inline_keyboard as any[]).flat();
+    expect(flat.every((b: any) => !b.callback_data.startsWith(PLAN_LIEFERANDO_DONE_PREFIX))).toBe(true);
+  });
+
+  it('«Завершить» вызывает completeOrder и перерисовывает список в том же сообщении', async () => {
+    const deps = makeDeps({
+      listLieferandoOrders: vi.fn(async () => [LIEF_ORDERS[1]]), // после завершения остался один
+    });
+    const res = await handlePlanUpdate(cb(`${PLAN_LIEFERANDO_DONE_PREFIX}lief1`), deps);
+    expect(res).toEqual({ handled: true, reason: 'lieferando_completed' });
+    expect(deps.completeOrder).toHaveBeenCalledWith('lief1');
+    expect(deps.answerCallbackQuery).toHaveBeenCalledWith(
+      'cb1',
+      expect.stringContaining('завершён')
+    );
+    const [, mid, text] = (deps.editMessage as any).mock.calls[0];
+    expect(mid).toBe(42);
+    expect(text).toContain('#L-AB12');
+    expect(text).not.toContain('#L-DQFFY3');
+  });
+
+  it('ошибка завершения — алерт, статус не меняется, список не трогаем', async () => {
+    const deps = makeDeps({ completeOrder: vi.fn(async () => ({ ok: false })) });
+    const res = await handlePlanUpdate(cb(`${PLAN_LIEFERANDO_DONE_PREFIX}liefX`), deps);
+    expect(res).toEqual({ handled: false, reason: 'lieferando_failed' });
+    expect(deps.editMessage).not.toHaveBeenCalled();
+  });
+
+  it('buildLieferandoListMessage считает минуты в работе от createdAt', () => {
+    const { text } = buildLieferandoListMessage(LIEF_ORDERS, new Date('2026-08-12T15:10:00.000Z'));
+    expect(text).toContain('#L-DQFFY3 — Erika Muster · 24,90 € · готовится · 30 мин в работе');
+    expect(text).toContain('#L-AB12 — Hans Wurst · 12,50 € · новый · 10 мин в работе');
   });
 });

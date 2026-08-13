@@ -109,7 +109,7 @@ export function buildDispatchRules(courierCount: number): string[] {
 // ---------------------------------------------------------------------------
 
 /** Эти статусы попадают в план (готовить/везти). delivering — только как «курьер занят». */
-const PLAN_STATUSES = ['new', 'preparing', 'ready_for_delivery', 'delivering'] as const;
+export const PLAN_STATUSES = ['new', 'preparing', 'ready_for_delivery', 'delivering'] as const;
 /** Заказы старше этого возраста не берём (зависшие статусы). */
 const PLAN_LOOKBACK_MS = 3 * 60 * 60 * 1000;
 

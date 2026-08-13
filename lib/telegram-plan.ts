@@ -12,6 +12,8 @@
  *   - ⏰ кнопки «#N +10/+15/+20/+30 мин» под планом для опаздывающих заказов —
  *     сдвигают обещание и шлют гостю WhatsApp о задержке на немецком через
  *     Twilio (lib/orders/delay.ts).
+ *   - 🧾 кнопка «Заказы Lieferando» — список загруженных чеков в работе;
+ *     «Завершить» переводит заказ в completed и убирает его из плана.
  *
  * Отдельный токен/секрет/чат: storeSettings.telegramPlanBotToken /
  * telegramPlanChatId / telegramPlanWebhookSecret, фолбэк — env
@@ -20,8 +22,9 @@
  */
 
 import { getSetting } from './settings';
-import { buildKitchenPlan } from './eta/kitchen-plan';
+import { buildKitchenPlan, PLAN_STATUSES } from './eta/kitchen-plan';
 import type { KitchenPlan } from './eta/types';
+import { Order } from './models/order.model';
 import {
   parseLieferandoReceipt,
   importLieferandoReceipt,
@@ -30,6 +33,7 @@ import {
   type ReceiptImportResult,
 } from './lieferando/receipt-import';
 import { applyOrderDelay, ORDER_DELAY_CHOICES, type OrderDelayResult } from './orders/delay';
+import { isLieferandoOrder } from './orders/order-source';
 
 const STORE_SETTINGS_KEY = 'storeSettings';
 const TZ = 'Europe/Berlin';
@@ -38,6 +42,10 @@ const TZ = 'Europe/Berlin';
 export const PLAN_REFRESH = 'plan_refresh';
 /** «Заказ опаздывает»: plan_delay_<orderId>_<минуты>. */
 export const PLAN_DELAY_PREFIX = 'plan_delay_';
+/** «Заказы Lieferando» — список загруженных чеков в работе. */
+export const PLAN_LIEFERANDO_LIST = 'plan_lief_list';
+/** «Завершить Lieferando-заказ»: plan_lief_done_<orderId>. */
+export const PLAN_LIEFERANDO_DONE_PREFIX = 'plan_lief_done_';
 
 export interface PlanBotConfig {
   botToken: string;
@@ -146,7 +154,10 @@ export type TgInlineKeyboard = {
  */
 export function buildPlanKeyboard(plan?: KitchenPlan | null): TgInlineKeyboard {
   const rows: TgInlineKeyboard['inline_keyboard'] = [
-    [{ text: '🔄 Пересчитать план', callback_data: PLAN_REFRESH }],
+    [
+      { text: '🔄 Пересчитать план', callback_data: PLAN_REFRESH },
+      { text: '🧾 Заказы Lieferando', callback_data: PLAN_LIEFERANDO_LIST },
+    ],
   ];
   for (const late of plan?.lateOrders ?? []) {
     if (!late.orderId || !late.hasPhone) continue;
@@ -167,8 +178,64 @@ const HELP_TEXT = [
   '',
   '📸 Пришлите фото или PDF чека Lieferando — заказ будет распознан и добавлен в план.',
   '',
+  '🧾 «Заказы Lieferando» под планом — список загруженных чеков в работе; «Завершить» убирает выполненный заказ из планирования.',
+  '',
   '⏰ Если заказ опаздывает, под планом появятся кнопки «+10/+15/+20/+30 мин» — гость получит WhatsApp о задержке на немецком.',
 ].join('\n');
+
+// --- список Lieferando-заказов в работе -------------------------------------
+
+/** Активный Lieferando-заказ для списка в боте. */
+export type LieferandoActiveOrder = {
+  id: string;
+  orderNumber: string;
+  customerName: string;
+  total: number;
+  status: string;
+  createdAt: string | Date;
+};
+
+const LIEF_STATUS_LABEL: Record<string, string> = {
+  new: 'новый',
+  preparing: 'готовится',
+  ready_for_delivery: 'готов',
+  delivering: 'в доставке',
+};
+
+/**
+ * Сообщение-список загруженных чеков Lieferando: по кнопке «Завершить» на
+ * каждый заказ — выполненный уходит из очереди анализа плана.
+ */
+export function buildLieferandoListMessage(
+  orders: LieferandoActiveOrder[],
+  now: Date = new Date()
+): { text: string; keyboard: TgInlineKeyboard } {
+  if (orders.length === 0) {
+    return {
+      text: '🧾 Активных заказов Lieferando нет — все чеки завершены.',
+      keyboard: { inline_keyboard: [[{ text: '🔄 Пересчитать план', callback_data: PLAN_REFRESH }]] },
+    };
+  }
+  const lines = [`🧾 <b>Заказы Lieferando в работе</b> · ${orders.length} шт.`, ''];
+  const rows: TgInlineKeyboard['inline_keyboard'] = [];
+  for (const o of orders) {
+    const minutes = Math.max(0, Math.round((now.getTime() - new Date(o.createdAt).getTime()) / 60000));
+    lines.push(
+      `#${escapeHtml(o.orderNumber)} — ${escapeHtml(o.customerName)} · ${formatEuro(o.total)} · ${
+        LIEF_STATUS_LABEL[o.status] ?? o.status
+      } · ${minutes} мин в работе`
+    );
+    rows.push([
+      {
+        text: `✅ Завершить #${o.orderNumber}`,
+        callback_data: `${PLAN_LIEFERANDO_DONE_PREFIX}${o.id}`,
+      },
+    ]);
+  }
+  lines.push('', '«Завершить» переводит заказ в «Завершён» и убирает его из плана.');
+  rows.push([{ text: '🔄 Пересчитать план', callback_data: PLAN_REFRESH }]);
+  return { text: lines.join('\n'), keyboard: { inline_keyboard: rows } };
+}
 
 // --- приём чеков Lieferando ---------------------------------------------------
 
@@ -274,6 +341,10 @@ export interface PlanBotDeps {
   importReceipt: (fileId: string) => PromiseLike<ReceiptImportResult>;
   /** «Заказ опаздывает на N минут»: сдвиг обещания + WhatsApp гостю. */
   applyDelay: (orderId: string, delayMinutes: number) => PromiseLike<OrderDelayResult>;
+  /** Активные Lieferando-заказы (загруженные чеки) для списка в боте. */
+  listLieferandoOrders: () => PromiseLike<LieferandoActiveOrder[]>;
+  /** Завершить заказ — уходит из очереди анализа плана. */
+  completeOrder: (orderId: string) => PromiseLike<{ ok: boolean; orderNumber?: string }>;
   allowedChatId: string;
   log?: (...args: any[]) => void;
 }
@@ -290,6 +361,9 @@ export type PlanBotResult = {
     | 'receipt_error'
     | 'delay_applied'
     | 'delay_failed'
+    | 'lieferando_list'
+    | 'lieferando_completed'
+    | 'lieferando_failed'
     | 'wrong_chat'
     | 'not_ours'
     | 'error';
@@ -354,6 +428,54 @@ export async function handlePlanUpdate(update: any, deps: PlanBotDeps): Promise<
       );
       await refreshMessage();
       return { handled: true, reason: 'delay_applied' };
+    }
+
+    // «Заказы Lieferando» — отправляем отдельным сообщением список чеков в работе.
+    if (data === PLAN_LIEFERANDO_LIST) {
+      let orders: LieferandoActiveOrder[];
+      try {
+        orders = await deps.listLieferandoOrders();
+      } catch (e) {
+        log('listLieferandoOrders failed', (e as Error)?.message);
+        await ack('⚠️ Не удалось загрузить список');
+        return { handled: false, reason: 'error' };
+      }
+      await ack(orders.length ? `Заказов в работе: ${orders.length}` : 'Активных заказов нет');
+      const list = buildLieferandoListMessage(orders);
+      try {
+        await deps.sendMessage(chatId, list.text, list.keyboard);
+      } catch (e) {
+        log('sendMessage(lief list) failed', (e as Error)?.message);
+        return { handled: false, reason: 'error' };
+      }
+      return { handled: true, reason: 'lieferando_list' };
+    }
+
+    // «Завершить Lieferando-заказ» — completed + обновляем список в этом же сообщении.
+    if (data.startsWith(PLAN_LIEFERANDO_DONE_PREFIX)) {
+      const orderId = data.slice(PLAN_LIEFERANDO_DONE_PREFIX.length);
+      let done: { ok: boolean; orderNumber?: string };
+      try {
+        done = await deps.completeOrder(orderId);
+      } catch (e) {
+        log('completeOrder failed', (e as Error)?.message);
+        done = { ok: false };
+      }
+      if (!done.ok) {
+        await ack('⚠️ Не удалось завершить заказ');
+        return { handled: false, reason: 'lieferando_failed' };
+      }
+      await ack(`✅ #${done.orderNumber ?? ''} завершён — убран из плана`);
+      // Перерисовать список без завершённого (best-effort).
+      if (messageId != null) {
+        try {
+          const list = buildLieferandoListMessage(await deps.listLieferandoOrders());
+          await deps.editMessage(chatId, messageId, list.text, list.keyboard);
+        } catch (e) {
+          log('refresh lief list failed', (e as Error)?.message);
+        }
+      }
+      return { handled: true, reason: 'lieferando_completed' };
     }
 
     if (data !== PLAN_REFRESH) {
@@ -512,6 +634,41 @@ export async function processPlanUpdate(
       return importLieferandoReceipt(parsed);
     },
     applyDelay: (orderId, delayMinutes) => applyOrderDelay(orderId, delayMinutes),
+    listLieferandoOrders: async () => {
+      const orders = await Order.find({
+        source: 'lieferando',
+        status: { $in: [...PLAN_STATUSES] },
+      })
+        .sort({ createdAt: 1 })
+        .limit(20);
+      return (orders || []).map((o: any) => ({
+        id: String(o._id),
+        orderNumber: String(o.orderNumber || ''),
+        customerName: String(o.customerName || '—'),
+        total: Number(o.total) || 0,
+        status: String(o.status || ''),
+        createdAt: o.createdAt,
+      }));
+    },
+    completeOrder: async (orderId) => {
+      const order: any = await Order.findById(orderId);
+      if (!order) return { ok: false };
+      // Только Lieferando: заказы сайта закрывает бот заказов — там на completed
+      // висят начисление бонусов и WhatsApp гостю (lib/telegram.ts onStatusChanged).
+      // Закрытие «сайтового» заказа отсюда молча пропустило бы и то, и другое.
+      if (!isLieferandoOrder(order)) {
+        console.error(`[tg-plan] refusing to complete non-Lieferando order ${orderId}`);
+        return { ok: false };
+      }
+      // Идемпотентно, как статус-кнопки первого бота: та же история statusUpdates.
+      if (order.status !== 'completed') {
+        order.status = 'completed';
+        order.statusUpdates = order.statusUpdates || [];
+        order.statusUpdates.push({ status: 'completed', timestamp: new Date() });
+        await order.save();
+      }
+      return { ok: true, orderNumber: String(order.orderNumber || '') };
+    },
     allowedChatId: config.chatId,
   };
 
