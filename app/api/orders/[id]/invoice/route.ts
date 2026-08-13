@@ -8,6 +8,7 @@ import { getCustomerSession } from '../../../../../lib/customer-auth'
 import { isOnlinePaymentMethod } from '../../../../../lib/orders/tax'
 import { buildInvoicePdf } from '../../../../../lib/orders/invoice-pdf'
 import { verifyOrderAccessToken } from '../../../../../lib/orders/access-token'
+import { isLieferandoOrder } from '../../../../../lib/orders/order-source'
 import { rateLimit, getClientIp, logSecurityEvent } from '../../../../../lib/security/rate-limit'
 
 // PDF — бинарные данные, нужен Node.js runtime (не Edge).
@@ -80,6 +81,18 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         hadToken: Boolean(token),
       })
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Заказ Lieferando: счёт клиенту выставляет Lieferando (у него же и деньги).
+    // Наш счёт с нашим НДС был бы вторым документом на ту же покупку.
+    if (isLieferandoOrder(order)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Lieferando-Bestellung: die Rechnung stellt Lieferando aus.',
+        },
+        { status: 403 }
+      )
     }
 
     // Счёт с выделением НДС — только для онлайн-оплаты.

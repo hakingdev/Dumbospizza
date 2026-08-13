@@ -3,6 +3,7 @@ import * as XLSX from 'xlsx';
 import { connectToDatabase } from '../../../../lib/models';
 import { Order } from '../../../../lib/models/order.model';
 import { visibleOrderStatusFilter } from '../../../../lib/orders/payment-draft';
+import { ownRevenueQuery } from '../../../../lib/orders/order-source';
 
 export const dynamic = 'force-dynamic';
 
@@ -76,8 +77,10 @@ export async function GET(request: NextRequest) {
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
 
-    const query: Record<string, any> = {};
-    // Драфты онлайн-оплаты (pending_payment) в экспорт не попадают.
+    // Экспорт — это Purchase-события для рекламных систем (offline conversions)
+    // и отчёт по выручке. Драфты онлайн-оплаты (pending_payment) не попадают, и
+    // заказы Lieferando тоже: их деньги не наши (lib/orders/order-source.ts).
+    const query: Record<string, any> = { ...ownRevenueQuery() };
     query.status = visibleOrderStatusFilter(status);
     if (startDate || endDate) {
       query.createdAt = {};

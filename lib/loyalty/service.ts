@@ -12,6 +12,7 @@
 import { and, eq, lt, asc, sql } from 'drizzle-orm';
 import db from '../db/client';
 import { loyaltyPrograms, loyaltyTransactions, orders, users } from '../db/schema';
+import { isLieferandoOrder, ownRevenueSqlFor } from '../orders/order-source';
 import {
   getLoyaltyRules,
   resolveTier,
@@ -74,7 +75,11 @@ async function ensureProgram(
   return again[0];
 }
 
-/** Число завершённых (completed) заказов клиента — для уровня. */
+/**
+ * Число завершённых (completed) заказов клиента — для уровня.
+ * Заказы Lieferando не считаются: бонусная программа — наша, а те деньги
+ * прошли через Lieferando (см. lib/orders/order-source.ts).
+ */
 export async function countCompletedOrders(userId: string, phoneNumber?: string): Promise<number> {
   const conds = phoneNumber
     ? sql`(${orders.user} = ${userId} OR ${orders.phoneNumber} = ${phoneNumber})`
@@ -82,7 +87,7 @@ export async function countCompletedOrders(userId: string, phoneNumber?: string)
   const rows = await db
     .select({ c: sql<number>`count(*)::int` })
     .from(orders)
-    .where(and(eq(orders.status, 'completed'), conds));
+    .where(and(eq(orders.status, 'completed'), ownRevenueSqlFor(orders.source), conds));
   return rows[0]?.c ?? 0;
 }
 
@@ -117,6 +122,10 @@ export interface EarnResult {
  * eligibleAmount = order.total (деньги, уже без части, погашенной баллами).
  */
 export async function earnForCompletedOrder(order: any): Promise<EarnResult | null> {
+  // Заказ Lieferando: деньги прошли через Lieferando, наши баллы за него не
+  // начисляем (иначе клиент копит нашу скидку на чужой выручке).
+  if (isLieferandoOrder(order)) return null;
+
   const orderId = String(order._id || order.id);
   const userId = await resolveUserId(order);
   if (!userId) return null;

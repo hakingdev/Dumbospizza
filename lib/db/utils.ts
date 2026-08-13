@@ -7,6 +7,7 @@ import { Order } from '../models/order.model';
 import { User } from '../models/user.model';
 import { LoyaltyProgram } from '../models/loyalty.model';
 import { PENDING_PAYMENT_STATUS } from '../orders/payment-draft';
+import { ownRevenueQuery, ownRevenueSql } from '../orders/order-source';
 
 /**
  * Database utility functions for common operations.
@@ -98,6 +99,7 @@ export async function getDailySales(days = 7) {
     WHERE created_at >= ${date.toISOString()}::timestamptz
       AND status <> 'cancelled'
       AND status <> ${PENDING_PAYMENT_STATUS}
+      AND ${ownRevenueSql()}
     GROUP BY 1
     ORDER BY 1
   `);
@@ -128,8 +130,14 @@ export async function getAdminDashboardStats() {
    * (pending_payment) не попадают ни в тоталы, ни в выручку — иначе
    * цифры расходятся с /api/orders, а неоплаченные корзины раздувают
    * «Выручку за смену» (баг-репорт №10: totalOrders 762 vs orders.total 742).
+   *
+   * По той же причине исключены заказы Lieferando (source='lieferando'):
+   * это чужая касса — их деньги ресторан видит в портале Lieferando, и в
+   * нашем балансе они были бы двойным счётом (см. lib/orders/order-source.ts).
+   * Кухонный счётчик pendingOrders ниже — наоборот, считает ВСЕ заказы.
    */
   const totalOrders = await Order.countDocuments({
+    ...ownRevenueQuery(),
     status: { $ne: PENDING_PAYMENT_STATUS },
   });
   const totalProducts = await Product.countDocuments();
@@ -145,6 +153,9 @@ export async function getAdminDashboardStats() {
    * Без ограничения по дате счётчик тянул зависшие заказы прошлых недель
    * (37 шт.), пока дашборд по свежей ленте честно писал «всё принято».
    * Старые зависшие видны во вкладке «Архив».
+   *
+   * ЕДИНСТВЕННЫЙ счётчик здесь БЕЗ фильтра по source: это загрузка кухни, а
+   * заказ Lieferando занимает печь и курьера так же, как заказ с сайта.
    */
   const pendingOrders = await Order.countDocuments({
     status: { $in: ['new', 'preparing', 'ready_for_delivery', 'delivering'] },
@@ -152,6 +163,7 @@ export async function getAdminDashboardStats() {
   });
 
   const todayOrders = await Order.countDocuments({
+    ...ownRevenueQuery(),
     createdAt: { $gte: todayStart },
     status: { $ne: PENDING_PAYMENT_STATUS },
   });
@@ -162,6 +174,7 @@ export async function getAdminDashboardStats() {
     WHERE created_at >= ${todayStart.toISOString()}::timestamptz
       AND status <> 'cancelled'
       AND status <> ${PENDING_PAYMENT_STATUS}
+      AND ${ownRevenueSql()}
   `);
   const salesList: any[] = Array.isArray(salesRows) ? salesRows : salesRows?.rows ?? [];
   const todaySales = Number(salesList[0]?.total) || 0;

@@ -2,6 +2,7 @@ import type { NextRequest } from 'next/server';
 import type { IOrder, IOrderItem } from '../models/order.model';
 import { sendMetaCapiPurchase } from './meta-capi-purchase';
 import { sendTikTokCompletePayment } from './tiktok-events-purchase';
+import { isLieferandoOrder } from '../orders/order-source';
 
 function clientIpUa(request: NextRequest): { ip?: string; ua?: string } {
   const xf = request.headers.get('x-forwarded-for');
@@ -25,6 +26,11 @@ function productIdString(p: IOrderItem['product']): string {
  * Серверные конверсии после успешного сохранения заказа (не блокирует ответ клиенту).
  */
 export async function sendServerPurchaseConversionEvents(order: IOrder, request: NextRequest): Promise<void> {
+  // Страховка: заказ Lieferando не наша конверсия (реклама привела клиента к
+  // ним, деньги их). Сегодня такие заказы не проходят через finalize, но если
+  // когда-нибудь начнут — Purchase в Meta/TikTok уйти не должен.
+  if (isLieferandoOrder(order as any)) return;
+
   const { ip, ua } = clientIpUa(request);
   const currency = 'EUR';
   const contentIds = order.items.map((i) => productIdString(i.product));

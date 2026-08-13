@@ -92,11 +92,16 @@ export default function AnalyticsPage() {
   /**
    * Топ товаров по последним 100 заказам (без отменённых). «Заказов» —
    * число заказов с товаром (не штуки), как в колонке макета.
+   *
+   * Заказы Lieferando исключены: выручка по ним считается в портале Lieferando,
+   * иначе колонка «Выручка» здесь смешивала бы две кассы
+   * (см. lib/orders/order-source.ts).
    */
   const topProducts = useMemo(() => {
     const map = new Map<string, { name: string; orders: number; revenue: number }>();
     for (const order of feed.orders) {
       if (order.status === 'cancelled') continue;
+      if (order.source === 'lieferando') continue;
       const seen = new Set<string>();
       for (const item of order.items || []) {
         const name = stripPromoLabels(item.name);

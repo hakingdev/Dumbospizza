@@ -4,6 +4,7 @@ import { and, eq, inArray, sql, desc } from 'drizzle-orm';
 import db from '../../../../../lib/db/client';
 import { users, orders, loyaltyPrograms } from '../../../../../lib/db/schema';
 import { authOptions, isStaff } from '../../../../../lib/auth';
+import { ownRevenueSqlFor } from '../../../../../lib/orders/order-source';
 
 // GET /api/admin/customers/top — самые активные клиенты (по числу заказов / тратам)
 export async function GET() {
@@ -13,6 +14,8 @@ export async function GET() {
   }
   try {
     // Агрегаты по телефону: число заказов и сумма (по завершённым).
+    // Только наша касса: заказы Lieferando считает Lieferando, иначе клиент
+    // попадал бы в топ по чужой выручке (см. lib/orders/order-source.ts).
     const agg = await db
       .select({
         phoneNumber: orders.phoneNumber,
@@ -20,6 +23,7 @@ export async function GET() {
         totalSpent: sql<number>`coalesce(sum(case when ${orders.status} = 'completed' then ${orders.total} else 0 end), 0)`,
       })
       .from(orders)
+      .where(ownRevenueSqlFor(orders.source))
       .groupBy(orders.phoneNumber)
       .orderBy(desc(sql`count(*)`))
       .limit(20);

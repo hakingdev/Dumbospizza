@@ -1,5 +1,6 @@
 import { Order } from '../models/order.model';
 import { LoyaltyProgram } from '../models/loyalty.model';
+import { ownRevenueQuery } from '../orders/order-source';
 import type { PromotionAudience, PromotionChannel } from './types';
 
 export interface PromotionCustomerContext {
@@ -24,7 +25,10 @@ export async function resolvePromotionCustomerContext(
   if (!phone) return undefined;
 
   const [orderCount, loyalty] = await Promise.all([
+    // Только наши заказы: акция «для новых клиентов» не должна отваливаться
+    // из-за того, что человек раньше заказывал через Lieferando.
     Order.countDocuments({
+      ...ownRevenueQuery(),
       phoneNumber: phone,
       status: { $nin: ['cancelled'] },
     }),

@@ -121,6 +121,8 @@ export type AdminOrder = {
   notes?: string;
   desiredDeliveryTime?: string;
   etaMinutes?: number;
+  /** Канал: 'website' — наш сайт, 'lieferando' — чек Lieferando (чужая касса). */
+  source?: 'website' | 'lieferando';
   createdAt: string;
   statusUpdates?: { status: string; timestamp: string }[];
 };

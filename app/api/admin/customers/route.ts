@@ -5,6 +5,7 @@ import db from '../../../../lib/db/client';
 import { users, orders, loyaltyPrograms } from '../../../../lib/db/schema';
 import { authOptions, isStaff } from '../../../../lib/auth';
 import { PENDING_PAYMENT_STATUS } from '../../../../lib/orders/payment-draft';
+import { ownRevenueSqlFor } from '../../../../lib/orders/order-source';
 
 // GET /api/admin/customers — список клиентов с числом заказов и балансом баллов
 export async function GET(request: NextRequest) {
@@ -51,7 +52,8 @@ export async function GET(request: NextRequest) {
       : [];
     const balanceByUser = new Map(balances.map((b) => [b.user, Number(b.balance)]));
 
-    // Число заказов по номеру телефона (без драфтов незавершённой онлайн-оплаты).
+    // Число заказов по номеру телефона: без драфтов незавершённой онлайн-оплаты
+    // и без заказов Lieferando (чужая касса — см. lib/orders/order-source.ts).
     const counts = phones.length
       ? await db
           .select({
@@ -60,7 +62,11 @@ export async function GET(request: NextRequest) {
           })
           .from(orders)
           .where(
-            and(inArray(orders.phoneNumber, phones), ne(orders.status, PENDING_PAYMENT_STATUS))
+            and(
+              inArray(orders.phoneNumber, phones),
+              ne(orders.status, PENDING_PAYMENT_STATUS),
+              ownRevenueSqlFor(orders.source)
+            )
           )
           .groupBy(orders.phoneNumber)
       : [];
