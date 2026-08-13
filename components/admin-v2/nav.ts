@@ -95,8 +95,9 @@ export const MOBILE_TABS: { key: string; label: string }[] = [
 /** Разделы, живущие в мобильном «Ещё» (bottom sheet). */
 export const MOBILE_MORE_KEYS = ['venue', 'reviews', 'marketing', 'settings', 'help', 'news'];
 
-/** Активный раздел по pathname. */
+/** Активный раздел по pathname (включая зеркала экранов на /dev-admin-preview). */
 export function activeNavKey(pathname: string): string {
+  pathname = pathname.replace(/^\/dev-admin-preview(?=\/|$)/, ADMIN_V2_BASE);
   if (!pathname.startsWith(ADMIN_V2_BASE)) return 'home';
   const rest = pathname.slice(ADMIN_V2_BASE.length).replace(/^\//, '');
   const first = rest.split('/')[0];

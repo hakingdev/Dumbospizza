@@ -1,13 +1,14 @@
 'use client';
 
 /**
- * Настройки (канва D9 / 10): пользователи и права (реальный список),
- * аккаунт (название — сохраняется, звук нового заказа — работает),
- * язык и автопечать — заглушки.
+ * Настройки (канва D9, узел 28:937): вкладки «Пользователи и права» /
+ * «Аккаунт» / «Уведомления» + реквизиты заведения (storeName/phone/email/
+ * address из storeSettings) с save-bar, считающим изменённые поля.
+ * Пользователи — реальный список; язык и автопечать — заглушки.
  */
 
 import { signOut, useSession } from 'next-auth/react';
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import {
   patchStoreSettings,
   useJson,
@@ -15,12 +16,47 @@ import {
 } from '../../../components/admin-v2/hooks';
 import { initials } from '../../../components/admin-v2/format';
 import { isSoundEnabled, playNewOrderBeep, setSoundEnabled } from '../../../components/admin-v2/sound';
-import { Card, DemoTag, ErrorBanner, Icon, LoadError, Loading, btnOutline, btnPrimary } from '../../../components/admin-v2/ui';
+import { Card, DemoTag, ErrorBanner, Icon, LoadError, Loading, TabPill, btnOutline, btnPrimary } from '../../../components/admin-v2/ui';
 
 const ROLE_LABELS: Record<string, { role: string; access: string }> = {
   admin: { role: 'Администратор', access: 'Все разделы' },
   staff: { role: 'Персонал', access: 'Заказы, Меню' },
 };
+
+const TABS = [
+  { key: 'users', label: 'Пользователи и права' },
+  { key: 'account', label: 'Аккаунт' },
+  { key: 'notifications', label: 'Уведомления' },
+] as const;
+
+type TabKey = (typeof TABS)[number]['key'];
+
+/** Реквизиты заведения из канвы D9 — все ключи реально живут в storeSettings. */
+const ACCOUNT_FIELDS = [
+  { key: 'storeName', label: 'Название заведения' },
+  { key: 'phone', label: 'Телефон' },
+  { key: 'email', label: 'E-Mail для чеков' },
+  { key: 'address', label: 'Адрес' },
+] as const;
+
+type AccountForm = Record<(typeof ACCOUNT_FIELDS)[number]['key'], string>;
+
+function baselineFrom(settings: Record<string, any>): AccountForm {
+  return {
+    storeName: settings.storeName || 'Dumbos Pizza',
+    phone: settings.phone || '',
+    email: settings.email || '',
+    address: settings.address || '',
+  };
+}
+
+function pluralFields(n: number): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return 'поле';
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'поля';
+  return 'полей';
+}
 
 function Toggle({
   on,
@@ -63,24 +99,30 @@ function SettingsPageInner() {
     (user) => user.role === 'admin' || user.role === 'staff'
   );
 
-  const [storeName, setStoreName] = useState('');
-  const [initialized, setInitialized] = useState(false);
+  const [tab, setTab] = useState<TabKey>('users');
+  const [form, setForm] = useState<AccountForm | null>(null);
   const [saving, setSaving] = useState(false);
   const [sound, setSound] = useState(true);
 
   useEffect(() => setSound(isSoundEnabled()), []);
   useEffect(() => {
-    if (store.settings && !initialized) {
-      setStoreName(store.settings.storeName || 'Dumbos Pizza');
-      setInitialized(true);
-    }
-  }, [store.settings, initialized]);
+    if (store.settings && !form) setForm(baselineFrom(store.settings));
+  }, [store.settings, form]);
 
-  const dirty = initialized && storeName !== (store.settings?.storeName || 'Dumbos Pizza');
+  const baseline = useMemo(
+    () => (store.settings ? baselineFrom(store.settings) : null),
+    [store.settings]
+  );
+  const dirtyKeys =
+    form && baseline
+      ? ACCOUNT_FIELDS.map((field) => field.key).filter((key) => form[key] !== baseline[key])
+      : [];
 
   const handleSave = async () => {
+    if (!form || !dirtyKeys.length) return;
     setSaving(true);
-    const ok = await patchStoreSettings({ storeName });
+    const patch = Object.fromEntries(dirtyKeys.map((key) => [key, form[key]]));
+    const ok = await patchStoreSettings(patch);
     setSaving(false);
     if (!ok) {
       alert('Не удалось сохранить (нужны права администратора)');
@@ -106,13 +148,23 @@ function SettingsPageInner() {
 
       {store.error && !store.settings && (
         <ErrorBanner
-          text="Настройки заведения не загрузились — название показано по умолчанию, сохранение недоступно"
+          text="Настройки заведения не загрузились — реквизиты показаны по умолчанию, сохранение недоступно"
           onRetry={store.reload}
         />
       )}
 
-      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[1fr_380px] lg:gap-6">
-        {/* Пользователи и права */}
+      <div className="flex flex-wrap gap-2">
+        {TABS.map((item) => (
+          <TabPill
+            key={item.key}
+            label={item.label}
+            active={tab === item.key}
+            onClick={() => setTab(item.key)}
+          />
+        ))}
+      </div>
+
+      {tab === 'users' && (
         <Card>
           <div className="flex flex-col gap-3 border-b border-gray-200 p-4 lg:flex-row lg:items-center lg:justify-between lg:gap-4 lg:p-6">
             <h2 className="m-0 text-xl font-extrabold leading-7 tracking-[-.01em] text-gray-900 lg:text-2xl lg:leading-[30px]">
@@ -185,24 +237,31 @@ function SettingsPageInner() {
             <div className="p-8 text-center text-gray-500">Пользователей с доступом пока нет</div>
           )}
         </Card>
+      )}
 
-        <div className="flex flex-col gap-4 lg:gap-6">
-          {/* Аккаунт */}
+      {tab === 'account' && (
+        <>
           <Card className="flex flex-col gap-4 p-4 lg:p-6">
-            <h3 className="m-0 text-lg font-bold leading-6 text-gray-900">Аккаунт</h3>
-            <label className="flex flex-col gap-1">
-              <span className="text-sm font-bold leading-5 text-gray-900">Название заведения</span>
-              <input
-                value={storeName}
-                onChange={(e) => setStoreName(e.target.value)}
-                className="h-12 rounded-xl border border-gray-300 bg-white px-4 text-base leading-6 text-gray-900 outline-none transition focus:border-[#8A6C4C]"
-              />
-            </label>
-            <div className="flex flex-col gap-1">
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              {ACCOUNT_FIELDS.map((field) => (
+                <label key={field.key} className="flex flex-col gap-1">
+                  <span className="text-sm font-bold leading-5 text-gray-900">{field.label}</span>
+                  <input
+                    value={form?.[field.key] ?? ''}
+                    disabled={!form}
+                    onChange={(e) =>
+                      setForm((prev) => (prev ? { ...prev, [field.key]: e.target.value } : prev))
+                    }
+                    className="h-12 rounded-xl border border-gray-300 bg-white px-4 text-base leading-6 text-gray-900 outline-none transition focus:border-[#8A6C4C] disabled:cursor-not-allowed disabled:bg-gray-100"
+                  />
+                </label>
+              ))}
+            </div>
+            <div className="flex flex-col gap-1 border-t border-gray-200 pt-4">
               <span className="flex items-center gap-2 text-sm font-bold leading-5 text-gray-900">
                 Язык интерфейса <DemoTag />
               </span>
-              <div className="flex gap-2">
+              <div className="flex max-w-md gap-2">
                 {['RU', 'DE', 'EN'].map((lang, i) => (
                   <span
                     key={lang}
@@ -218,43 +277,48 @@ function SettingsPageInner() {
                 ))}
               </div>
             </div>
-            <div className="flex items-center gap-4 border-t border-gray-200 pt-4">
-              <span className="flex flex-1 items-center gap-2 text-base leading-6 text-gray-900">
-                Автопечать на кухню <DemoTag />
-              </span>
-              <Toggle on disabled label="Печать чеков сейчас всегда автоматическая — переключатель появится вместе с настройкой принт-агента" />
-            </div>
-            <div className="flex items-center gap-4">
-              <span className="flex-1 text-base leading-6 text-gray-900">Звук нового заказа</span>
-              <Toggle
-                on={sound}
-                label={sound ? 'Выключить звук' : 'Включить звук'}
-                onChange={toggleSound}
-              />
-            </div>
           </Card>
 
           <button
             type="button"
             onClick={() => signOut({ callbackUrl: '/admin/login' })}
-            className="flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border-none bg-transparent px-4 text-base font-bold leading-5 text-[#D42A47] transition hover:bg-[#FDE6E7]"
+            className="flex h-10 cursor-pointer items-center justify-center gap-2 self-start rounded-xl border-none bg-transparent px-4 text-base font-bold leading-5 text-[#D42A47] transition hover:bg-[#FDE6E7]"
           >
             <Icon d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4 M16 17l5-5-5-5 M21 12H9" size={20} />
             Выйти из аккаунта
           </button>
-        </div>
-      </div>
+        </>
+      )}
 
-      {/* Sticky-панель сохранения (D9) */}
-      {dirty && (
+      {tab === 'notifications' && (
+        <Card className="flex flex-col gap-4 p-4 lg:p-6">
+          <div className="flex items-center gap-4">
+            <span className="flex-1 text-base leading-6 text-gray-900">Звук нового заказа</span>
+            <Toggle
+              on={sound}
+              label={sound ? 'Выключить звук' : 'Включить звук'}
+              onChange={toggleSound}
+            />
+          </div>
+          <div className="flex items-center gap-4 border-t border-gray-200 pt-4">
+            <span className="flex flex-1 items-center gap-2 text-base leading-6 text-gray-900">
+              Автопечать на кухню <DemoTag />
+            </span>
+            <Toggle on disabled label="Печать чеков сейчас всегда автоматическая — переключатель появится вместе с настройкой принт-агента" />
+          </div>
+        </Card>
+      )}
+
+      {/* Sticky-панель сохранения (D9): счётчик изменённых полей */}
+      {dirtyKeys.length > 0 && (
         <div className="fixed inset-x-0 bottom-[72px] z-40 flex items-center gap-3 bg-white px-4 py-3 shadow-[0_-2px_12px_rgba(17,24,39,.08)] lg:bottom-0 lg:left-[112px] lg:h-[72px] lg:px-8 lg:py-0">
-          <span className="hidden text-sm leading-5 text-gray-600 lg:block">
-            Несохранённые изменения аккаунта
+          <span className="hidden min-w-0 flex-1 text-base font-bold leading-6 text-gray-900 lg:block">
+            Есть несохранённые изменения · {dirtyKeys.length} {pluralFields(dirtyKeys.length)}
           </span>
-          <div className="flex-1" />
+          <div className="flex-1 lg:hidden" />
           <button
             type="button"
-            onClick={() => setStoreName(store.settings?.storeName || 'Dumbos Pizza')}
+            onClick={() => baseline && setForm(baseline)}
             className="h-12 cursor-pointer whitespace-nowrap rounded-xl border-none bg-transparent px-6 text-lg font-bold leading-5 text-gray-900 transition hover:bg-[#FAF7F2]"
           >
             Отменить
