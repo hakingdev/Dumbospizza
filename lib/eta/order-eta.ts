@@ -178,9 +178,13 @@ export function heuristicPrepMinutes(
 
 /** Оценка времени в пути в одну сторону по дорожному расстоянию. */
 export function driveMinutesFromKm(km: number): number {
-  // Городская езда Bad Kissingen: ~4 мин на выезд + ~1.7 мин/км.
-  // Самая дальняя зона (~12–16 км) упирается в потолок ~25–30 мин.
-  return Math.min(30, Math.max(5, Math.round(4 + km * 1.7)));
+  // Со слов ресторана: по городу ~50 км/ч, за городом 70–100 км/ч (считаем ~85).
+  // Первые 3 км — городские, дальше трасса; ~3 мин на выезд/парковку/передачу.
+  // Пример: 1.5 км ≈ 5 мин (никак не 20); дальняя зона 16 км ≈ 16 мин.
+  const cityKm = Math.min(km, 3);
+  const highwayKm = Math.max(0, km - 3);
+  const drivingMinutes = (cityKm / 50 + highwayKm / 85) * 60;
+  return Math.min(20, Math.max(4, Math.round(3 + drivingMinutes)));
 }
 
 /** Округление обещания клиенту до 5 минут вверх. */
@@ -430,7 +434,7 @@ const ETA_SCHEMA = {
     routeHint: {
       anyOf: [{ type: 'string' }, { type: 'null' }],
       description:
-        'Route-combination hint in RUSSIAN (e.g. which pending order to combine this delivery with, near-to-far ordering); null if nothing to combine',
+        'TERSE route instruction in RUSSIAN, max ~12 words, no explanations: which order to ride with and stop sequence (e.g. "С #123: сначала Würzburger 20, потом Prinzengraben"); null if nothing to combine',
     },
     reasoning: {
       type: 'string',
@@ -461,7 +465,7 @@ ${buildKitchenModelLines(staffing)
 
 Delivery model:
 - PICKUP orders (deliveryType "pickup"): etaMinutes is ONLY the preparation time incl. queue — when the food is ready at the counter. deliveryMinutes MUST be 0; never add driver or road time.
-- Use "distanceKm" / "driveMinutesEstimate" when provided. The farthest delivery zone is about 25 minutes one way.
+- Use "distanceKm" / "driveMinutesEstimate" when provided and do NOT inflate them. Driving speeds (owner's numbers): ~50 km/h in town, 70-100 km/h outside town. A 1.5 km address is ~5 minutes door to door, 10 minutes absolute maximum; the farthest zone (~16 km) is ~15-20 minutes one way.
 - A delivery round trip blocks the driver for roughly 2x the one-way time. Assume ONE driver on the road unless the queue clearly implies more.
 - Combine deliveries that go in the same direction (compare coordinates/addresses of pending deliveries): order stops from nearest to farthest. If this order should ride together with a queued order, say so in "routeHint" (mention the other order number).
 - If the customer chose a Wunschzeit (desiredDeliveryTime, HH:mm local time) later than your natural estimate, promise the Wunschzeit instead (etaMinutes = minutes from now until that time).
@@ -470,7 +474,8 @@ Output rules:
 - etaMinutes is the promise to the customer measured FROM NOW. Be realistic and slightly pessimistic: arriving earlier than promised is fine, later is not. Round to a multiple of 5. Typical range: 20-45 min quiet, 60-120 min at peak.
 - "loadLevel": "peak" when the kitchen cannot keep its promises with the current queue (roughly 6+ orders cooking or promises slipping), "busy" when it is tight, otherwise "normal".
 - "advisory" (RUSSIAN, for the staff, null when normal): at busy/peak recommend concretely — e.g. after how many more orders to pause intake, or to pause for 30/60 minutes via the stop-bot, or by how much to shift promised times.
-- "advisory", "routeHint", "reasoning" are in Russian. Keep them short.
+- "advisory", "routeHint", "reasoning" are in Russian.
+- "routeHint" is a TERSE instruction for the kitchen, not an explanation. Format: what to do, in what order — nothing else. Good: "С #L-GRCR8J: сначала Würzburger 20, потом Prinzengraben". Bad: any sentence explaining WHY, distances in brackets, or notes about other trips. Max ~12 words. If nothing to combine — null, not prose.
 - Do not invent orders, distances or times that are not in the data.`;
 }
 

@@ -9,6 +9,7 @@ import type { OrderEtaAnalysis } from './eta/types';
 import { earnForCompletedOrder, reverseOrder } from './loyalty/service';
 import { stripPromoLabels } from './orders/gift-label';
 import { requestKitchenReprint } from './orders/print-queue';
+import { applyOrderDelay, isValidDelayMinutes, ORDER_DELAY_CHOICES } from './orders/delay';
 
 const botCache = new Map<string, any>();
 
@@ -167,8 +168,9 @@ function buildOrderMessageText(order: OrderNotification): string {
     ? `\n⏱ Клиенту сообщено: ~${order.etaMinutes} мин`
     : '';
 
-  // Разбивка AI-оценки: готовка/доставка/км + подсказка маршрута + совет по
-  // загрузке. Персонал может поправить время кнопкой «⏱ Время готовности».
+  // Разбивка AI-оценки: готовка/доставка/км + короткая инструкция по маршруту.
+  // advisory (совет по загрузке) в Telegram НЕ показываем — по просьбе
+  // ресторана: длинные советы мешают; они остаются в панели AI-плана кухни.
   let etaDetails = '';
   const analysis = order.etaAnalysis;
   if (analysis) {
@@ -180,7 +182,6 @@ function buildOrderMessageText(order: OrderNotification): string {
     const sourceMark = analysis.source === 'ai' ? '🤖 AI' : '🤖 Оценка (без AI)';
     etaDetails = `\n${sourceMark}: ${parts.join(', ')}`;
     if (analysis.routeHint) etaDetails += `\n🗺 ${escapeHtml(analysis.routeHint)}`;
-    if (analysis.advisory) etaDetails += `\n⚠️ ${escapeHtml(analysis.advisory)}`;
   }
 
   return `
@@ -637,6 +638,186 @@ export async function handleEtaCallbackQuery(
   return { handled: true, minutes, reason: delivered ? 'sent' : 'send_failed' };
 }
 
+// ---------------------------------------------------------------------------
+// Кнопка «⏳ Продлить» — сдвиг обещанного времени + WhatsApp клиенту
+// (готовый Twilio-шаблон задержки, lib/orders/delay.ts)
+// ---------------------------------------------------------------------------
+
+export type DelayCallback =
+  | { action: 'menu'; orderId: string }
+  | { action: 'back'; orderId: string }
+  | { action: 'set'; minutes: number; orderId: string };
+
+/**
+ * Разбор callback_data кнопок продления:
+ *   `delay_menu_<orderNumber>`           — показать пресеты «+N мин»,
+ *   `delay_back_<orderNumber>`           — вернуться к основной клавиатуре,
+ *   `delay_set_<minutes>_<orderNumber>`  — продлить и уведомить клиента.
+ * Делим по ПЕРВОМУ '_' (как parseEtaCallback): orderNumber может содержать '_'.
+ */
+export function parseDelayCallback(data: unknown): DelayCallback | null {
+  if (typeof data !== 'string' || !data.startsWith('delay_')) return null;
+  const rest = data.slice('delay_'.length);
+  const i = rest.indexOf('_');
+  if (i <= 0) return null;
+
+  const action = rest.slice(0, i);
+  const tail = rest.slice(i + 1);
+  if (!tail) return null;
+
+  if (action === 'menu' || action === 'back') return { action, orderId: tail };
+  if (action !== 'set') return null;
+
+  const j = tail.indexOf('_');
+  if (j <= 0) return null;
+  const minutes = Number(tail.slice(0, j));
+  const orderId = tail.slice(j + 1);
+  if (!orderId) return null;
+  if (!isValidDelayMinutes(minutes)) return null;
+  return { action: 'set', minutes, orderId };
+}
+
+export interface DelayCallbackDeps {
+  answerCallbackQuery: (id: string, opts?: { text?: string; show_alert?: boolean }) => PromiseLike<unknown>;
+  findOrder: (orderNumber: string) => PromiseLike<any | null>;
+  /** Продлить заказ: сдвиг etaMinutes + WhatsApp клиенту (lib/orders/delay.ts). */
+  applyDelay: (orderDbId: string, minutes: number) => PromiseLike<{
+    ok: boolean;
+    etaMinutes?: number;
+    whatsappSent: boolean;
+  }>;
+  /** Заменить основную клавиатуру рядом пресетов «+N мин». */
+  showDelayMenu?: (messageId: number, orderId: string) => Promise<void>;
+  /** Вернуть основную клавиатуру, не трогая текст. */
+  showMainKeyboard?: (messageId: number, orderId: string) => Promise<void>;
+  /** Перерисовать сообщение из данных заказа (обновить «Клиенту сообщено»). */
+  refreshMessage?: (messageId: number, order: any) => Promise<void>;
+  log?: (...args: any[]) => void;
+}
+
+export type DelayCallbackResult = {
+  handled: boolean;
+  minutes?: number;
+  reason?:
+    | 'not_delay_callback'
+    | 'menu_shown'
+    | 'menu_closed'
+    | 'order_not_found'
+    | 'lookup_error'
+    | 'apply_error'
+    | 'sent'
+    | 'send_failed';
+};
+
+/**
+ * Обработка кнопок «⏳ Продлить»: та же изоляция через deps, ack — всегда.
+ * Как и у ETA, ack идёт ПОСЛЕ применения: оператор должен сразу видеть,
+ * дошло ли до клиента WhatsApp-сообщение о продлении.
+ */
+export async function handleDelayCallbackQuery(
+  cbq: any,
+  deps: DelayCallbackDeps
+): Promise<DelayCallbackResult> {
+  const log = deps.log || ((...a: any[]) => console.log('[telegram]', ...a));
+  const id: string = cbq?.id;
+  const ack = async (opts?: { text?: string; show_alert?: boolean }) => {
+    if (!id) return;
+    try {
+      await deps.answerCallbackQuery(id, opts);
+    } catch (e) {
+      log('answerCallbackQuery failed', (e as Error)?.message);
+    }
+  };
+
+  const parsed = parseDelayCallback(cbq?.data);
+  if (!parsed) {
+    await ack();
+    return { handled: false, reason: 'not_delay_callback' };
+  }
+
+  const messageId: number | undefined = cbq?.message?.message_id;
+  const swapKeyboard = async (
+    fn: DelayCallbackDeps['showDelayMenu'] | DelayCallbackDeps['showMainKeyboard'],
+    orderId: string,
+    label: string
+  ) => {
+    if (!messageId || !fn) return;
+    try {
+      await fn(messageId, orderId);
+    } catch (e) {
+      log(`${label} failed`, (e as Error)?.message);
+    }
+  };
+
+  if (parsed.action === 'menu') {
+    await ack();
+    await swapKeyboard(deps.showDelayMenu, parsed.orderId, 'showDelayMenu');
+    return { handled: true, reason: 'menu_shown' };
+  }
+
+  if (parsed.action === 'back') {
+    await ack();
+    await swapKeyboard(deps.showMainKeyboard, parsed.orderId, 'showMainKeyboard');
+    return { handled: true, reason: 'menu_closed' };
+  }
+
+  const { minutes } = parsed;
+  log('delay requested', { orderNumber: parsed.orderId, minutes });
+
+  let order: any;
+  try {
+    order = await deps.findOrder(parsed.orderId);
+  } catch (e) {
+    log('order lookup failed', (e as Error)?.message);
+    await ack({ text: 'Fehler beim Laden der Bestellung', show_alert: true });
+    return { handled: false, reason: 'lookup_error' };
+  }
+
+  if (!order) {
+    log('order not found', parsed.orderId);
+    await ack({ text: `Заказ #${parsed.orderId} не найден`, show_alert: true });
+    return { handled: false, reason: 'order_not_found' };
+  }
+
+  let result: { ok: boolean; etaMinutes?: number; whatsappSent: boolean };
+  try {
+    result = await deps.applyDelay(String(order._id ?? order.id), minutes);
+  } catch (e) {
+    log('applyDelay failed', (e as Error)?.message);
+    result = { ok: false, whatsappSent: false };
+  }
+
+  if (!result.ok) {
+    await ack({ text: 'Не удалось продлить заказ', show_alert: true });
+    return { handled: false, minutes, reason: 'apply_error' };
+  }
+
+  const newEta = result.etaMinutes != null ? ` (теперь ~${result.etaMinutes} мин)` : '';
+  await ack(
+    result.whatsappSent
+      ? { text: `⏳ +${minutes} мин${newEta} — клиенту отправлено` }
+      : {
+          text: `⏳ +${minutes} мин${newEta} — сохранено, но сообщение клиенту НЕ отправлено`,
+          show_alert: true,
+        }
+  );
+
+  if (messageId && deps.refreshMessage) {
+    try {
+      // Перечитываем заказ: applyDelay сохранял его в другом инстансе.
+      const fresh = (await deps.findOrder(parsed.orderId).then(
+        (o) => o,
+        () => null
+      )) || order;
+      await deps.refreshMessage(messageId, fresh);
+    } catch (e) {
+      log('refreshMessage failed', (e as Error)?.message);
+    }
+  }
+
+  return { handled: true, minutes, reason: result.whatsappSent ? 'sent' : 'send_failed' };
+}
+
 export interface StatusCallbackDeps {
   answerCallbackQuery: (id: string, opts?: { text?: string; show_alert?: boolean }) => PromiseLike<unknown>;
   findOrder: (orderNumber: string) => PromiseLike<any | null>;
@@ -806,6 +987,44 @@ export async function processTelegramUpdate(update: any): Promise<void> {
     return;
   }
 
+  if (parseDelayCallback(update.callback_query?.data)) {
+    await handleDelayCallbackQuery(update.callback_query, {
+      answerCallbackQuery: (cbId, opts) => bot.answerCallbackQuery(cbId, opts),
+      findOrder: (orderNumber) => Order.findOne({ orderNumber }),
+      applyDelay: (orderDbId, minutes) => applyOrderDelay(orderDbId, minutes),
+      showDelayMenu: async (messageId, orderId) => {
+        await bot.editMessageReplyMarkup(buildDelayKeyboard(orderId), {
+          chat_id: chatId,
+          message_id: messageId,
+        });
+      },
+      showMainKeyboard: async (messageId, orderId) => {
+        await bot.editMessageReplyMarkup(buildStatusKeyboard(orderId), {
+          chat_id: chatId,
+          message_id: messageId,
+        });
+      },
+      refreshMessage: async (messageId, order) => {
+        // Обновляем «Клиенту сообщено: ~N мин» и возвращаем основную клавиатуру.
+        if (!isOrderStatus(order.status)) {
+          await bot.editMessageReplyMarkup(buildStatusKeyboard(order.orderNumber), {
+            chat_id: chatId,
+            message_id: messageId,
+          });
+          return;
+        }
+        await updateOrderStatus(
+          messageId,
+          order.status,
+          order.orderNumber,
+          undefined,
+          orderToNotification(order)
+        );
+      },
+    });
+    return;
+  }
+
   if (parseReprintCallback(update.callback_query?.data)) {
     await handleReprintCallbackQuery(update.callback_query, {
       answerCallbackQuery: (cbId, opts) => bot.answerCallbackQuery(cbId, opts),
@@ -861,7 +1080,9 @@ function buildStatusKeyboard(orderId: string) {
       [
         // Время готовности → WhatsApp клиенту (lib/whatsapp.ts). Двухшаговая:
         // клик открывает пресеты, чтобы не раздувать основную клавиатуру.
-        { text: '⏱ Время готовности', callback_data: `eta_menu_${orderId}` }
+        { text: '⏱ Время готовности', callback_data: `eta_menu_${orderId}` },
+        // Продлить: +N мин к обещанию + WhatsApp о задержке (lib/orders/delay.ts).
+        { text: '⏳ Продлить', callback_data: `delay_menu_${orderId}` }
       ],
       [
         // Повторная печать кухонного чека — та же операция, что кнопка «Печать»
@@ -883,6 +1104,19 @@ function buildEtaKeyboard(orderId: string) {
       presets.slice(0, 3),
       presets.slice(3),
       [{ text: '◀️ Назад', callback_data: `eta_back_${orderId}` }]
+    ]
+  };
+}
+
+/** Пресеты «+N мин» кнопки «⏳ Продлить» (тот же список, что в панели плана). */
+function buildDelayKeyboard(orderId: string) {
+  return {
+    inline_keyboard: [
+      ORDER_DELAY_CHOICES.map((m) => ({
+        text: `+${m} мин`,
+        callback_data: `delay_set_${m}_${orderId}`
+      })),
+      [{ text: '◀️ Назад', callback_data: `delay_back_${orderId}` }]
     ]
   };
 }

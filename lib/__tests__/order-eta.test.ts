@@ -105,11 +105,14 @@ describe('normalizeStaffing', () => {
 });
 
 describe('driveMinutesFromKm / roundEtaTo5', () => {
-  it('ближний адрес — минимум 5 мин, дальний упирается в 30', () => {
-    expect(driveMinutesFromKm(0.3)).toBe(5);
-    expect(driveMinutesFromKm(6)).toBe(14);
-    expect(driveMinutesFromKm(16)).toBe(30);
-    expect(driveMinutesFromKm(40)).toBe(30);
+  it('скорости от ресторана: 50 км/ч город, ~85 за городом; 1.5 км ≈ 5 мин, потолок 20', () => {
+    expect(driveMinutesFromKm(0.3)).toBe(4);
+    // РЕГРЕССИЯ (жалоба ресторана): 1.5 км оценивались в 15-20 мин — реально ≤10.
+    expect(driveMinutesFromKm(1.5)).toBe(5);
+    expect(driveMinutesFromKm(1.5)).toBeLessThanOrEqual(10);
+    expect(driveMinutesFromKm(6)).toBe(9);
+    expect(driveMinutesFromKm(16)).toBe(16);
+    expect(driveMinutesFromKm(40)).toBe(20);
   });
 
   it('округление обещания вверх до 5', () => {

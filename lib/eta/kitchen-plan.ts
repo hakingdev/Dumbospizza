@@ -99,6 +99,7 @@ export function buildDispatchRules(courierCount: number): string[] {
   `Orders already "ready_for_delivery" are cooked: only assign them to a courier trip (possibly together with orders still cooking for the same direction).`,
   `Orders "delivering" are already on the road: exclude them from steps, they only mean a courier is busy right now.`,
   `Respect Wunschzeit (desiredDeliveryTime): do not cook an order scheduled for later ahead of urgent immediate orders.`,
+  `Trust "driveMinutesEstimate" and do NOT inflate drive times. Speeds (owner's numbers): ~50 km/h in town, 70-100 km/h outside. A 1.5 km address is ~5 min door to door (10 min absolute max); the farthest zone (~16 km) is ~15-20 min one way.`,
   `Do not invent orders, addresses or distances that are not in the data.`,
   ];
 }
@@ -401,7 +402,8 @@ const PLAN_SCHEMA = {
           },
           rationale: {
             type: 'string',
-            description: 'Short RUSSIAN explanation why this grouping/position',
+            description:
+              'TERSE RUSSIAN instruction, max ~8 words, no "because"/"так как": what to do (e.g. "Готовить вместе, один рейс"). Empty string if the step is self-evident',
           },
         },
         required: ['step', 'orderNumbers', 'area', 'cookTogether', 'courier', 'rationale'],
@@ -446,7 +448,8 @@ ${buildDispatchRules(courierCount)
 Output rules:
 - Every order from the queue (except status "delivering") must appear in EXACTLY ONE batch. Never drop or duplicate an order.
 - Steps are ordered by execution: step 1 = start cooking first.
-- "summary", "advisory", "rationale", "courier" are in RUSSIAN, short and concrete (mention order numbers and towns).
+- "summary", "advisory", "rationale", "courier" are in RUSSIAN.
+- These texts are TERSE instructions, not explanations: what to do, with which order numbers/towns — never WHY. "rationale" max ~8 words, "summary" max ~15 words, "courier" is just the trip (town + stop sequence). No justifications, no distances in brackets.
 - "loadLevel": "peak" when the kitchen cannot keep its promises with the current queue, "busy" when tight, else "normal".`;
 }
 
