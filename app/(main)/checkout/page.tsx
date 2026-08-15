@@ -295,6 +295,14 @@ export default function CheckoutPage() {
       const now = new Date()
       const nowMinutes = getNowMinutesInTimeZone(timeZone, now)
 
+      // Цех из корзины стоит — его сообщение точнее глобального И знает свой
+      // срок: при «весь приём 10 мин + суши 30 мин» обещать 10 минут нельзя.
+      if (blockedWorkshopsInCart.length > 0) {
+        setOrderBlocked(true)
+        setOrderBlockMessage(kitchenMessageFor(blockedWorkshopsInCart))
+        return
+      }
+
       if (blockedUntil && blockedUntil.getTime() > now.getTime()) {
         setOrderBlocked(true)
         // {minutes}/@ и {time} в тексте из админки — как в сообщении про цех.
@@ -312,15 +320,6 @@ export default function CheckoutPage() {
       if (nowMinutes >= endMinutes) {
         setOrderBlocked(true)
         setOrderBlockMessage(afterCloseMessage)
-        return
-      }
-
-      // Цех на паузе — заказ блокируем, только если его позиции в корзине.
-      // Текст про цеха ИЗ КОРЗИНЫ, а не про все остановленные: гостю с пиццей
-      // незачем читать про суши. Минуты пересчитываются на каждом тике.
-      if (blockedWorkshopsInCart.length > 0) {
-        setOrderBlocked(true)
-        setOrderBlockMessage(kitchenMessageFor(blockedWorkshopsInCart))
         return
       }
 

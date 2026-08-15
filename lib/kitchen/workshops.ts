@@ -14,11 +14,16 @@
  * было одно и то же понимание «что где готовится».
  */
 import type { KitchenStation } from '../eta/types';
-import { formatBlockTemplate, isBlockActive, remainingBlockMinutes } from './block-message';
+import {
+  formatBlockTemplate,
+  isBlockActive,
+  laterUntil,
+  remainingBlockMinutes,
+} from './block-message';
 
 // Общие для обеих настроек о паузе (глобальной и цеховой) — реэкспорт, чтобы
 // потребители тянули всё из одного модуля.
-export { formatBlockTemplate, isBlockActive, remainingBlockMinutes };
+export { formatBlockTemplate, isBlockActive, laterUntil, remainingBlockMinutes };
 
 // ---------------------------------------------------------------------------
 // Классификация позиции по станции кухни
@@ -115,6 +120,22 @@ export function readWorkshopBlocks(settings: Record<string, any> | null | undefi
     blocks[id] = typeof value === 'string' ? value : '';
   }
   return blocks;
+}
+
+/**
+ * Сроки цехов с учётом глобального стопа: пока стоит весь приём, ни один цех
+ * не отдаст заказ раньше него. Иначе гость с суши прочитает «через 10 минут»
+ * (глобальный стоп), когда цех стоит 30.
+ */
+export function withGlobalBlock(
+  blocks: WorkshopBlocks,
+  ordersBlockedUntil: unknown
+): WorkshopBlocks {
+  const merged: WorkshopBlocks = { ...EMPTY_WORKSHOP_BLOCKS };
+  for (const id of WORKSHOP_IDS) {
+    merged[id] = laterUntil(blocks[id], ordersBlockedUntil);
+  }
+  return merged;
 }
 
 /** Какие цеха сейчас стоят. */

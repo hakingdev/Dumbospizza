@@ -9,6 +9,7 @@ import {
   classifyWorkshop,
   isBlockActive,
   readWorkshopBlocks,
+  withGlobalBlock,
   workshopsInItems,
 } from '../kitchen/workshops';
 
@@ -178,6 +179,33 @@ describe('buildWorkshopBlockMessage', () => {
     expect(text).toContain('MakiLove');
     expect(text).not.toContain('0 Minuten');
     expect(text).toContain('Bestellen Sie solange');
+  });
+});
+
+describe('withGlobalBlock', () => {
+  const later = new Date('2026-08-15T18:45:00.000Z').toISOString();
+
+  it('глобальный стоп позже цехового → берём его срок', () => {
+    // «весь приём до 18:45, суши до 18:30» — суши раньше 18:45 не поедут.
+    expect(withGlobalBlock({ pizza: '', sushi: future }, later)).toEqual({
+      pizza: later,
+      sushi: later,
+    });
+  });
+
+  it('цех стоит дольше глобального → остаётся срок цеха', () => {
+    // Ровно жалоба ресторана: цех 30 мин, весь приём 10 — обещать 10 нельзя.
+    const globalSoon = new Date('2026-08-15T18:10:00.000Z').toISOString();
+    expect(withGlobalBlock({ pizza: '', sushi: future }, globalSoon).sushi).toBe(future);
+  });
+
+  it('глобального стопа нет → сроки цехов не меняются', () => {
+    expect(withGlobalBlock({ pizza: '', sushi: future }, '')).toEqual({ pizza: '', sushi: future });
+  });
+
+  it('сообщение с объединённым сроком считает минуты по позднему', () => {
+    const merged = withGlobalBlock({ pizza: '', sushi: future }, later);
+    expect(buildWorkshopBlockMessage(['sushi'], { blocks: merged, now })).toContain('45 Minuten');
   });
 });
 

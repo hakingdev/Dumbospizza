@@ -13,6 +13,7 @@ import {
   classifyWorkshop,
   isBlockActive,
   readWorkshopBlocks,
+  withGlobalBlock,
   type WorkshopId,
 } from '../../../../lib/kitchen/workshops';
 
@@ -74,7 +75,12 @@ export async function GET() {
         messageTemplate: template,
         message:
           blockedWorkshops.length > 0
-            ? buildWorkshopBlockMessage(blockedWorkshops, { blocks, now, template })
+            ? buildWorkshopBlockMessage(blockedWorkshops, {
+                // Срок с учётом глобального стопа — он сильнее цехов.
+                blocks: withGlobalBlock(blocks, settings.ordersBlockedUntil),
+                now,
+                template,
+              })
             : null,
       },
       { headers: { 'Cache-Control': 'no-store' } }

@@ -28,6 +28,18 @@ export function remainingBlockMinutes(until: unknown, now: Date = new Date()): n
   return Math.max(1, Math.ceil(diffMs / 60_000));
 }
 
+/**
+ * Позднейшая из двух меток. Нужна там, где стоп цеха и глобальный стоп активны
+ * одновременно: обещать «через 10 минут», когда цех стоит 30, нельзя.
+ */
+export function laterUntil(a: unknown, b: unknown): string {
+  const at = typeof a === 'string' && a ? new Date(a).getTime() : NaN;
+  const bt = typeof b === 'string' && b ? new Date(b).getTime() : NaN;
+  if (!Number.isFinite(at)) return Number.isFinite(bt) ? (b as string) : '';
+  if (!Number.isFinite(bt)) return a as string;
+  return at >= bt ? (a as string) : (b as string);
+}
+
 export function formatBerlinTime(iso: string, timeZone = BERLIN_TZ): string {
   const date = new Date(iso);
   if (isNaN(date.getTime())) return '—';

@@ -18,6 +18,7 @@ import {
   buildWorkshopBadge,
   buildWorkshopBlockMessage,
   classifyWorkshop,
+  withGlobalBlock,
   type WorkshopBlocks,
   type WorkshopId,
 } from '../kitchen/workshops';
@@ -64,6 +65,8 @@ interface BlocksState {
   blockedWorkshops: WorkshopId[];
   blockedCategories: Record<string, WorkshopId>;
   blocks: WorkshopBlocks;
+  /** Глобальный стоп приёма ('' — приём открыт). Он сильнее цехов. */
+  ordersBlockedUntil: string;
   messageTemplate: string | null;
 }
 
@@ -71,6 +74,7 @@ const EMPTY_STATE: BlocksState = {
   blockedWorkshops: [],
   blockedCategories: {},
   blocks: { ...EMPTY_WORKSHOP_BLOCKS },
+  ordersBlockedUntil: '',
   messageTemplate: null,
 };
 
@@ -91,6 +95,7 @@ export function KitchenBlocksProvider({ children }: { children: ReactNode }) {
           blockedWorkshops: data.blockedWorkshops || [],
           blockedCategories: data.blockedCategories || {},
           blocks: { ...EMPTY_WORKSHOP_BLOCKS, ...(data.blocks || {}) },
+          ordersBlockedUntil: data.ordersBlockedUntil || '',
           messageTemplate: data.messageTemplate || null,
         });
         setNow(new Date());
@@ -125,11 +130,15 @@ export function KitchenBlocksProvider({ children }: { children: ReactNode }) {
   );
 
   const value = useMemo<KitchenBlocksValue>(() => {
+    // Стоит и весь приём, и цех → срок берём поздний, иначе обещаем «через 10
+    // минут», когда цех стоит 30.
+    const effectiveBlocks = withGlobalBlock(state.blocks, state.ordersBlockedUntil);
+
     const messageFor = (ids: WorkshopId[]) =>
       ids.length === 0
         ? ''
         : buildWorkshopBlockMessage(ids, {
-            blocks: state.blocks,
+            blocks: effectiveBlocks,
             now,
             template: state.messageTemplate,
           });
@@ -147,7 +156,7 @@ export function KitchenBlocksProvider({ children }: { children: ReactNode }) {
       },
       messageFor,
       badgeFor: (ids: WorkshopId[]) =>
-        ids.length === 0 ? '' : buildWorkshopBadge(ids, state.blocks, now),
+        ids.length === 0 ? '' : buildWorkshopBadge(ids, effectiveBlocks, now),
       showNotice: (ids: WorkshopId[]) => {
         if (ids.length > 0) setNotice(ids);
       },

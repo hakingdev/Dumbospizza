@@ -38,6 +38,7 @@ import {
   buildWorkshopBlockMessage,
   formatBlockTemplate,
   readWorkshopBlocks,
+  withGlobalBlock,
 } from '../../../lib/kitchen/workshops';
 import { getServerSession } from 'next-auth';
 import { authOptions, isStaff } from '../../../lib/auth';
@@ -123,17 +124,9 @@ export async function POST(request: NextRequest) {
     const now = new Date();
     const nowMinutes = getNowMinutesInTimeZone(timeZone, now);
 
-    if (blockedUntil && blockedUntil.getTime() > now.getTime()) {
-      return NextResponse.json(
-        {
-          success: false,
-          // В тексте из админки работают {minutes}/@ и {time}.
-          error: formatBlockTemplate(blockReason, blockedUntil.toISOString(), now),
-          blockedUntil: blockedUntil.toISOString(),
-        },
-        { status: 403 }
-      );
-    }
+    // Пауза приёма (глобальная и по цехам) проверяется НИЖЕ — после того, как
+    // подтянуты категории позиций: только там видно, задет ли заказ стопом цеха
+    // и какой из двух сроков позже.
 
     if (nowMinutes < startMinutes) {
       const timeLabel = formatMinutesAsHHmm(startMinutes);
@@ -273,12 +266,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           success: false,
+          // Сообщение цеха точнее глобального, а срок — поздний из двух:
+          // «весь приём 10 мин + суши 30 мин» = 30, иначе гость вернётся зря.
           error: buildWorkshopBlockMessage(blockedWorkshops, {
-            blocks: workshopBlocks,
+            blocks: withGlobalBlock(workshopBlocks, storeSettings?.ordersBlockedUntil),
             now,
             template: storeSettings?.[WORKSHOP_BLOCK_MESSAGE_KEY],
           }),
           blockedWorkshops,
+        },
+        { status: 403 }
+      );
+    }
+
+    // Глобальный стоп приёма — заказ без позиций остановленных цехов.
+    if (blockedUntil && blockedUntil.getTime() > now.getTime()) {
+      return NextResponse.json(
+        {
+          success: false,
+          // В тексте из админки работают {minutes}/@ и {time}.
+          error: formatBlockTemplate(blockReason, blockedUntil.toISOString(), now),
+          blockedUntil: blockedUntil.toISOString(),
         },
         { status: 403 }
       );

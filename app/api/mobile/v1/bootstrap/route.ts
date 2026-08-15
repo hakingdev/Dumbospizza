@@ -17,6 +17,7 @@ import {
   buildWorkshopBlockMessage,
   formatBlockTemplate,
   readWorkshopBlocks,
+  withGlobalBlock,
 } from '../../../../../lib/kitchen/workshops';
 
 export const dynamic = 'force-dynamic';
@@ -57,6 +58,7 @@ export async function GET() {
     // Стоп по цехам не закрывает приём целиком — он режет только позиции цеха.
     const workshopBlocks = readWorkshopBlocks(s);
     const blockedWorkshops = activeWorkshopBlocks(workshopBlocks, now);
+    const effectiveWorkshopBlocks = withGlobalBlock(workshopBlocks, s.ordersBlockedUntil);
 
     let acceptingOrders = true;
     let ordersClosedMessage: string | null = null;
@@ -96,15 +98,17 @@ export async function GET() {
        * Остановленные цеха (стоп-бот): приём в целом открыт, но заказы с
        * позициями этих цехов сервер отклонит. Пусто — готовят всё.
        */
+      // Срок с учётом глобального стопа: пока стоит весь приём, цех раньше него
+      // ничего не отдаст — обещать более ранний срок нельзя.
       blockedWorkshops: blockedWorkshops.map((id) => ({
         id,
         label: WORKSHOPS[id].de,
-        blockedUntil: workshopBlocks[id],
+        blockedUntil: effectiveWorkshopBlocks[id],
       })),
       blockedWorkshopsMessage:
         blockedWorkshops.length > 0
           ? buildWorkshopBlockMessage(blockedWorkshops, {
-              blocks: workshopBlocks,
+              blocks: effectiveWorkshopBlocks,
               now,
               template: s[WORKSHOP_BLOCK_MESSAGE_KEY] as string,
             })
