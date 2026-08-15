@@ -10,6 +10,13 @@ import {
   parseOrdersTimeToMinutes,
 } from '../../../../../lib/order-acceptance-hours';
 import { normalizeFreeDeliveryThreshold } from '../../../../../lib/delivery/delivery-fee';
+import {
+  WORKSHOPS,
+  WORKSHOP_BLOCK_MESSAGE_KEY,
+  activeWorkshopBlocks,
+  buildWorkshopBlockMessage,
+  readWorkshopBlocks,
+} from '../../../../../lib/kitchen/workshops';
 
 export const dynamic = 'force-dynamic';
 
@@ -46,6 +53,10 @@ export async function GET() {
       .limit(10)
       .lean();
 
+    // Стоп по цехам не закрывает приём целиком — он режет только позиции цеха.
+    const workshopBlocks = readWorkshopBlocks(s);
+    const blockedWorkshops = activeWorkshopBlocks(workshopBlocks, now);
+
     let acceptingOrders = true;
     let ordersClosedMessage: string | null = null;
 
@@ -79,6 +90,23 @@ export async function GET() {
       acceptingOrders,
       /** Текст для пользователя, если acceptingOrders === false */
       ordersClosedMessage,
+      /**
+       * Остановленные цеха (стоп-бот): приём в целом открыт, но заказы с
+       * позициями этих цехов сервер отклонит. Пусто — готовят всё.
+       */
+      blockedWorkshops: blockedWorkshops.map((id) => ({
+        id,
+        label: WORKSHOPS[id].de,
+        blockedUntil: workshopBlocks[id],
+      })),
+      blockedWorkshopsMessage:
+        blockedWorkshops.length > 0
+          ? buildWorkshopBlockMessage(blockedWorkshops, {
+              blocks: workshopBlocks,
+              now,
+              template: s[WORKSHOP_BLOCK_MESSAGE_KEY] as string,
+            })
+          : null,
       /** Активные акции для модального окна и бейджей в приложении */
       activePromotions: modalPromos
         .filter((p) => isPromotionEffectivelyActive(p as any, now))

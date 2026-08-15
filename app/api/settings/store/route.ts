@@ -28,6 +28,9 @@ const PUBLIC_SETTING_KEYS = [
   'ordersBlockedUntil',
   'ordersBlockedReason',
   'ordersBlockMinutes',
+  // Стоп отдельного цеха ({ pizza, sushi }) — его ставит стоп-бот, читает
+  // чекаут и мобилка. Не секрет: то же, что ordersBlockedUntil, но по цехам.
+  'workshopsBlockedUntil',
   'stripePublicKey',
   'metaTitle',
   'metaDescription',

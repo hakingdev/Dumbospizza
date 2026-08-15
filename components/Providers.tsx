@@ -3,6 +3,7 @@
 import { SessionProvider } from 'next-auth/react';
 import { ReactNode } from 'react';
 import { CartProvider } from '../lib/contexts/CartContext';
+import { KitchenBlocksProvider } from '../lib/contexts/KitchenBlocksContext';
 import { LanguageProvider } from '../lib/contexts/LanguageContext';
 // Защита React от падений при авто-переводе страницы браузером (Google Translate).
 // Импорт-сайд-эффект: патчит removeChild/insertBefore до первой реконсиляции.
@@ -13,7 +14,8 @@ export default function Providers({ children }: { children: ReactNode }) {
     <SessionProvider>
       <LanguageProvider>
         <CartProvider>
-          {children}
+          {/* Стоп цеха (стоп-бот): карточки, страница товара и чекаут берут состояние отсюда. */}
+          <KitchenBlocksProvider>{children}</KitchenBlocksProvider>
         </CartProvider>
       </LanguageProvider>
     </SessionProvider>

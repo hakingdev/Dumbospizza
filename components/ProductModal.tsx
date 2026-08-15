@@ -4,6 +4,8 @@ import { useState, useEffect, Fragment } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import { X, Plus, Minus, ShoppingCart, Check } from 'lucide-react';
 import { useCart } from '../lib/contexts/CartContext';
+import { useKitchenBlocks } from '../lib/contexts/KitchenBlocksContext';
+import { WORKSHOP_BLOCK_HEADLINE } from '../lib/kitchen/workshops';
 import { useLanguage } from '../lib/contexts/LanguageContext';
 import { loadTranslation } from '../lib/i18n';
 import { normalizeObjectId } from '../lib/normalize-id';
@@ -83,6 +85,7 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
   const [selectedOptions, setSelectedOptions] = useState<Record<string, OptionItem[]>>({});
   const [optionError, setOptionError] = useState<string>('');
   const { addItem } = useCart();
+  const { blockedWorkshopFor, messageFor, showNotice } = useKitchenBlocks();
   const { language } = useLanguage();
   const [t, setT] = useState<any>(() => (k: string, fallback?: string) => fallback ?? k);
 
@@ -232,8 +235,20 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
     return result;
   };
 
+  // Стоп цеха (стоп-бот). Пока товар не загружен — не блокируем: пустое имя
+  // классифицировалось бы как цех пиццы.
+  const blockedWorkshop = product
+    ? blockedWorkshopFor({ categoryId: readCategoryId(product.category), name: product.name })
+    : null;
+
   const handleAddToCart = () => {
     if (!product) return;
+
+    // Цех остановлен — в корзину не кладём, показываем объяснение с минутами.
+    if (blockedWorkshop) {
+      showNotice([blockedWorkshop]);
+      return;
+    }
 
     const err = validateOptions();
     if (err) {
@@ -573,12 +588,33 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
                       {optionError && (
                         <p className="text-sm text-red-600 mb-2 text-center">{optionError}</p>
                       )}
+                      {blockedWorkshop && (
+                        <div className="mb-3 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                          <span className="text-xl leading-none" aria-hidden="true">
+                            ⏸️
+                          </span>
+                          <p className="text-sm leading-6 text-amber-900">
+                            {messageFor([blockedWorkshop])}
+                          </p>
+                        </div>
+                      )}
                       <button
                         onClick={handleAddToCart}
-                        className="flex min-h-[56px] w-full items-center justify-center gap-3 rounded-xl bg-primary-600 px-6 py-4 text-center text-lg font-bold leading-tight text-white shadow-lg transition-all hover:bg-primary-700 hover:shadow-xl"
+                        aria-disabled={!!blockedWorkshop}
+                        className={`flex min-h-[56px] w-full items-center justify-center gap-3 rounded-xl px-6 py-4 text-center text-lg font-bold leading-tight shadow-lg transition-all ${
+                          blockedWorkshop
+                            ? 'cursor-not-allowed bg-gray-200 text-gray-600'
+                            : 'bg-primary-600 text-white hover:bg-primary-700 hover:shadow-xl'
+                        }`}
                       >
-                        <ShoppingCart className="h-6 w-6 shrink-0" />
-                        <span className="min-w-0">{t('product.add_to_cart', 'In den Warenkorb')} — <NoTranslate>{calculateTotal().toFixed(2)}€</NoTranslate></span>
+                        {blockedWorkshop ? (
+                          <span className="min-w-0">{WORKSHOP_BLOCK_HEADLINE}</span>
+                        ) : (
+                          <>
+                            <ShoppingCart className="h-6 w-6 shrink-0" />
+                            <span className="min-w-0">{t('product.add_to_cart', 'In den Warenkorb')} — <NoTranslate>{calculateTotal().toFixed(2)}€</NoTranslate></span>
+                          </>
+                        )}
                       </button>
                     </div>
                   </>

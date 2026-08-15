@@ -5,6 +5,8 @@ import { useEffect, useState } from 'react'
 import { Plus, ShoppingCart } from 'lucide-react'
 import ProductModal from './ProductModal'
 import { useLanguage } from '../lib/contexts/LanguageContext'
+import { useKitchenBlocks } from '../lib/contexts/KitchenBlocksContext'
+import { WORKSHOP_BLOCK_HEADLINE } from '../lib/kitchen/workshops'
 import { loadTranslation } from '../lib/i18n'
 import { PromotionBadges, ProductCardPrice } from './promotions/PromotionBadges'
 import { readCategoryId } from './promotions/PromotionBadgesContext'
@@ -44,17 +46,27 @@ export function ProductCard({ product }: ProductCardProps) {
     loadTranslations();
   }, [language]);
   
-  const handleOpenModal = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsModalOpen(true);
-  };
-
   // «4er Mini Pizza Box»: statt Standard-Modal den Vollbild-Konfigurator öffnen.
   const rawCategory: any = product.category;
   const isMiniBox = rawCategory?.slug === MINI_BOX_CATEGORY_SLUG;
   // /api/products liefert die Kategorie POPULIERT — als Objekt, nicht als id.
   const categoryId = readCategoryId(product.categoryId ?? product.category);
+
+  // Цех этой позиции остановлен (стоп-бот)? Тогда карточка не открывается:
+  // гость сразу видит «keine Bestellungen möglich» и по клику получает объяснение с минутами.
+  const { blockedWorkshopFor, badgeFor, showNotice } = useKitchenBlocks();
+  const blockedWorkshop = blockedWorkshopFor({ categoryId, name: product.name });
+  const blockedIds = blockedWorkshop ? [blockedWorkshop] : [];
+
+  const handleOpenModal = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (blockedWorkshop) {
+      showNotice(blockedIds);
+      return;
+    }
+    setIsModalOpen(true);
+  };
 
   return (
     <div 
@@ -69,11 +81,16 @@ export function ProductCard({ product }: ProductCardProps) {
           categoryId={categoryId}
           className="absolute top-3 left-3 z-10"
         />
+        {blockedWorkshop && (
+          <div className="absolute inset-x-0 bottom-0 z-20 bg-gray-900/80 px-3 py-2 text-center text-xs font-semibold text-white">
+            ⏸️ {badgeFor(blockedIds)}
+          </div>
+        )}
         {product.image ? (
           <SafeImage
             src={product.image}
             alt={product.name}
-            className="absolute inset-0 h-full w-full object-cover"
+            className={`absolute inset-0 h-full w-full object-cover ${blockedWorkshop ? 'opacity-50 grayscale' : ''}`}
           />
         ) : (
           <div className="absolute inset-0 bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center text-gray-400">
@@ -111,16 +128,27 @@ export function ProductCard({ product }: ProductCardProps) {
         
         <p className="mb-4 min-h-[2.5rem] text-sm leading-5 text-gray-600 line-clamp-2">{product.description}</p>
         
-        <button 
+        <button
           onClick={handleOpenModal}
-          className="mt-auto flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg bg-primary-600 px-4 py-3 text-center font-medium leading-tight text-white shadow-md transition-all hover:bg-primary-700 hover:shadow-lg"
+          aria-disabled={!!blockedWorkshop}
+          className={`mt-auto flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg px-4 py-3 text-center font-medium leading-tight shadow-md transition-all ${
+            blockedWorkshop
+              ? 'cursor-not-allowed bg-gray-200 text-gray-600'
+              : 'bg-primary-600 text-white hover:bg-primary-700 hover:shadow-lg'
+          }`}
         >
-          <ShoppingCart className="h-5 w-5 shrink-0" />
-          <span className="min-w-0">
-            {isMiniBox
-              ? t('product_card.build_box', 'Box zusammenstellen')
-              : t('product_card.choose_options', 'Optionen wählen')}
-          </span>
+          {blockedWorkshop ? (
+            <span className="min-w-0">{WORKSHOP_BLOCK_HEADLINE}</span>
+          ) : (
+            <>
+              <ShoppingCart className="h-5 w-5 shrink-0" />
+              <span className="min-w-0">
+                {isMiniBox
+                  ? t('product_card.build_box', 'Box zusammenstellen')
+                  : t('product_card.choose_options', 'Optionen wählen')}
+              </span>
+            </>
+          )}
         </button>
       </div>
 

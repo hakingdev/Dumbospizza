@@ -27,6 +27,7 @@ import { restaurantLocation } from '../seed-products';
 import { geocodeAddress } from '../delivery/geocode';
 import { resolveRoadDistanceKm } from '../delivery/road-distance';
 import { normalizeDetourFactor } from '../delivery/detour';
+import { classifyStation } from '../kitchen/workshops';
 import type { EtaLoadLevel, KitchenStaffing, KitchenStation, OrderEtaAnalysis } from './types';
 
 export type { KitchenStaffing, OrderEtaAnalysis } from './types';
@@ -89,41 +90,12 @@ export function buildKitchenModelLines(staffing: KitchenStaffing): string[] {
 // Классификация позиций по станциям кухни
 // ---------------------------------------------------------------------------
 
-const SUSHI_MARKERS = ['maki', 'sushi'];
-const PIZZA_MARKERS = ['pizza', 'pizzen', 'calzone'];
-const NO_PREP_MARKERS = [
-  'getränk',
-  'getraenk',
-  'drink',
-  'wasser',
-  'cola',
-  'fanta',
-  'sprite',
-  'bier',
-  'wein',
-  'saft',
-  'dessert',
-  'eis',
-];
-
-/** По имени категории/подкатегории/товара решает, какая станция готовит позицию. */
-export function classifyStation(item: {
-  category?: string;
-  subcategory?: string;
-  name?: string;
-}): KitchenStation {
-  const haystack = [item.category, item.subcategory, item.name]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase();
-  if (!haystack) return 'fryer';
-
-  if (SUSHI_MARKERS.some((m) => haystack.includes(m))) return 'sushi';
-  if (NO_PREP_MARKERS.some((m) => haystack.includes(m))) return 'none';
-  if (PIZZA_MARKERS.some((m) => haystack.includes(m))) return 'pizza';
-  // Всё остальное (Beilagen, крылья, снэки, салаты…) делает «второй человек».
-  return 'fryer';
-}
+/**
+ * Живёт в lib/kitchen/workshops.ts (чистый файл без БД/SDK): ту же классификацию
+ * использует стоп-бот и чекаут, когда останавливают отдельный цех.
+ * Реэкспорт — чтобы не менять существующих потребителей ETA.
+ */
+export { classifyStation };
 
 export interface StationUnits {
   pizza: number;

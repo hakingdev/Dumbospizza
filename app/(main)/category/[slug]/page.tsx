@@ -17,8 +17,10 @@ import SubcategoryFilter from '../../../../components/SubcategoryFilter';
 import { cachedJson } from '../../../../lib/client-cache';
 import {
   PromotionBadgesProvider,
+  readCategoryId,
   toBadgeItems,
 } from '../../../../components/promotions/PromotionBadgesContext';
+import { useKitchenBlocks } from '../../../../lib/contexts/KitchenBlocksContext';
 import { getProductDisplayPrice } from '../../../../lib/product-pricing';
 
 // useParams() liefert das URL-Segment ENKODIERT (z. B. "getr%C3%A4nke" für "getränke").
@@ -46,6 +48,14 @@ export default function CategoryPage() {
   const categoryTitle = categoryName;
   // Бейджи акций для всей сетки — одним запросом вместо двух на карточку.
   const badgeItems = useMemo(() => toBadgeItems(products), [products]);
+
+  // Вся категория на паузе (стоп-бот)? Говорим об этом СРАЗУ, до товаров.
+  const { blockedWorkshopFor, messageFor } = useKitchenBlocks();
+  const blockedWorkshop = useMemo(() => {
+    const first: any = products[0];
+    const categoryId = readCategoryId(first?.category ?? first?.categoryId);
+    return categoryId ? blockedWorkshopFor({ categoryId }) : null;
+  }, [products, blockedWorkshopFor]);
 
   useEffect(() => {
     const fetchProducts = async () => {
@@ -108,7 +118,16 @@ export default function CategoryPage() {
       </Link>
       
       <h1 className="mb-8 break-words text-4xl font-bold leading-tight">{categoryTitle}</h1>
-      
+
+      {blockedWorkshop && (
+        <div className="mb-8 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+          <span className="text-2xl leading-none" aria-hidden="true">
+            ⏸️
+          </span>
+          <p className="text-sm leading-6 text-amber-900">{messageFor([blockedWorkshop])}</p>
+        </div>
+      )}
+
       <SubcategoryFilter
         subcategories={subcategories}
         counts={countBySubcategory(products as any[], subcategories, (p: any) => p.subcategoryId)}

@@ -21,6 +21,8 @@ import {
   getNowMinutesInTimeZone,
   parseOrdersTimeToMinutes,
 } from '../../../lib/order-acceptance-hours'
+import { useKitchenBlocks } from '../../../lib/contexts/KitchenBlocksContext'
+import type { WorkshopId } from '../../../lib/kitchen/workshops'
 import { evaluateDeliveryGate } from '../../../lib/delivery/checkout-gate'
 import { normalizeFreeDeliveryThreshold } from '../../../lib/delivery/delivery-fee'
 import { NoTranslate } from '../../../components/NoTranslate'
@@ -165,6 +167,8 @@ export default function CheckoutPage() {
   const [orderSettings, setOrderSettings] = useState<any>(null)
   const [orderBlocked, setOrderBlocked] = useState(false)
   const [orderBlockMessage, setOrderBlockMessage] = useState('')
+  // Остановленные цеха (стоп-бот) — общее состояние витрины, одно на всё приложение.
+  const { blockedWorkshopsForItems, messageFor: kitchenMessageFor } = useKitchenBlocks()
 
   // Meta Pixel: начало оформления — один раз, когда корзина гидратирована и не пуста
   const initiateCheckoutSent = useRef(false)
@@ -267,6 +271,12 @@ export default function CheckoutPage() {
     loadZones()
   }, [deliveryZone])
 
+  /** Цеха на паузе, позиции которых лежат в корзине (пусто — заказ проходит). */
+  const blockedWorkshopsInCart = useMemo<WorkshopId[]>(
+    () => blockedWorkshopsForItems(state.items),
+    [blockedWorkshopsForItems, state.items]
+  )
+
   useEffect(() => {
     const evaluateOrderBlock = () => {
       const settings = orderSettings || {}
@@ -300,6 +310,15 @@ export default function CheckoutPage() {
         return
       }
 
+      // Цех на паузе — заказ блокируем, только если его позиции в корзине.
+      // Текст про цеха ИЗ КОРЗИНЫ, а не про все остановленные: гостю с пиццей
+      // незачем читать про суши. Минуты пересчитываются на каждом тике.
+      if (blockedWorkshopsInCart.length > 0) {
+        setOrderBlocked(true)
+        setOrderBlockMessage(kitchenMessageFor(blockedWorkshopsInCart))
+        return
+      }
+
       setOrderBlocked(false)
       setOrderBlockMessage('')
     }
@@ -307,7 +326,7 @@ export default function CheckoutPage() {
     evaluateOrderBlock()
     const interval = setInterval(evaluateOrderBlock, 60 * 1000)
     return () => clearInterval(interval)
-  }, [orderSettings])
+  }, [orderSettings, blockedWorkshopsInCart, kitchenMessageFor])
   
   // Sync local state with cart context (only when values actually change)
   useEffect(() => {

@@ -32,6 +32,12 @@ import {
   getNowMinutesInTimeZone,
   parseOrdersTimeToMinutes,
 } from '../../../lib/order-acceptance-hours';
+import {
+  WORKSHOP_BLOCK_MESSAGE_KEY,
+  blockedWorkshopsForItems,
+  buildWorkshopBlockMessage,
+  readWorkshopBlocks,
+} from '../../../lib/kitchen/workshops';
 import { getServerSession } from 'next-auth';
 import { authOptions, isStaff } from '../../../lib/auth';
 import { getCustomerSession } from '../../../lib/customer-auth';
@@ -239,6 +245,37 @@ export async function POST(request: NextRequest) {
       }
 
       await collectProductMeta(lineProducts as any[]);
+    }
+
+    // Стоп по цехам (стоп-бот / админка): заказ отклоняем, только если в нём
+    // есть позиции остановленного цеха. Категорию берём с сервера, а не из
+    // корзины — классификация не должна зависеть от того, что прислал клиент.
+    const workshopBlocks = readWorkshopBlocks(storeSettings);
+    const blockedWorkshops = blockedWorkshopsForItems(
+      (orderData.items || []).map((item: any) => {
+        const productId = item.productId || item.id;
+        return {
+          category: categoryByProduct.get(productId),
+          subcategory: subcategoryByProduct.get(productId),
+          name: item.name,
+        };
+      }),
+      workshopBlocks,
+      now
+    );
+    if (blockedWorkshops.length > 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: buildWorkshopBlockMessage(blockedWorkshops, {
+            blocks: workshopBlocks,
+            now,
+            template: storeSettings?.[WORKSHOP_BLOCK_MESSAGE_KEY],
+          }),
+          blockedWorkshops,
+        },
+        { status: 403 }
+      );
     }
 
     // Transform items to match Order schema

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { Save, Store, CreditCard, Search, Globe, Mail, MapPin, Plug, MessageCircle } from 'lucide-react';
 import StatusModal from '../../../components/admin/StatusModal';
 import { normalizeStoredOrdersTime } from '../../../lib/order-acceptance-hours';
+import { DEFAULT_WORKSHOP_BLOCK_MESSAGE } from '../../../lib/kitchen/workshops';
 
 export default function SettingsPage() {
   const [mewsPosEnabled, setMewsPosEnabled] = useState(false);
@@ -44,6 +45,8 @@ export default function SettingsPage() {
     ordersBlockedUntil: '',
     ordersBlockedReason: 'Кухня переполнена. Попробуйте позже.',
     ordersBlockMinutes: 0,
+    // Стоп отдельного цеха (стоп-бот): текст гостю с подстановкой минут.
+    workshopsBlockedMessage: DEFAULT_WORKSHOP_BLOCK_MESSAGE,
     
     // Stripe settings
     stripePublicKey: '',
@@ -481,6 +484,26 @@ export default function SettingsPage() {
                   onChange={(e) => setSettings({ ...settings, ordersBlockedReason: e.target.value })}
                   className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500"
                 />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-2">
+                  Сообщение при стопе цеха (пицца / MakiLove)
+                </label>
+                <textarea
+                  rows={3}
+                  value={settings.workshopsBlockedMessage}
+                  onChange={(e) =>
+                    setSettings({ ...settings, workshopsBlockedMessage: e.target.value })
+                  }
+                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Текст видит гость на немецком, когда в корзине позиции остановленного цеха.
+                  Подстановки: <code>{'{minutes}'}</code> или <code>@</code> — сколько минут
+                  осталось до конца стопа, <code>{'{workshop}'}</code> — какие позиции стоят,{' '}
+                  <code>{'{time}'}</code> — во сколько снова примем.
+                </p>
               </div>
 
               <div className="grid grid-cols-3 gap-4 items-end">

@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { ChevronLeft, Plus, Minus, ShoppingCart, Check } from 'lucide-react';
 import { useCart } from '../../../../lib/contexts/CartContext';
+import { useKitchenBlocks } from '../../../../lib/contexts/KitchenBlocksContext';
+import { WORKSHOP_BLOCK_HEADLINE } from '../../../../lib/kitchen/workshops';
 import { useParams, useRouter } from 'next/navigation';
 import { useLanguage } from '../../../../lib/contexts/LanguageContext';
 import { loadTranslation } from '../../../../lib/i18n';
@@ -73,6 +75,7 @@ export default function ProductPage() {
   const productId = params.id as string;
   const router = useRouter();
   const { addItem } = useCart();
+  const { blockedWorkshopFor, messageFor, showNotice } = useKitchenBlocks();
   const { language } = useLanguage();
   const [t, setT] = useState<any>(() => (k: string, fallback?: string) => fallback ?? k);
   
@@ -225,8 +228,20 @@ export default function ProductPage() {
     return total;
   };
   
+  // Стоп цеха (стоп-бот): пока товар не загружен — не блокируем (пустое имя
+  // классифицировалось бы как цех пиццы).
+  const blockedWorkshop = product
+    ? blockedWorkshopFor({ categoryId: readCategoryId(product.category), name: product.name })
+    : null;
+
   const handleAddToCart = () => {
     if (!product) return;
+
+    // Цех позиции остановлен — в корзину не кладём, объясняем почему.
+    if (blockedWorkshop) {
+      showNotice([blockedWorkshop]);
+      return;
+    }
 
     const err = validateOptions();
     if (err) {
@@ -583,13 +598,29 @@ export default function ProductPage() {
                 <p className="text-sm text-red-600 mb-2">{optionError}</p>
               )}
 
+              {blockedWorkshop && (
+                <div className="mb-3 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
+                  <span className="text-2xl leading-none" aria-hidden="true">
+                    ⏸️
+                  </span>
+                  <p className="text-sm leading-6 text-amber-900">{messageFor([blockedWorkshop])}</p>
+                </div>
+              )}
+
               {/* Add to Cart Button */}
               <button
                 onClick={handleAddToCart}
                 disabled={isAdding}
-                className="btn-primary w-full text-lg disabled:cursor-not-allowed disabled:opacity-50"
+                aria-disabled={!!blockedWorkshop}
+                className={`w-full text-lg ${
+                  blockedWorkshop
+                    ? 'flex min-h-[52px] cursor-not-allowed items-center justify-center rounded-lg bg-gray-200 font-medium text-gray-600'
+                    : 'btn-primary disabled:cursor-not-allowed disabled:opacity-50'
+                }`}
               >
-                {isAdding ? (
+                {blockedWorkshop ? (
+                  WORKSHOP_BLOCK_HEADLINE
+                ) : isAdding ? (
                   <>
                     <Check className="h-6 w-6" />
                     {t('product.added', 'Hinzugefügt!')}
