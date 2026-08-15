@@ -14,6 +14,11 @@
  * было одно и то же понимание «что где готовится».
  */
 import type { KitchenStation } from '../eta/types';
+import { formatBlockTemplate, isBlockActive, remainingBlockMinutes } from './block-message';
+
+// Общие для обеих настроек о паузе (глобальной и цеховой) — реэкспорт, чтобы
+// потребители тянули всё из одного модуля.
+export { formatBlockTemplate, isBlockActive, remainingBlockMinutes };
 
 // ---------------------------------------------------------------------------
 // Классификация позиции по станции кухни
@@ -112,13 +117,6 @@ export function readWorkshopBlocks(settings: Record<string, any> | null | undefi
   return blocks;
 }
 
-/** true — метка блокировки ещё не истекла. */
-export function isBlockActive(until: unknown, now: Date = new Date()): boolean {
-  if (typeof until !== 'string' || !until) return false;
-  const time = new Date(until).getTime();
-  return Number.isFinite(time) && time > now.getTime();
-}
-
 /** Какие цеха сейчас стоят. */
 export function activeWorkshopBlocks(
   blocks: WorkshopBlocks,
@@ -171,25 +169,6 @@ export const DEFAULT_WORKSHOP_BLOCK_MESSAGE =
 
 /** Заголовок/кнопка: «временно не принимаем», а не «закрыто навсегда». */
 export const WORKSHOP_BLOCK_HEADLINE = 'Derzeit sind keine Bestellungen möglich';
-
-const BERLIN_TZ = 'Europe/Berlin';
-
-/** Сколько минут осталось до конца стопа (вверх; 0 — стоп уже не активен). */
-export function remainingBlockMinutes(until: unknown, now: Date = new Date()): number {
-  if (!isBlockActive(until, now)) return 0;
-  const diffMs = new Date(until as string).getTime() - now.getTime();
-  return Math.max(1, Math.ceil(diffMs / 60_000));
-}
-
-function formatBerlinTime(iso: string): string {
-  const date = new Date(iso);
-  if (isNaN(date.getTime())) return '—';
-  return new Intl.DateTimeFormat('de-DE', {
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: BERLIN_TZ,
-  }).format(date);
-}
 
 /** Короткая плашка на карточке: «MakiLove (Sushi) · noch 20 Min». */
 export function buildWorkshopBadge(
@@ -250,11 +229,8 @@ export function buildWorkshopBlockMessage(
     return `Wir haben aktuell zu viele Bestellungen für ${labels} – derzeit sind keine Bestellungen möglich. ${alternative}`;
   }
 
-  const filled = template
-    .replace(/\{workshop\}/g, labels)
-    .replace(/\{minutes\}/g, String(minutes))
-    .replace(/\{time\}/g, formatBerlinTime(longest))
-    .replace(/@/g, String(minutes));
+  // {minutes}/@/{time} — общий формат с «Сообщением при перегрузке кухни».
+  const filled = formatBlockTemplate(template.replace(/\{workshop\}/g, labels), longest, now);
 
   // Шаблон из админки может не знать про {alternative} — дописываем сами.
   return filled.includes('{alternative}')

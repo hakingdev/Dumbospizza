@@ -2,6 +2,7 @@ import { Product } from '../models/product.model';
 import { getValidSizes } from '../product-pricing';
 import { hydrateSizeVariationStates } from '../size-variation-sync';
 import { normalizedSizeName } from '../size-variation-state';
+import { getBlockedCategories, isProductBlocked } from '../kitchen/blocked-categories';
 import { getGiftItems, giftOptionId } from './gifts';
 
 type GiftPromoLike = {
@@ -32,12 +33,17 @@ export async function buildGiftCatalog(
   }
   if (productIds.size === 0) return new Set();
 
-  const products = await Product.find({
-    _id: { $in: Array.from(productIds) },
-    available: true,
-  })
-    .select('basePrice sizes')
-    .lean();
+  const [products, blocked] = await Promise.all([
+    Product.find({
+      _id: { $in: Array.from(productIds) },
+      available: true,
+    })
+      .select('basePrice sizes category')
+      .lean(),
+    // Цех остановлен (стоп-бот) → его подарки не предлагаем: иначе гость выберет
+    // Gratis-ролл, когда суши не готовят, и упрётся в отказ уже на оплате.
+    getBlockedCategories(),
+  ]);
   // Größen-Status kommt aus der Bibliothek — ohne Hydration greift ein dort
   // abgeschalteter Größenvariant nicht auf die eingebetteten Produktgrößen durch.
   await hydrateSizeVariationStates(products as any[]);
@@ -50,6 +56,8 @@ export async function buildGiftCatalog(
       const product = productById.get(item.productId);
       // Produkt gelöscht oder im Admin abgeschaltet → kein Gratis-Artikel.
       if (!product) continue;
+      // Werkstatt gestoppt (Stop-Bot) → dieses Geschenk gibt es gerade nicht.
+      if (isProductBlocked(product, blocked)) continue;
 
       const pricing = { basePrice: Number(product.basePrice) || 0, sizes: product.sizes || [] };
       const activeSizes = getValidSizes(pricing);

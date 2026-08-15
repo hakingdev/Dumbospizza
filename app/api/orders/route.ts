@@ -36,6 +36,7 @@ import {
   WORKSHOP_BLOCK_MESSAGE_KEY,
   blockedWorkshopsForItems,
   buildWorkshopBlockMessage,
+  formatBlockTemplate,
   readWorkshopBlocks,
 } from '../../../lib/kitchen/workshops';
 import { getServerSession } from 'next-auth';
@@ -124,7 +125,12 @@ export async function POST(request: NextRequest) {
 
     if (blockedUntil && blockedUntil.getTime() > now.getTime()) {
       return NextResponse.json(
-        { success: false, error: blockReason, blockedUntil: blockedUntil.toISOString() },
+        {
+          success: false,
+          // В тексте из админки работают {minutes}/@ и {time}.
+          error: formatBlockTemplate(blockReason, blockedUntil.toISOString(), now),
+          blockedUntil: blockedUntil.toISOString(),
+        },
         { status: 403 }
       );
     }

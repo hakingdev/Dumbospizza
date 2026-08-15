@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { X, ShoppingCart, Minus, Plus, Trash2 } from 'lucide-react';
 import { useCart } from '../../lib/contexts/CartContext';
+import { useKitchenBlocks } from '../../lib/contexts/KitchenBlocksContext';
+import { WORKSHOP_BLOCK_HEADLINE } from '../../lib/kitchen/workshops';
 import { useLanguage } from '../../lib/contexts/LanguageContext';
 import { loadTranslation } from '../../lib/i18n';
 import OrderSummaryBreakdown from './OrderSummaryBreakdown';
@@ -31,6 +33,10 @@ export function CartModal({ isOpen, onClose }: CartModalProps) {
   } = state;
   const { language } = useLanguage();
   const [t, setT] = useState<any>(() => (k: string, fallback?: string) => fallback ?? k);
+  // Цех мог встать уже ПОСЛЕ наполнения корзины — помечаем такие позиции и
+  // не пускаем дальше, иначе гость узнает об этом только на оплате.
+  const { blockedWorkshopFor, blockedWorkshopsForItems, messageFor } = useKitchenBlocks();
+  const blockedInCart = blockedWorkshopsForItems(items);
 
   useEffect(() => {
     const loadTranslations = async () => {
@@ -98,8 +104,26 @@ export function CartModal({ isOpen, onClose }: CartModalProps) {
             </div>
           ) : (
             <div className="space-y-4">
+              {blockedInCart.length > 0 && (
+                <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
+                  <span className="text-xl leading-none" aria-hidden="true">
+                    ⏸️
+                  </span>
+                  <p className="text-sm leading-6 text-amber-900">{messageFor(blockedInCart)}</p>
+                </div>
+              )}
               {items.map((item) => (
-                <div key={item.id} className="bg-gray-50 rounded-xl p-4">
+                <div
+                  key={item.id}
+                  className={`rounded-xl p-4 ${
+                    blockedWorkshopFor(item) ? 'bg-amber-50 ring-1 ring-amber-200' : 'bg-gray-50'
+                  }`}
+                >
+                  {blockedWorkshopFor(item) && (
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-700">
+                      ⏸️ {WORKSHOP_BLOCK_HEADLINE}
+                    </p>
+                  )}
                   <div className="flex items-start space-x-4">
                     {/* Image placeholder */}
                     <div className="w-20 h-20 bg-gray-200 rounded-lg flex-shrink-0 flex items-center justify-center">
@@ -187,13 +211,23 @@ export function CartModal({ isOpen, onClose }: CartModalProps) {
             />
 
             {/* Actions */}
-            <Link 
-              href="/checkout"
-              className="btn-primary w-full flex items-center justify-center"
-              onClick={onClose}
-            >
-              {t('cart.proceed_to_checkout', 'Zur Kasse')}
-            </Link>
+            {blockedInCart.length > 0 ? (
+              <button
+                type="button"
+                disabled
+                className="flex w-full cursor-not-allowed items-center justify-center rounded-lg bg-gray-200 px-4 py-3 font-medium text-gray-600"
+              >
+                {WORKSHOP_BLOCK_HEADLINE}
+              </button>
+            ) : (
+              <Link
+                href="/checkout"
+                className="btn-primary w-full flex items-center justify-center"
+                onClick={onClose}
+              >
+                {t('cart.proceed_to_checkout', 'Zur Kasse')}
+              </Link>
+            )}
             
             <button 
               onClick={onClose}

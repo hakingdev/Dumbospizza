@@ -13,6 +13,8 @@ import GratisGiftPickerModal from '../../../components/promotions/GratisGiftPick
 import BogoHalfPricePickerModal from '../../../components/promotions/BogoHalfPricePickerModal'
 import { SafeImage } from '../../../components/SafeImage'
 import { useCart } from '../../../lib/contexts/CartContext'
+import { useKitchenBlocks } from '../../../lib/contexts/KitchenBlocksContext'
+import { WORKSHOP_BLOCK_HEADLINE } from '../../../lib/kitchen/workshops'
 import { getConflictingPromotions } from '../../../lib/promotions/coupon-conflict'
 import { PROMO_CONFLICT_MESSAGE } from '../../../components/cart/PromoConflictDialog'
 import { NoTranslate } from '../../../components/NoTranslate'
@@ -95,7 +97,16 @@ export default function CartPage() {
   const grandTotal = Math.max(0, totals.total ?? 0);
   const couponOrderAmount = state.items.reduce((s, i) => s + i.price * i.quantity, 0);
 
+  // Стоп цеха мог начаться уже после наполнения корзины.
+  const { blockedWorkshopFor, blockedWorkshopsForItems, messageFor, showNotice } = useKitchenBlocks();
+  const blockedInCart = blockedWorkshopsForItems(state.items);
+
   const handleProceedToCheckout = () => {
+    // Цех встал уже с наполненной корзиной — дальше не пускаем.
+    if (blockedInCart.length > 0) {
+      showNotice(blockedInCart);
+      return;
+    }
     // Награда BOGO опциональна — не блокируем оформление.
     if (needsGiftSelection) {
       openGiftModal();
@@ -161,7 +172,12 @@ export default function CartPage() {
             <div className="bg-white rounded-lg shadow-md overflow-hidden">
               <ul className="divide-y divide-gray-200">
                 {state.items.map((item) => (
-                  <li key={item.id} className="p-4">
+                  <li key={item.id} className={`p-4 ${blockedWorkshopFor(item) ? 'bg-amber-50' : ''}`}>
+                    {blockedWorkshopFor(item) && (
+                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-700">
+                        ⏸️ {WORKSHOP_BLOCK_HEADLINE}
+                      </p>
+                    )}
                     <div className="flex flex-col md:flex-row md:items-center gap-4">
                       <div className="md:w-24 h-24 bg-gray-200 rounded-md flex items-center justify-center text-gray-500 flex-shrink-0 overflow-hidden">
                         {item.image ? (
@@ -334,12 +350,26 @@ export default function CartPage() {
                 </button>
               )}
               
+              {blockedInCart.length > 0 && (
+                <div className="mb-4 flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                  <span className="text-xl leading-none" aria-hidden="true">
+                    ⏸️
+                  </span>
+                  <p className="text-sm leading-6 text-amber-900">{messageFor(blockedInCart)}</p>
+                </div>
+              )}
+
               <button
                 type="button"
                 onClick={handleProceedToCheckout}
-                className="btn-primary w-full mb-4 flex items-center justify-center"
+                disabled={blockedInCart.length > 0}
+                className={`w-full mb-4 flex items-center justify-center ${
+                  blockedInCart.length > 0
+                    ? 'min-h-[48px] cursor-not-allowed rounded-lg bg-gray-200 font-medium text-gray-600'
+                    : 'btn-primary'
+                }`}
               >
-                {t('cart.proceed_to_checkout')}
+                {blockedInCart.length > 0 ? WORKSHOP_BLOCK_HEADLINE : t('cart.proceed_to_checkout')}
               </button>
               
               {/* No registration required message */}

@@ -484,6 +484,11 @@ export default function SettingsPage() {
                   onChange={(e) => setSettings({ ...settings, ordersBlockedReason: e.target.value })}
                   className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500"
                 />
+                <p className="text-xs text-gray-500 mt-1">
+                  Подстановки: <code>{'{minutes}'}</code> или <code>@</code> — сколько осталось
+                  ждать («20 Minuten»), <code>{'{time}'}</code> — во сколько снова примем.
+                  Например: «Die Küche ist überfüllt. Versuchen Sie es in {'{minutes}'}.»
+                </p>
               </div>
 
               <div>
@@ -500,9 +505,10 @@ export default function SettingsPage() {
                 />
                 <p className="text-xs text-gray-500 mt-1">
                   Текст видит гость на немецком, когда в корзине позиции остановленного цеха.
-                  Подстановки: <code>{'{minutes}'}</code> или <code>@</code> — сколько минут
-                  осталось до конца стопа, <code>{'{workshop}'}</code> — какие позиции стоят,{' '}
-                  <code>{'{time}'}</code> — во сколько снова примем.
+                  Подстановки: <code>{'{minutes}'}</code> или <code>@</code> — сколько осталось
+                  ждать («20 Minuten»), <code>{'{workshop}'}</code> — какие позиции стоят,{' '}
+                  <code>{'{time}'}</code> — во сколько снова примем, <code>{'{alternative}'}</code>{' '}
+                  — что заказать вместо (добавляется само, если не указать).
                 </p>
               </div>
 

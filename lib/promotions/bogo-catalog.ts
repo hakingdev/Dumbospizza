@@ -2,6 +2,7 @@ import { Product } from '../models/product.model';
 import type { BogoSecondOption, BogoMode } from './types';
 import { getProductDisplayPrice, getSizePrice, getValidSizes } from '../product-pricing';
 import { hydrateSizeVariationStates } from '../size-variation-sync';
+import { getBlockedCategories, isProductBlocked } from '../kitchen/blocked-categories';
 
 type PromoRewardItem = { productId?: unknown; sizeName?: unknown };
 
@@ -56,7 +57,12 @@ export async function buildBogoCatalog(
           ],
         };
 
-  const products = await Product.find(query).select('name image basePrice sizes category').lean();
+  const [allProducts, blocked] = await Promise.all([
+    Product.find(query).select('name image basePrice sizes category').lean(),
+    // Werkstatt gestoppt (Stop-Bot) → deren Artikel auch nicht als Belohnung.
+    getBlockedCategories(),
+  ]);
+  const products = allProducts.filter((p) => !isProductBlocked(p as any, blocked));
   await hydrateSizeVariationStates(products as any[]);
   const productById = new Map(products.map((p) => [String(p._id), p]));
 

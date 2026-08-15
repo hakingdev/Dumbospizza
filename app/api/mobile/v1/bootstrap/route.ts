@@ -15,6 +15,7 @@ import {
   WORKSHOP_BLOCK_MESSAGE_KEY,
   activeWorkshopBlocks,
   buildWorkshopBlockMessage,
+  formatBlockTemplate,
   readWorkshopBlocks,
 } from '../../../../../lib/kitchen/workshops';
 
@@ -62,7 +63,8 @@ export async function GET() {
 
     if (blockedUntil && blockedUntil.getTime() > now.getTime()) {
       acceptingOrders = false;
-      ordersClosedMessage = blockReason;
+      // {minutes}/@ и {time} в тексте из админки.
+      ordersClosedMessage = formatBlockTemplate(blockReason, blockedUntil.toISOString(), now);
     } else if (nowMinutes < startMinutes) {
       acceptingOrders = false;
       const timeLabel = formatMinutesAsHHmm(startMinutes);

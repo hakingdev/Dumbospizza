@@ -163,7 +163,7 @@ describe('buildWorkshopBlockMessage', () => {
       template: '{alternative} ({workshop} pausiert noch {minutes} Min.)',
     });
     expect(text).toBe(
-      'Bestellen Sie solange Pizza, Beilagen und Getränke. (MakiLove (Sushi) pausiert noch 30 Min.)'
+      'Bestellen Sie solange Pizza, Beilagen und Getränke. (MakiLove (Sushi) pausiert noch 30 Minuten.)'
     );
   });
 

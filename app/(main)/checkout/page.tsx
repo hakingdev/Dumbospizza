@@ -22,7 +22,11 @@ import {
   parseOrdersTimeToMinutes,
 } from '../../../lib/order-acceptance-hours'
 import { useKitchenBlocks } from '../../../lib/contexts/KitchenBlocksContext'
-import type { WorkshopId } from '../../../lib/kitchen/workshops'
+import {
+  WORKSHOP_BLOCK_HEADLINE,
+  formatBlockTemplate,
+  type WorkshopId,
+} from '../../../lib/kitchen/workshops'
 import { evaluateDeliveryGate } from '../../../lib/delivery/checkout-gate'
 import { normalizeFreeDeliveryThreshold } from '../../../lib/delivery/delivery-fee'
 import { NoTranslate } from '../../../components/NoTranslate'
@@ -293,7 +297,8 @@ export default function CheckoutPage() {
 
       if (blockedUntil && blockedUntil.getTime() > now.getTime()) {
         setOrderBlocked(true)
-        setOrderBlockMessage(blockReason)
+        // {minutes}/@ и {time} в тексте из админки — как в сообщении про цех.
+        setOrderBlockMessage(formatBlockTemplate(blockReason, blockedUntil.toISOString(), now))
         return
       }
 
@@ -541,6 +546,12 @@ export default function CheckoutPage() {
   })
 
   const handleNextStep = () => {
+    // Пауза приёма (весь приём или цех из корзины) — дальше не пускаем ни с
+    // какого шага, чтобы гость не узнавал об этом только на оплате.
+    if (orderBlocked) {
+      setErrors(prev => ({ ...prev, submit: orderBlockMessage }))
+      return
+    }
     if (step === 1) {
       if (!validateStep1()) {
         return
@@ -921,6 +932,17 @@ export default function CheckoutPage() {
         </div>
       </div>
       
+      {/* Пауза приёма (весь приём или цех) — видно на КАЖДОМ шаге, а не только
+          перед оплатой: стоп мог начаться уже с наполненной корзиной. */}
+      {orderBlocked && (
+        <div className="mb-6 flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4">
+          <span className="text-2xl leading-none" aria-hidden="true">
+            ⏸️
+          </span>
+          <p className="text-sm leading-6 text-amber-900">{orderBlockMessage}</p>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2">
           {/* Step 1: Delivery Info */}
@@ -1212,9 +1234,9 @@ export default function CheckoutPage() {
                   type="button"
                   className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
                   onClick={handleNextStep}
-                  disabled={deliveryType === 'delivery' && !deliveryGate.allowed}
+                  disabled={orderBlocked || (deliveryType === 'delivery' && !deliveryGate.allowed)}
                 >
-                  {t('common.next', 'Weiter')}
+                  {orderBlocked ? WORKSHOP_BLOCK_HEADLINE : t('common.next', 'Weiter')}
                 </button>
               </div>
             </div>
@@ -1431,12 +1453,7 @@ export default function CheckoutPage() {
                 </div>
               )}
 
-              {orderBlocked && (
-                <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-                  <p className="text-amber-800 text-sm">{orderBlockMessage}</p>
-                </div>
-              )}
-              
+              {/* Баннер о паузе теперь один — над шагами (виден на каждом шаге). */}
               <div className="flex flex-col justify-between gap-3 sm:flex-row">
                 <button 
                   type="button" 
