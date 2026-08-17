@@ -1242,7 +1242,13 @@ export async function processTelegramUpdate(update: any): Promise<void> {
       }
 
       sendOrderStatusNotification(
-        { phoneNumber: order.phoneNumber, orderNumber: order.orderNumber },
+        {
+          phoneNumber: order.phoneNumber,
+          orderNumber: order.orderNumber,
+          // От типа заказа зависит подпись статуса гостю: «Unterwegs» у
+          // доставки и «Abholbereit» у самовывоза.
+          deliveryType: order.deliveryType,
+        },
         status
       ).catch((e) => console.error('WhatsApp status notification:', e));
     },

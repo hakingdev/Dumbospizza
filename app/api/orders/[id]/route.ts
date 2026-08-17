@@ -177,7 +177,12 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
     if (statusChanged) {
       sendOrderStatusNotification(
-        { phoneNumber: order.phoneNumber, orderNumber: order.orderNumber },
+        {
+          phoneNumber: order.phoneNumber,
+          orderNumber: order.orderNumber,
+          // Подпись статуса гостю зависит от типа: «Unterwegs» / «Abholbereit».
+          deliveryType: order.deliveryType,
+        },
         status
       ).catch((e) => console.error('WhatsApp status notification:', e));
 

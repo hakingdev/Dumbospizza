@@ -15,24 +15,65 @@ const GRAPH_API_VERSION = 'v21.0';
 const DEFAULT_COUNTRY_CODE = '49';
 
 /** Короткие подписи для Meta Cloud API (шаблоны). */
+/**
+ * Подписи статуса для гостя. Именно эта строка подставляется в утверждённый
+ * WhatsApp-шаблон Twilio как переменная {{2}} — гость видит её, а не текст из
+ * STATUS_MESSAGES_DE (тот идёт только в режиме web-воркера).
+ *
+ * ready_for_delivery зависит от типа заказа: у доставки это «курьер повёз»
+ * (карточка в Telegram в этот момент уезжает в тему «Доставка»), а у самовывоза
+ * никакого «unterwegs» нет — гость сам придёт, ему нужно «можно забирать».
+ */
 const STATUS_LABELS: Record<string, string> = {
   new: 'Aufgegeben',
   preparing: 'Wird vorbereitet',
-  ready_for_delivery: 'Fertig',
+  ready_for_delivery: 'Unterwegs',
   delivering: 'Unterwegs',
-  completed: 'Zugestellt',
+  completed: 'Fertig',
   cancelled: 'Storniert'
+};
+
+const PICKUP_STATUS_LABELS: Record<string, string> = {
+  ready_for_delivery: 'Abholbereit',
+  delivering: 'Abholbereit',
+  completed: 'Abgeholt',
 };
 
 /** Полные фразы для WhatsApp (режим воркера): статус заказа клиенту на немецком. {{orderNumber}} → номер заказа. */
 const STATUS_MESSAGES_DE: Record<string, string> = {
   new: 'Ihre Bestellung {{orderNumber}} wurde aufgegeben.',
   preparing: 'Ihre Bestellung {{orderNumber}} wird vorbereitet.',
-  ready_for_delivery: 'Ihre Bestellung {{orderNumber}} ist fertig.',
+  ready_for_delivery: 'Ihre Bestellung {{orderNumber}} ist unterwegs.',
   delivering: 'Ihre Bestellung {{orderNumber}} ist unterwegs.',
-  completed: 'Ihre Bestellung {{orderNumber}} wurde zugestellt.',
+  completed: 'Ihre Bestellung {{orderNumber}} ist fertig. Guten Appetit!',
   cancelled: 'Ihre Bestellung {{orderNumber}} wurde storniert.'
 };
+
+const PICKUP_STATUS_MESSAGES_DE: Record<string, string> = {
+  ready_for_delivery: 'Ihre Bestellung {{orderNumber}} ist fertig und kann abgeholt werden.',
+  delivering: 'Ihre Bestellung {{orderNumber}} ist fertig und kann abgeholt werden.',
+  completed: 'Ihre Bestellung {{orderNumber}} wurde abgeholt. Guten Appetit!',
+};
+
+/**
+ * Что увидит гость при смене статуса: подпись для шаблона Twilio ({{2}}) и
+ * готовая фраза для режима воркера. Вынесено отдельной функцией, потому что
+ * этот текст уходит живым людям — он должен быть покрыт тестом.
+ */
+export function resolveStatusTexts(
+  status: string,
+  deliveryType?: string,
+  orderNumber = ''
+): { label: string; message: string } {
+  const isPickup = deliveryType === 'pickup';
+  const label =
+    (isPickup ? PICKUP_STATUS_LABELS[status] : undefined) ?? STATUS_LABELS[status] ?? status;
+  const template =
+    (isPickup ? PICKUP_STATUS_MESSAGES_DE[status] : undefined) ??
+    STATUS_MESSAGES_DE[status] ??
+    `Ihre Bestellung {{orderNumber}}: ${status}`;
+  return { label, message: template.replace(/\{\{orderNumber\}\}/g, orderNumber) };
+}
 
 function getTrackingUrl(orderNumber: string, baseUrl?: string): string {
   const base = (baseUrl || SITE_URL).replace(/\/$/, '');
@@ -54,6 +95,8 @@ function normalizePhoneE164(phone: string, defaultCountryCode: string = DEFAULT_
 export interface OrderForWhatsApp {
   phoneNumber: string;
   orderNumber: string;
+  /** 'pickup' — гость забирает сам: подписи статусов другие (см. STATUS_LABELS). */
+  deliveryType?: 'delivery' | 'pickup' | string;
 }
 
 interface TwilioConfig {
@@ -375,9 +418,11 @@ export async function sendOrderStatusNotification(
     const enabled = storeSettings?.whatsappOrderNotificationsEnabled ?? false;
     if (!enabled) return false;
 
-    const statusLabel = STATUS_LABELS[newStatus] ?? newStatus;
-    const statusMessageTemplate = STATUS_MESSAGES_DE[newStatus] ?? `Ihre Bestellung ${order.orderNumber}: ${newStatus}`;
-    const messageText = statusMessageTemplate.replace(/\{\{orderNumber\}\}/g, order.orderNumber);
+    const { label: statusLabel, message: messageText } = resolveStatusTexts(
+      newStatus,
+      order.deliveryType,
+      order.orderNumber
+    );
 
     const twilio = getTwilioConfig();
     if (twilio) {
