@@ -121,14 +121,24 @@ export function renderCardText(input: CardTextInput): string {
     .join('\n\n');
 }
 
-/** Хронология пройденных статусов: «🔥 Готовится 18:40 · 🚚 Доставляется 18:58». */
+/**
+ * Хронология пройденных статусов: «🔥 Готовится 18:40 · 🚚 Доставляется 18:58».
+ *
+ * У записей с пометкой она показывается прямо в строке — «🧍 Курьер: Юра
+ * (@yura) 19:01», «⚠️ Проблема: 📵 Не дозвонился 19:12». Без этого видно, что
+ * курьера переназначали, но не видно, с кого на кого.
+ *
+ * Пометка приходит из Telegram (имя пользователя), поэтому экранируется:
+ * сообщение уходит с parse_mode=HTML.
+ */
 export function renderTimeline(history: CardHistoryEntry[]): string {
   const parts = history
     .map((entry) => {
       const label = HISTORY_LABELS[entry.status];
       const time = formatTime(entry.timestamp);
       if (!label || !time) return '';
-      return `${label} ${time}`;
+      const note = entry.note ? `: ${escapeHtml(entry.note)}` : '';
+      return `${label}${note} ${time}`;
     })
     .filter(Boolean);
   if (!parts.length) return '';

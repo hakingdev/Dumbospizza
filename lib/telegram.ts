@@ -1061,10 +1061,16 @@ export async function handleCardCallbackQuery(
   return { handled: true, reason: 'problem_set' };
 }
 
-/** Имя нажавшего кнопку — для «Я забираю». */
-function telegramUserName(from: any): string {
+/**
+ * Кто нажал «Я забираю». Никнейм показываем рядом с именем: имён «Юра» в смене
+ * может быть двое, а @username в Telegram уникален — по нему видно, кто именно
+ * взял заказ, и кого спрашивать, если что-то пошло не так.
+ */
+export function telegramUserName(from: any): string {
   const name = [from?.first_name, from?.last_name].filter(Boolean).join(' ').trim();
-  return name || from?.username || 'курьер';
+  const username = from?.username ? `@${from.username}` : '';
+  if (name && username) return `${name} (${username})`;
+  return name || username || 'курьер';
 }
 
 /**

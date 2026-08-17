@@ -4,6 +4,7 @@ import {
   parseStatusCallback,
   resolveTelegramStatus,
   handleStatusCallbackQuery,
+  telegramUserName,
 } from '../telegram';
 
 /**
@@ -37,6 +38,29 @@ describe('parseStatusCallback', () => {
     expect(parseStatusCallback('status__123')).toBeNull();
     expect(parseStatusCallback(undefined)).toBeNull();
     expect(parseStatusCallback(123 as any)).toBeNull();
+  });
+});
+
+// Кто взял заказ («🙋 Я забираю» на карточке форума). Никнейм обязателен:
+// имён «Юра» в смене может быть двое, @username уникален.
+describe('telegramUserName', () => {
+  it('имя и никнейм показываются вместе', () => {
+    expect(telegramUserName({ first_name: 'Юра', last_name: 'Б.', username: 'yura' })).toBe(
+      'Юра Б. (@yura)'
+    );
+  });
+
+  it('только никнейм — если имени нет', () => {
+    expect(telegramUserName({ username: 'yura' })).toBe('@yura');
+  });
+
+  it('только имя — если никнейм не задан в Telegram', () => {
+    expect(telegramUserName({ first_name: 'Юра' })).toBe('Юра');
+  });
+
+  it('пустой from не роняет назначение курьера', () => {
+    expect(telegramUserName(undefined)).toBe('курьер');
+    expect(telegramUserName({})).toBe('курьер');
   });
 });
 

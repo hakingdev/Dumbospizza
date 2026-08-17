@@ -673,6 +673,40 @@ describe('renderCardText', () => {
     expect(text).toContain('💰 <b>Итого: 21.90 €</b>');
   });
 
+  it('в хронологии видно, кто брал заказ и что случилось', () => {
+    const text = renderCardText({
+      order: ORDER.notification,
+      status: 'ready',
+      createdAt: ORDER.createdAt,
+      courier: 'Пётр (@petro)',
+      statusHistory: [
+        { status: 'cooking', timestamp: '2026-06-20T16:40:00Z' },
+        { status: 'ready', timestamp: '2026-06-20T16:58:00Z' },
+        { status: 'courier', timestamp: '2026-06-20T17:01:00Z', note: 'Юра (@yura)' },
+        // Перехват заказа другим курьером виден как отдельная запись.
+        { status: 'courier', timestamp: '2026-06-20T17:05:00Z', note: 'Пётр (@petro)' },
+      ],
+    });
+
+    expect(text).toContain('🧍 Курьер: Юра (@yura) 19:01');
+    expect(text).toContain('🧍 Курьер: Пётр (@petro) 19:05');
+    expect(text).toContain('🧍 Курьер: Пётр (@petro)'); // в шапке — последний
+  });
+
+  it('имя из Telegram экранируется: карточка уходит с parse_mode=HTML', () => {
+    const text = renderCardText({
+      order: ORDER.notification,
+      status: 'ready',
+      createdAt: ORDER.createdAt,
+      courier: '<b>взлом</b>',
+      statusHistory: [
+        { status: 'courier', timestamp: '2026-06-20T17:01:00Z', note: '<b>взлом</b>' },
+      ],
+    });
+    expect(text).not.toContain('<b>взлом</b>');
+    expect(text).toContain('&lt;b&gt;взлом&lt;/b&gt;');
+  });
+
   it('проблема с доставкой видна в шапке', () => {
     const text = renderCardText({
       order: ORDER.notification,
