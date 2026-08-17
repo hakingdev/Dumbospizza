@@ -666,7 +666,7 @@ describe('renderCardText', () => {
     expect(text).toContain('🧍 Курьер: Иван');
     // Время в Europe/Berlin (UTC+2 летом)
     expect(text).toContain('🔥 Готовится 18:40');
-    expect(text).toContain('📦 Готов 18:58');
+    expect(text).toContain('🚚 Доставляется 18:58');
     expect(text).toContain('🚗 В пути 19:03');
     // Тело заказа осталось прежним
     expect(text).toContain('2x Pizza Margherita');

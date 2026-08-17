@@ -24,7 +24,7 @@ import postgres from 'postgres';
 
 const TOPICS = [
   { key: 'cooking', name: '🔥 Готовится', env: 'TELEGRAM_TOPIC_COOKING', setting: 'telegramTopicCooking' },
-  { key: 'ready', name: '📦 Готов к доставке', env: 'TELEGRAM_TOPIC_READY', setting: 'telegramTopicReady' },
+  { key: 'ready', name: '🚚 Доставка', env: 'TELEGRAM_TOPIC_READY', setting: 'telegramTopicReady' },
   { key: 'on_the_way', name: '🚗 В пути', env: 'TELEGRAM_TOPIC_ON_THE_WAY', setting: 'telegramTopicOnTheWay' },
   { key: 'delivered', name: '✅ Доставлен', env: 'TELEGRAM_TOPIC_DELIVERED', setting: 'telegramTopicDelivered' },
 ];

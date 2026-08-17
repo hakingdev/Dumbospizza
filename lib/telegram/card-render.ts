@@ -27,7 +27,7 @@ const TZ = 'Europe/Berlin';
 /** Короткие подписи для хронологии внизу карточки. */
 const HISTORY_LABELS: Record<string, string> = {
   cooking: '🔥 Готовится',
-  ready: '📦 Готов',
+  ready: '🚚 Доставляется',
   on_the_way: '🚗 В пути',
   delivered: '✅ Доставлен',
   cancelled: '❌ Отменён',
@@ -121,7 +121,7 @@ export function renderCardText(input: CardTextInput): string {
     .join('\n\n');
 }
 
-/** Хронология пройденных статусов: «🔥 Готовится 18:40 · 📦 Готов 18:58». */
+/** Хронология пройденных статусов: «🔥 Готовится 18:40 · 🚚 Доставляется 18:58». */
 export function renderTimeline(history: CardHistoryEntry[]): string {
   const parts = history
     .map((entry) => {

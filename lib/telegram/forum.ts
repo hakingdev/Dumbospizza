@@ -3,7 +3,7 @@
  * и «переезжает» между темами при смене статуса.
  *
  *   🔥 Готовится      → TOPIC_COOKING     (new, preparing)
- *   📦 Готов к доставке → TOPIC_READY      (ready_for_delivery)
+ *   🚚 Доставка        → TOPIC_READY      (ready_for_delivery)
  *   🚗 В пути          → TOPIC_ON_THE_WAY  (delivering)
  *   ✅ Доставлен       → TOPIC_DELIVERED   (completed)
  *   ❌ Отменён         → TOPIC_CANCELLED   (cancelled; по умолчанию = тема «Доставлен» как архив)
@@ -37,24 +37,31 @@ const REQUIRED_TOPICS: readonly CardStatus[] = ['cooking', 'ready', 'on_the_way'
 
 export const CARD_STATUS_EMOJI: Record<CardStatus, string> = {
   cooking: '🔥',
-  ready: '📦',
+  ready: '🚚',
   on_the_way: '🚗',
   delivered: '✅',
   cancelled: '❌',
 };
 
+/**
+ * Подписи статуса в шапке карточки. `ready` называется по теме
+ * («🚚 Доставляется»), а не «Готов к доставке»: у ресторана это один шаг —
+ * заказ уехал в доставку. Клиенту при этом по-прежнему уходит корректное
+ * «Ihre Bestellung ist fertig» (см. STATUS_MESSAGES_DE в lib/whatsapp.ts):
+ * внутренний статус остаётся ready_for_delivery, меняется только подпись.
+ */
 export const CARD_STATUS_LABELS: Record<CardStatus, string> = {
   cooking: '🔥 Готовится',
-  ready: '📦 Готов к доставке',
+  ready: '🚚 Доставляется',
   on_the_way: '🚗 В пути',
   delivered: '✅ Доставлен',
   cancelled: '❌ Отменён',
 };
 
-/** Названия тем при создании (scripts/telegram-topics.ts). */
+/** Названия тем при создании (scripts/telegram-topics.mjs). */
 export const CARD_TOPIC_NAMES: Record<CardStatus, string> = {
   cooking: '🔥 Готовится',
-  ready: '📦 Готов к доставке',
+  ready: '🚚 Доставка',
   on_the_way: '🚗 В пути',
   delivered: '✅ Доставлен',
   cancelled: '❌ Отменён',
@@ -164,7 +171,7 @@ export async function getForumConfig(): Promise<ForumConfig | null> {
     cancelled: raw.cancelled ?? raw.delivered!,
   };
 
-  // Со звуком по умолчанию два перехода: «Готов к доставке» (сигнал курьеру)
+  // Со звуком по умолчанию два перехода: «Доставляется» (сигнал курьеру)
   // и «Доставлен» (заказ закрыт — это видит менеджер). Отмена звука НЕ даёт,
   // хотя и уезжает в ту же тему, что «Доставлен»: звук привязан к статусу
   // карточки, а не к теме.
@@ -193,7 +200,7 @@ export async function getForumConfig(): Promise<ForumConfig | null> {
   };
 }
 
-/** Звук при переезде: тихо везде, кроме «Готов к доставке» (курьеру нужен сигнал). */
+/** Звук при переезде: тихо везде, кроме «Доставляется» (курьеру нужен сигнал). */
 export function shouldNotifyOnMove(config: ForumConfig, target: CardStatus): boolean {
   return config.soundStatuses.includes(target);
 }
