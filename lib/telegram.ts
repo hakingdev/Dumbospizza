@@ -5,11 +5,37 @@ import { connectToDatabase } from './models';
 import { Order } from './models/order.model';
 import type { IOrder } from './models/order.model';
 import { sendOrderStatusNotification, sendOrderEtaNotification } from './whatsapp';
-import type { OrderEtaAnalysis } from './eta/types';
 import { earnForCompletedOrder, reverseOrder } from './loyalty/service';
-import { stripPromoLabels } from './orders/gift-label';
 import { requestKitchenReprint } from './orders/print-queue';
 import { applyOrderDelay, isValidDelayMinutes, ORDER_DELAY_CHOICES } from './orders/delay';
+import {
+  buildOrderMessageText,
+  escapeHtml,
+  type OrderNotification,
+} from './telegram/order-message';
+import { cardStatusForOrderStatus, getForumConfig } from './telegram/forum';
+import {
+  assignCardCourier,
+  checkUndoWindow,
+  createOrderCard,
+  moveOrderCard,
+  recordDeliveryProblem,
+  refreshOrderCard,
+  setCardKeyboard,
+  type CardOrderInput,
+} from './telegram/card-mover';
+import {
+  parseCardCallback,
+  problemLabel,
+  renderCourierKeyboard,
+  renderProblemKeyboard,
+} from './telegram/card-render';
+
+// Текст сообщения о заказе живёт в ./telegram/order-message — общий рендер для
+// обычного сообщения и для карточки форума. Реэкспорт, чтобы существующие
+// импорты (lib/printing.ts, lib/orders/finalize.ts) не менялись.
+export { escapeHtml, buildOrderMessageText };
+export type { OrderNotification };
 
 const botCache = new Map<string, any>();
 
@@ -52,37 +78,6 @@ export function isOrderStatus(value: unknown): value is OrderStatus {
   return typeof value === 'string' && value in STATUS_INFO;
 }
 
-export interface OrderNotification {
-  orderId: string;
-  customerName: string;
-  phoneNumber: string;
-  address?: string;
-  notes?: string;
-  items: Array<{
-    name: string;
-    quantity: number;
-    price?: number;
-    /** Имя категории — для группировки в кухонном чеке. */
-    category?: string;
-    /** Имя подкатегории — подзаголовок внутри категории на кухонном чеке. */
-    subcategory?: string;
-    customizations?: string[];
-  }>;
-  totalAmount: number;
-  /** Сумма заказа без доставки и скидки */
-  subtotal?: number;
-  deliveryFee?: number;
-  /** Скидка по промокоду: сумма и тип (процент или фикс) */
-  discount?: { code?: string; amount: number; type: 'percentage' | 'fixed' };
-  paymentMethod: string;
-  deliveryType: 'delivery' | 'pickup';
-  desiredDeliveryTime?: string;
-  /** Объявленное клиенту время готовности, мин (AI или кнопка «⏱ Время готовности»). */
-  etaMinutes?: number;
-  /** AI-оценка: разбивка готовка/доставка, расстояние, загрузка, советы. */
-  etaAnalysis?: OrderEtaAnalysis;
-}
-
 export interface PreOrderNotification {
   name: string;
   phone: string;
@@ -117,88 +112,37 @@ export async function sendPreOrderNotification(data: PreOrderNotification): Prom
  * @param order Order information to be sent
  * @returns Promise resolving to the message ID for updating status later
  */
-function buildMapsUrl(address: string): string {
-  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
-}
-
-export function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-}
-
-/** Собирает текст сообщения заказа (адрес, расчёт, состав) — без строки статуса. При смене статуса пересобираем из данных заказа, чтобы не терять ссылку и форматирование. */
-function buildOrderMessageText(order: OrderNotification): string {
-  const itemsList = order.items.map(item => {
-    const customizationsText = item.customizations?.length
-      ? ` (${item.customizations.join(', ')})`
-      : '';
-    // Aktions-/Gratis-Label ([GRATIS]/[AKTION]) entfernen: nur Produktname zeigen.
-    const itemName = stripPromoLabels(item.name);
-    return `${item.quantity}x ${itemName}${customizationsText}`;
-  }).join('\n');
-
-  const mapsUrl = order.address ? buildMapsUrl(order.address) : '';
-  const addressInfo = order.deliveryType === 'delivery' && order.address
-    ? `📍 <a href="${mapsUrl}">${escapeHtml(order.address)}</a>`
-    : '🏬 Самовывоз';
-
-  const subtotal = order.subtotal ?? order.totalAmount;
-  let sumsBlock = `🛒 Заказ: ${subtotal.toFixed(2)} €`;
-  if (order.deliveryFee != null && order.deliveryFee > 0) {
-    sumsBlock += `\n🚚 Доставка: ${order.deliveryFee.toFixed(2)} €`;
-  }
-  if (order.discount && order.discount.amount > 0) {
-    const discountText = order.discount.type === 'percentage'
-      ? `Промокод: -${order.discount.amount}%`
-      : `Промокод: -${order.discount.amount.toFixed(2)} €`;
-    const codePart = order.discount.code ? ` (${order.discount.code})` : '';
-    sumsBlock += `\n🏷️ ${discountText}${codePart}`;
-  }
-  sumsBlock += `\n💰 <b>Итого: ${order.totalAmount.toFixed(2)} €</b>`;
-
-  const desiredTimeLine = order.desiredDeliveryTime
-    ? `\n🕐 Желаемое время: ${escapeHtml(order.desiredDeliveryTime)}`
-    : '';
-
-  // Клиенту уже сказали время — держим его в сообщении, иначе после ухода
-  // всплывашки оператор не вспомнит, что и когда пообещали.
-  const etaLine = order.etaMinutes
-    ? `\n⏱ Клиенту сообщено: ~${order.etaMinutes} мин`
-    : '';
-
-  // Разбивка AI-оценки: готовка/доставка/км + короткая инструкция по маршруту.
-  // advisory (совет по загрузке) в Telegram НЕ показываем — по просьбе
-  // ресторана: длинные советы мешают; они остаются в панели AI-плана кухни.
-  let etaDetails = '';
-  const analysis = order.etaAnalysis;
-  if (analysis) {
-    const parts = [`готовка ~${analysis.prepMinutes} мин`];
-    if (order.deliveryType === 'delivery' && analysis.deliveryMinutes > 0) {
-      const km = analysis.distanceKm != null ? `, ${analysis.distanceKm} км` : '';
-      parts.push(`доставка ~${analysis.deliveryMinutes} мин${km}`);
+/**
+ * Отправка заказа в группу.
+ *
+ * В режиме форума карточка уходит в тему «🔥 Готовится» и записывается в
+ * order_cards. Если форум выключен ИЛИ карточку отправить не удалось —
+ * работаем по-старому: одно сообщение в чат. Заказ обязан долететь до кухни
+ * даже при неверно настроенных темах.
+ *
+ * @param orderRef orders.id — нужен только форуму (первичный ключ карточки).
+ */
+export async function sendOrderNotification(
+  order: OrderNotification,
+  orderRef?: { orderId: string; createdAt?: Date | string | null }
+): Promise<number | null> {
+  if (orderRef?.orderId) {
+    try {
+      const created = await createOrderCard(
+        {
+          orderId: orderRef.orderId,
+          orderNumber: order.orderId,
+          createdAt: orderRef.createdAt,
+          notification: order,
+        },
+        'cooking'
+      );
+      if (created) return created.messageId;
+    } catch (error) {
+      console.error('Error sending Telegram order card:', error);
     }
-    const sourceMark = analysis.source === 'ai' ? '🤖 AI' : '🤖 Оценка (без AI)';
-    etaDetails = `\n${sourceMark}: ${parts.join(', ')}`;
-    if (analysis.routeHint) etaDetails += `\n🗺 ${escapeHtml(analysis.routeHint)}`;
   }
 
-  return `
-🔔 <b>НОВЫЙ ЗАКАЗ #${order.orderId}</b>
-
-👤 Клиент: ${escapeHtml(order.customerName)}
-📱 Телефон: ${escapeHtml(order.phoneNumber)}
-${addressInfo}${desiredTimeLine}${etaLine}${etaDetails}
-${sumsBlock}
-💳 Способ оплаты: ${escapeHtml(order.paymentMethod)}
-
-📋 <b>Состав заказа:</b>
-${itemsList.split('\n').map(line => escapeHtml(line)).join('\n')}
-`.trim();
-}
-
-export async function sendOrderNotification(order: OrderNotification): Promise<number | null> {
   try {
     const { bot, chatId } = await getTelegramConfig();
     const messageText = buildOrderMessageText(order);
@@ -307,6 +251,33 @@ function orderToNotification(order: IOrder): OrderNotification {
   };
 }
 
+/** Заказ из БД → вход для рендера карточки форума. */
+export function toCardOrderInput(order: any): CardOrderInput {
+  return {
+    orderId: String(order._id ?? order.id),
+    orderNumber: order.orderNumber,
+    createdAt: order.createdAt,
+    notification: orderToNotification(order as IOrder),
+  };
+}
+
+/**
+ * Синхронизировать карточку форума со статусом заказа. Вызывается отовсюду,
+ * где статус меняется НЕ кнопкой бота (админка, автоматика): без этого
+ * карточка осталась бы в теме прошлого статуса.
+ *
+ * Best-effort: Telegram не должен ронять смену статуса заказа.
+ */
+export async function syncOrderCardStatus(order: any, status: unknown): Promise<void> {
+  const target = cardStatusForOrderStatus(status);
+  if (!target || !order?.orderNumber) return;
+  try {
+    await moveOrderCard(toCardOrderInput(order), target);
+  } catch (error) {
+    console.error('Error moving Telegram order card:', error);
+  }
+}
+
 /**
  * Служебное сообщение в основной чат заказов (HTML). Используется для
  * алертов о пиковой загрузке кухни (lib/orders/finalize.ts).
@@ -314,7 +285,14 @@ function orderToNotification(order: IOrder): OrderNotification {
 export async function sendPlainTelegramMessage(html: string): Promise<boolean> {
   try {
     const { bot, chatId } = await getTelegramConfig();
-    await bot.sendMessage(chatId, html, { parse_mode: 'HTML' });
+    // В форуме сообщение без message_thread_id уходит в тему General, которую
+    // в группе часто закрывают/прячут. Алерты кухни адресуем в «Готовится» —
+    // туда и так смотрят во время загрузки.
+    const forum = await getForumConfig();
+    await bot.sendMessage(chatId, html, {
+      parse_mode: 'HTML',
+      ...(forum ? { message_thread_id: forum.topics.cooking } : {}),
+    });
     return true;
   } catch (error) {
     console.error('Error sending Telegram message:', error);
@@ -822,6 +800,13 @@ export interface StatusCallbackDeps {
   answerCallbackQuery: (id: string, opts?: { text?: string; show_alert?: boolean }) => PromiseLike<unknown>;
   findOrder: (orderNumber: string) => PromiseLike<any | null>;
   editMessage?: (messageId: number, status: OrderStatus, orderId: string, order: any) => Promise<void>;
+  /**
+   * Действие, результат которого оператор обязан увидеть в ответе на клик
+   * (переезд карточки в тему статуса). Выполняется ДО answerCallbackQuery,
+   * потому что ответить на callback_query можно ровно один раз: сообщи мы об
+   * успехе заранее — про неудавшийся перенос оператор бы не узнал.
+   */
+  beforeAck?: (order: any, status: OrderStatus) => Promise<{ ok: boolean; error?: string } | void>;
   onStatusChanged?: (order: any, status: OrderStatus) => void | Promise<void>;
   log?: (...args: any[]) => void;
 }
@@ -911,8 +896,26 @@ export async function handleStatusCallbackQuery(
     return { handled: false, reason: 'save_error' };
   }
 
-  // Сначала подтверждаем клик (снимаем loading), потом — best-effort side-effects.
-  await ack({ text: `Статус заказа #${parsed.orderId} → ${status}` });
+  // Единственное действие ПЕРЕД ack: то, о результате которого нужно доложить
+  // оператору (перенос карточки в тему статуса). Всё best-effort — после.
+  let ackText = `Статус заказа #${parsed.orderId} → ${status}`;
+  let ackAlert = false;
+  if (deps.beforeAck) {
+    try {
+      const result = await deps.beforeAck(order, status);
+      if (result && !result.ok) {
+        ackText = result.error || 'Не удалось обновить статус, попробуйте ещё раз';
+        ackAlert = true;
+      }
+    } catch (e) {
+      log('beforeAck failed', (e as Error)?.message);
+      ackText = 'Не удалось обновить статус, попробуйте ещё раз';
+      ackAlert = true;
+    }
+  }
+
+  // Подтверждаем клик (снимаем loading), дальше — best-effort side-effects.
+  await ack({ text: ackText, show_alert: ackAlert });
 
   try {
     // Дожидаемся (важно на serverless): здесь висят начисление баллов и т.п.
@@ -933,6 +936,137 @@ export async function handleStatusCallbackQuery(
   return { handled: true, status, reason: 'updated' };
 }
 
+// ---------------------------------------------------------------------------
+// Кнопки карточки форума: «Назначить курьера» и «Проблема с доставкой»
+// (переходы статуса по-прежнему идут через status_* — за ними вся доменная
+// логика: сохранение заказа, баллы, WhatsApp клиенту)
+// ---------------------------------------------------------------------------
+
+export interface CardCallbackDeps {
+  answerCallbackQuery: (id: string, opts?: { text?: string; show_alert?: boolean }) => PromiseLike<unknown>;
+  /** Ростер курьеров из настроек (может быть пустым). */
+  couriers: string[];
+  /** Имя нажавшего — для кнопки «Я забираю». */
+  clickerName: string;
+  showCourierMenu: (orderNumber: string) => Promise<unknown>;
+  showProblemMenu: (orderNumber: string) => Promise<unknown>;
+  /** Вернуть обычную клавиатуру карточки. */
+  restoreKeyboard: (orderNumber: string) => Promise<unknown>;
+  assignCourier: (orderNumber: string, courier: string) => Promise<boolean>;
+  reportProblem: (orderNumber: string, code: string) => Promise<boolean>;
+  /** Перерисовать карточку (курьер/проблема появляются в тексте). */
+  refreshCard: (orderNumber: string) => Promise<unknown>;
+  log?: (...args: any[]) => void;
+}
+
+export type CardCallbackResult = {
+  handled: boolean;
+  reason:
+    | 'not_card_callback'
+    | 'courier_menu'
+    | 'problem_menu'
+    | 'closed'
+    | 'courier_set'
+    | 'problem_set'
+    | 'card_not_found'
+    | 'unknown_courier';
+};
+
+export async function handleCardCallbackQuery(
+  cbq: any,
+  deps: CardCallbackDeps
+): Promise<CardCallbackResult> {
+  const log = deps.log || ((...a: any[]) => console.log('[telegram]', ...a));
+  const id: string = cbq?.id;
+  const ack = async (opts?: { text?: string; show_alert?: boolean }) => {
+    if (!id) return;
+    try {
+      await deps.answerCallbackQuery(id, opts);
+    } catch (e) {
+      log('answerCallbackQuery failed', (e as Error)?.message);
+    }
+  };
+
+  const parsed = parseCardCallback(cbq?.data);
+  if (!parsed) {
+    await ack();
+    return { handled: false, reason: 'not_card_callback' };
+  }
+
+  const safely = async (fn: () => Promise<unknown>, label: string) => {
+    try {
+      await fn();
+    } catch (e) {
+      log(`${label} failed`, (e as Error)?.message);
+    }
+  };
+
+  if (parsed.action === 'courier_menu') {
+    await ack();
+    await safely(() => deps.showCourierMenu(parsed.orderNumber), 'showCourierMenu');
+    return { handled: true, reason: 'courier_menu' };
+  }
+
+  if (parsed.action === 'problem_menu') {
+    await ack();
+    await safely(() => deps.showProblemMenu(parsed.orderNumber), 'showProblemMenu');
+    return { handled: true, reason: 'problem_menu' };
+  }
+
+  if (parsed.action === 'back') {
+    await ack();
+    await safely(() => deps.restoreKeyboard(parsed.orderNumber), 'restoreKeyboard');
+    return { handled: true, reason: 'closed' };
+  }
+
+  if (parsed.action === 'courier_set') {
+    // 'me' — забирает тот, кто нажал; иначе индекс в ростере из настроек.
+    const courier =
+      parsed.value === 'me'
+        ? deps.clickerName
+        : deps.couriers[Number(parsed.value)] ?? '';
+    if (!courier) {
+      await ack({ text: 'Курьер не найден в списке', show_alert: true });
+      return { handled: false, reason: 'unknown_courier' };
+    }
+
+    const ok = await deps
+      .assignCourier(parsed.orderNumber, courier)
+      .catch((e) => {
+        log('assignCourier failed', (e as Error)?.message);
+        return false;
+      });
+    if (!ok) {
+      await ack({ text: 'Карточка заказа не найдена', show_alert: true });
+      return { handled: false, reason: 'card_not_found' };
+    }
+
+    await ack({ text: `🧍 Курьер: ${courier}` });
+    await safely(() => deps.refreshCard(parsed.orderNumber), 'refreshCard');
+    return { handled: true, reason: 'courier_set' };
+  }
+
+  // parsed.action === 'problem_set'
+  const ok = await deps.reportProblem(parsed.orderNumber, parsed.value).catch((e) => {
+    log('reportProblem failed', (e as Error)?.message);
+    return false;
+  });
+  if (!ok) {
+    await ack({ text: 'Карточка заказа не найдена', show_alert: true });
+    return { handled: false, reason: 'card_not_found' };
+  }
+
+  await ack({ text: `⚠️ Отмечено: ${problemLabel(parsed.value)}` });
+  await safely(() => deps.refreshCard(parsed.orderNumber), 'refreshCard');
+  return { handled: true, reason: 'problem_set' };
+}
+
+/** Имя нажавшего кнопку — для «Я забираю». */
+function telegramUserName(from: any): string {
+  const name = [from?.first_name, from?.last_name].filter(Boolean).join(' ').trim();
+  return name || from?.username || 'курьер';
+}
+
 /**
  * Обработка webhook-обновления от Telegram. Вызывается из API-роута.
  */
@@ -941,6 +1075,63 @@ export async function processTelegramUpdate(update: any): Promise<void> {
 
   const { bot, chatId } = await getTelegramConfig();
   await connectToDatabase();
+
+  // Режим форума читаем ОДИН раз на апдейт: он определяет, чем является
+  // «основная клавиатура» и куда возвращаться из подменю ETA/продления.
+  const forum = await getForumConfig();
+
+  /** Вернуть основную клавиатуру: карточка форума либо старое сообщение. */
+  const showMainKeyboard = async (messageId: number, orderNumber: string) => {
+    if (forum && (await setCardKeyboard(orderNumber, null, { config: forum }))) return;
+    await bot.editMessageReplyMarkup(buildStatusKeyboard(orderNumber), {
+      chat_id: chatId,
+      message_id: messageId,
+    });
+  };
+
+  /** Перерисовать сообщение заказа из свежих данных (ETA, продление). */
+  const refreshOrderMessage = async (messageId: number, order: any) => {
+    if (forum && (await refreshOrderCard(toCardOrderInput(order), { config: forum }))) return;
+    if (!isOrderStatus(order.status)) {
+      await bot.editMessageReplyMarkup(buildStatusKeyboard(order.orderNumber), {
+        chat_id: chatId,
+        message_id: messageId,
+      });
+      return;
+    }
+    await updateOrderStatus(
+      messageId,
+      order.status,
+      order.orderNumber,
+      undefined,
+      orderToNotification(order)
+    );
+  };
+
+  // Кнопки самой карточки (курьер / проблема с доставкой) — только в форуме.
+  if (forum && parseCardCallback(update.callback_query?.data)) {
+    await handleCardCallbackQuery(update.callback_query, {
+      answerCallbackQuery: (cbId, opts) => bot.answerCallbackQuery(cbId, opts),
+      couriers: forum.couriers,
+      clickerName: telegramUserName(update.callback_query?.from),
+      showCourierMenu: (orderNumber) =>
+        setCardKeyboard(orderNumber, renderCourierKeyboard(orderNumber, forum.couriers), {
+          config: forum,
+        }),
+      showProblemMenu: (orderNumber) =>
+        setCardKeyboard(orderNumber, renderProblemKeyboard(orderNumber), { config: forum }),
+      restoreKeyboard: (orderNumber) => setCardKeyboard(orderNumber, null, { config: forum }),
+      assignCourier: async (orderNumber, courier) =>
+        Boolean(await assignCardCourier(orderNumber, courier, { config: forum })),
+      reportProblem: async (orderNumber, code) =>
+        Boolean(await recordDeliveryProblem(orderNumber, code, { config: forum })),
+      refreshCard: async (orderNumber) => {
+        const order = await Order.findOne({ orderNumber });
+        if (order) await refreshOrderCard(toCardOrderInput(order), { config: forum });
+      },
+    });
+    return;
+  }
 
   // Разводим кнопки по префиксу callback_data ДО обработчиков: иначе каждый
   // ответил бы на чужой клик своим answerCallbackQuery (двойной ack).
@@ -954,30 +1145,10 @@ export async function processTelegramUpdate(update: any): Promise<void> {
           message_id: messageId,
         });
       },
-      showMainKeyboard: async (messageId, orderId) => {
-        await bot.editMessageReplyMarkup(buildStatusKeyboard(orderId), {
-          chat_id: chatId,
-          message_id: messageId,
-        });
-      },
-      refreshMessage: async (messageId, order) => {
-        // Пересобираем текст, чтобы в сообщении осталось «Клиенту сообщено».
-        // Заодно возвращается основная клавиатура (внутри buildStatusKeyboard).
-        if (!isOrderStatus(order.status)) {
-          await bot.editMessageReplyMarkup(buildStatusKeyboard(order.orderNumber), {
-            chat_id: chatId,
-            message_id: messageId,
-          });
-          return;
-        }
-        await updateOrderStatus(
-          messageId,
-          order.status,
-          order.orderNumber,
-          undefined,
-          orderToNotification(order)
-        );
-      },
+      showMainKeyboard,
+      // Пересобираем текст, чтобы в сообщении осталось «Клиенту сообщено».
+      // Заодно возвращается основная клавиатура.
+      refreshMessage: refreshOrderMessage,
       notifyCustomer: (order, minutes) =>
         sendOrderEtaNotification(
           { phoneNumber: order.phoneNumber, orderNumber: order.orderNumber },
@@ -998,29 +1169,9 @@ export async function processTelegramUpdate(update: any): Promise<void> {
           message_id: messageId,
         });
       },
-      showMainKeyboard: async (messageId, orderId) => {
-        await bot.editMessageReplyMarkup(buildStatusKeyboard(orderId), {
-          chat_id: chatId,
-          message_id: messageId,
-        });
-      },
-      refreshMessage: async (messageId, order) => {
-        // Обновляем «Клиенту сообщено: ~N мин» и возвращаем основную клавиатуру.
-        if (!isOrderStatus(order.status)) {
-          await bot.editMessageReplyMarkup(buildStatusKeyboard(order.orderNumber), {
-            chat_id: chatId,
-            message_id: messageId,
-          });
-          return;
-        }
-        await updateOrderStatus(
-          messageId,
-          order.status,
-          order.orderNumber,
-          undefined,
-          orderToNotification(order)
-        );
-      },
+      showMainKeyboard,
+      // Обновляем «Клиенту сообщено: ~N мин» и возвращаем основную клавиатуру.
+      refreshMessage: refreshOrderMessage,
     });
     return;
   }
@@ -1035,12 +1186,47 @@ export async function processTelegramUpdate(update: any): Promise<void> {
     return;
   }
 
+  // Откат ошибочного нажатия («Вернуть в путь») живёт ограниченное время, а
+  // кнопка может провисеть дольше — проверяем срок ДО записи статуса заказа.
+  const statusCallback = parseStatusCallback(update.callback_query?.data);
+  if (forum && statusCallback) {
+    const undo = await checkUndoWindow(statusCallback.orderId, { config: forum });
+    if (!undo.allowed) {
+      await bot
+        .answerCallbackQuery(update.callback_query.id, { text: undo.message, show_alert: true })
+        .catch((e: any) => console.error('answerCallbackQuery failed:', e?.message));
+      // Убираем протухшую кнопку с карточки, чтобы её не жали снова.
+      await setCardKeyboard(statusCallback.orderId, null, { config: forum }).catch(() => {});
+      return;
+    }
+  }
+
   await handleStatusCallbackQuery(update.callback_query, {
     answerCallbackQuery: (cbId, opts) => bot.answerCallbackQuery(cbId, opts),
     findOrder: (orderNumber) => Order.findOne({ orderNumber }),
-    editMessage: async (messageId, status, orderId, order) => {
-      await updateOrderStatus(messageId, status, orderId, undefined, orderToNotification(order));
-    },
+    // В форуме смена статуса — это ПЕРЕЕЗД карточки в тему статуса. Делаем его
+    // до ответа на клик: не уехавшая карточка обязана всплыть оператору,
+    // а ответить на callback_query можно только один раз.
+    beforeAck: forum
+      ? async (order, status) => {
+          const target = cardStatusForOrderStatus(status);
+          if (!target) return { ok: true };
+          const result = await moveOrderCard(toCardOrderInput(order), target, { config: forum });
+          if (result.ok) return { ok: true };
+          return {
+            ok: false,
+            error:
+              result.reason === 'raced'
+                ? 'Карточку одновременно двигал кто-то ещё — проверьте темы'
+                : 'Не удалось обновить статус, попробуйте ещё раз',
+          };
+        }
+      : undefined,
+    editMessage: forum
+      ? undefined
+      : async (messageId, status, orderId, order) => {
+          await updateOrderStatus(messageId, status, orderId, undefined, orderToNotification(order));
+        },
     onStatusChanged: async (order, status) => {
       // Баллы лояльности по смене статуса из Telegram (та же логика, что в
       // PUT /api/orders/[id]): completed → начислить, cancelled → реверс.

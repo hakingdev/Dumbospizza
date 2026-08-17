@@ -9,6 +9,7 @@ import { verifyOrderAccessToken } from '../../../../lib/orders/access-token';
 import { rateLimit, getClientIp, logSecurityEvent } from '../../../../lib/security/rate-limit';
 import { sendOrderStatusNotification } from '../../../../lib/whatsapp';
 import { earnForCompletedOrder, reverseOrder } from '../../../../lib/loyalty/service';
+import { syncOrderCardStatus } from '../../../../lib/telegram';
 
 interface Params {
   params: {
@@ -179,6 +180,11 @@ export async function PUT(request: NextRequest, { params }: Params) {
         { phoneNumber: order.phoneNumber, orderNumber: order.orderNumber },
         status
       ).catch((e) => console.error('WhatsApp status notification:', e));
+
+      // Карточка в Telegram-форуме должна переехать в тему нового статуса и
+      // при смене статуса из админки, иначе она «застрянет» в прошлой теме.
+      // Дожидаемся (serverless): после ответа функция замораживается.
+      await syncOrderCardStatus(order, status);
     }
 
     return NextResponse.json({ success: true, order });

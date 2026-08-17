@@ -181,4 +181,64 @@ describe('handleStatusCallbackQuery', () => {
     expect(deps.editMessage).not.toHaveBeenCalled();
     expect(res).toMatchObject({ handled: true, status: 'delivering' });
   });
+
+  // beforeAck — крючок режима форума: переезд карточки должен успеть до ответа
+  // на клик, потому что ответить на callback_query можно ровно один раз.
+  it('beforeAck выполняется ДО ack и при успехе не меняет текст', async () => {
+    const order = makeOrder('new');
+    const calls: string[] = [];
+    const deps = makeDeps(order, {
+      beforeAck: vi.fn(async () => {
+        calls.push('beforeAck');
+        return { ok: true };
+      }),
+      answerCallbackQuery: vi.fn(async () => {
+        calls.push('ack');
+        return {};
+      }),
+    });
+
+    await handleStatusCallbackQuery(cbq('status_ready_260620001'), deps);
+
+    expect(calls).toEqual(['beforeAck', 'ack']);
+    expect(deps.answerCallbackQuery).toHaveBeenCalledWith(
+      'cb1',
+      expect.objectContaining({ show_alert: false, text: expect.stringContaining('ready_for_delivery') })
+    );
+  });
+
+  it('beforeAck сообщил о неудаче → оператор видит alert вместо «статус обновлён»', async () => {
+    const order = makeOrder('new');
+    const deps = makeDeps(order, {
+      beforeAck: vi.fn(async () => ({ ok: false, error: 'Не удалось обновить статус, попробуйте ещё раз' })),
+    });
+
+    const res = await handleStatusCallbackQuery(cbq('status_ready_260620001'), deps);
+
+    expect(deps.answerCallbackQuery).toHaveBeenCalledTimes(1);
+    expect(deps.answerCallbackQuery).toHaveBeenCalledWith('cb1', {
+      text: 'Не удалось обновить статус, попробуйте ещё раз',
+      show_alert: true,
+    });
+    // Статус заказа всё равно сохранён: карточка отстала, а не заказ.
+    expect(order.status).toBe('ready_for_delivery');
+    expect(res).toMatchObject({ handled: true, reason: 'updated' });
+  });
+
+  it('исключение в beforeAck не роняет обработку, но виден alert', async () => {
+    const order = makeOrder('new');
+    const deps = makeDeps(order, {
+      beforeAck: vi.fn(async () => {
+        throw new Error('Telegram down');
+      }),
+    });
+
+    const res = await handleStatusCallbackQuery(cbq('status_ready_260620001'), deps);
+
+    expect(deps.answerCallbackQuery).toHaveBeenCalledWith(
+      'cb1',
+      expect.objectContaining({ show_alert: true })
+    );
+    expect(res).toMatchObject({ handled: true, status: 'ready_for_delivery' });
+  });
 });

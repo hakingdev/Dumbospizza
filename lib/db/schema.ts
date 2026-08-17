@@ -831,6 +831,49 @@ export const homepageBanners = pgTable(
   })
 );
 
+// =====================================================================
+// Order cards (карточки заказов в Telegram-форуме)
+// =====================================================================
+/**
+ * Где сейчас живёт карточка заказа в группе-форуме: тема, message_id и статус.
+ *
+ * Telegram НЕ умеет переносить сообщение между темами, поэтому «переезд» — это
+ * отправка новой карточки в целевую тему и удаление старой (lib/telegram/card-mover.ts).
+ * Эта таблица — единственный источник правды о том, какое сообщение сейчас
+ * представляет заказ; orders.telegram_message_id держим синхронно для легаси-путей.
+ *
+ * Инвариант «одна карточка на заказ» держится на CAS-апдейте статуса
+ * (WHERE status = ожидаемый), как у claim'а печати в lib/orders/print-queue.ts:
+ * из двух одновременных кликов ровно один получает строку и шлёт сообщение.
+ */
+export const orderCards = pgTable(
+  'order_cards',
+  {
+    // orders.id — карточка существует ровно для одного заказа
+    orderId: text('order_id').primaryKey(),
+    // человекочитаемый номер: именно он лежит в callback_data кнопок
+    orderNumber: text('order_number').notNull(),
+    chatId: text('chat_id').notNull(),
+    messageId: bigint('message_id', { mode: 'number' }).notNull(),
+    // message_thread_id темы форума, в которой сейчас лежит карточка
+    topicId: integer('topic_id').notNull(),
+    // CardStatus: cooking | ready | on_the_way | delivered | cancelled
+    status: text('status').notNull(),
+    // Курьер, назначенный кнопкой «Назначить курьера» (имя из ростера или из Telegram)
+    courier: text('courier'),
+    statusHistory: jsonb('status_history')
+      .$type<{ status: string; timestamp: string; note?: string }[]>()
+      .notNull()
+      .default([]),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    orderNumberUq: uniqueIndex('order_cards_order_number_uq').on(t.orderNumber),
+    statusIdx: index('order_cards_status_idx').on(t.status),
+  })
+);
+
 // ---- выводимые типы (select/insert) ----
 export type Category = typeof categories.$inferSelect;
 export type Product = typeof products.$inferSelect;
@@ -855,3 +898,4 @@ export type Payment = typeof payments.$inferSelect;
 export type PaymentEvent = typeof paymentEvents.$inferSelect;
 export type Refund = typeof refunds.$inferSelect;
 export type HomepageBanner = typeof homepageBanners.$inferSelect;
+export type OrderCard = typeof orderCards.$inferSelect;

@@ -165,7 +165,12 @@ export async function finalizeOrderPlacement(order: any, request: NextRequest): 
     sendOrderPlacedNotification({ phoneNumber: order.phoneNumber, orderNumber: order.orderNumber }).catch((err) => {
       console.error('Error sending WhatsApp order-placed notification:', err);
     }),
-    sendOrderNotification(notification)
+    // orderRef нужен режиму форума: карточка заказа привязана к orders.id и
+    // показывает время приёма в шапке.
+    sendOrderNotification(notification, {
+      orderId: String(order._id ?? order.id),
+      createdAt: order.createdAt,
+    })
       .then((messageId) => {
         if (messageId) {
           order.telegramMessageId = messageId;
