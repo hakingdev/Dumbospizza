@@ -1,0 +1,197 @@
+/**
+ * Токены терминала Sunmi V2s — из Figma «Sunmi V2s · Bestellannahme».
+ *
+ * Палитра выведена из брендовой шкалы проекта (tailwind.config.js): --text-primary
+ * это primary-950, --text-secondary — primary-900, --status-delivering — primary-800.
+ * Совпадающие оттенки берём Tailwind-классами, а специфичные для терминала —
+ * переменными, чтобы имена совпадали с Figma и правка дизайна находилась поиском.
+ *
+ * Область действия — .pos-root: терминал не должен влиять на сайт и админку.
+ */
+.pos-root {
+  --pos-bg-base: #faf7f2;
+  --pos-bg-surface: #ffffff;
+  --pos-bg-surface-2: #f5f0e8;
+  --pos-text-primary: #3d2f21;
+  --pos-text-secondary: #5e4934;
+  --pos-text-on-accent: #ffffff;
+  --pos-accent: #8a6c4c;
+  --pos-border: #ebe0ce;
+  --pos-border-strong: #dcc9a9;
+  --pos-text-muted: #7c6145;
+  --pos-status-delivered: #15803d;
+
+  /* Статусы заказа: заливка бейджа и цвет текста. Совпадают с темами
+     Telegram-форума — человек, который смотрит и туда, и в прибор, видит
+     одну систему, а не две разные раскраски. */
+  --pos-status-preparing: #713f12;
+  --pos-tint-preparing: #fef9c3;
+  --pos-status-ready: #15803d;
+  --pos-tint-ready: #dcfce7;
+  --pos-tint-delivering: #f5f0e8;
+  --pos-tint-delivered: #dcfce7;
+  --pos-status-cancelled: #b31f39;
+  --pos-tint-cancelled: #fde6e7;
+  --pos-status-delivering: #7c6145;
+  --pos-control-knob: #ffffff;
+
+  /* Подложка выбранного варианта (Figma accent/subtle). Совпадает по значению
+     с bg-surface-2, но роль другая: там фон элемента, здесь — отметка выбора. */
+  --pos-accent-subtle: #f5f0e8;
+  /* Красная кнопка «стоп» — это ДЕЙСТВИЕ, а не статус: --pos-status-cancelled
+     красит отменённый заказ, и связывать их одним значением нельзя. */
+  --pos-danger: #d42a47;
+  /* Зелёная кнопка «снять стоп». Значение совпадает со статусом «доставлено»,
+     имя своё — по той же причине. */
+  --pos-success: #15803d;
+
+  /* Roboto — системный шрифт Android, поэтому webfont не грузим:
+     на кухне лишний сетевой запрос это лишняя точка отказа. */
+  font-family: Roboto, system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: var(--pos-bg-base);
+  color: var(--pos-text-primary);
+
+  /* Прибор — 360×720 dp. Терминал занимает экран целиком и не тянется по вертикали:
+     скроллится только лента контента, панель действий обязана оставаться на месте. */
+  height: 100dvh;
+  overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+/* Шкала типографики из Figma. Держим её стилями, а не набором утилит:
+   так «Title/M» в макете и в коде называются одинаково. */
+.pos-overline {
+  font-size: 11px;
+  line-height: 14px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+}
+.pos-label-xs {
+  font-size: 11px;
+  line-height: 14px;
+  font-weight: 500;
+  letter-spacing: 0.4px;
+}
+.pos-label-m {
+  font-size: 14px;
+  line-height: 18px;
+  font-weight: 500;
+  letter-spacing: 0.1px;
+}
+.pos-label-l {
+  font-size: 16px;
+  line-height: 20px;
+  font-weight: 500;
+  letter-spacing: 0.1px;
+}
+.pos-body-m {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 400;
+}
+.pos-title-s {
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 600;
+}
+.pos-title-m {
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 600;
+}
+.pos-number-m {
+  font-size: 20px;
+  line-height: 24px;
+  font-weight: 600;
+  letter-spacing: -0.1px;
+}
+
+/* Цифры в колонках (суммы, время, таймеры) обязаны стоять ровно. */
+.pos-num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Тень панели действий из Figma (Elevation/Sheet). */
+.pos-elevation-sheet {
+  box-shadow: 0 -6px 24px 0 rgba(0, 0, 0, 0.55);
+}
+
+/* Лента контента: скроллится только она. */
+.pos-scroll {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.pos-body-s {
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 400;
+}
+.pos-title-l {
+  font-size: 22px;
+  line-height: 28px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+}
+.pos-display-m {
+  font-size: 32px;
+  line-height: 36px;
+  font-weight: 700;
+  letter-spacing: -0.4px;
+}
+
+/*
+ * Строка состояния и прочая имитация системного интерфейса нужны только для
+ * предпросмотра в браузере: на приборе их рисует Android, а в киоске он их прячет.
+ */
+@media (display-mode: standalone), (display-mode: fullscreen) {
+  .pos-preview-only {
+    display: none;
+  }
+}
+
+.pos-label-s {
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  letter-spacing: 0.3px;
+}
+
+/*
+ * Иконки рисуются МАСКОЙ по экспортированному из Figma SVG, а цвет берётся из
+ * currentColor. Так форма остаётся ровно дизайнерской, но одна и та же иконка
+ * годится и для активного состояния, и для неактивного — иначе пришлось бы
+ * держать по два файла на каждую и следить, чтобы они не разошлись.
+ */
+.pos-icon {
+  display: block;
+  background-color: currentColor;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+
+.pos-label-2xs {
+  font-size: 10px;
+  line-height: 13px;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+}
+
+/*
+ * Предпросмотр кухонного бона (Figma Mono/Bon). Строки приходят готовыми из
+ * renderOpsToText на 32 колонки, поэтому пробелы и переносы не трогаем:
+ * так на экране видно ровно то, что выйдет из принтера.
+ */
+.pos-mono {
+  font-family: "Roboto Mono", ui-monospace, "Droid Sans Mono", monospace;
+  font-size: 12px;
+  line-height: 16px;
+  white-space: pre;
+}

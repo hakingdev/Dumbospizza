@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Служба печати должна пережить засыпание прибора: обычный фон Android
+         усыпит, и заказы поедут пачками с опозданием. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!--
+      Android 11 (targetSdk 30) фильтрует видимость чужих пакетов. Без этого блока
+      bindService к сервису печати Sunmi молча не находит его — ошибки не будет,
+      просто onConnected никогда не вызовется.
+    -->
+    <queries>
+        <package android:name="woyou.aidlservice.jiuiv5" />
+        <intent>
+            <action android:name="woyou.aidlservice.jiuiv5.IWoyouService" />
+        </intent>
+        <!-- Звонок с карточки гостя: без объявления намерения ACTION_DIAL на
+             Android 11 не находит ни одного приложения. -->
+        <intent>
+            <action android:name="android.intent.action.DIAL" />
+            <data android:scheme="tel" />
+        </intent>
+    </queries>
+
+    <application
+        android:allowBackup="false"
+        android:label="Dumbo POS"
+        android:supportsRtl="true"
+        android:usesCleartextTraffic="false">
+
+        <!--
+          Киоск и он же домашний экран прибора. category.HOME — это и есть
+          «чтобы был только терминал»: кнопка «домой» возвращает сюда, и после
+          перезагрузки систему поднимает именно его. Стартовать активность из
+          BootReceiver нельзя — фоновый запуск активностей с Android 10 запрещён.
+
+          singleTask, чтобы возврат со служебного экрана не плодил вторую копию
+          терминала со своей историей.
+        -->
+        <activity
+            android:name=".KioskActivity"
+            android:exported="true"
+            android:label="Dumbo POS"
+            android:launchMode="singleTask"
+            android:screenOrientation="portrait"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden"
+            android:theme="@android:style/Theme.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+          Служебный экран без значка в списке приложений: попасть на него можно
+          только долгим нажатием на левый верхний угол киоска. Иначе на кухне
+          рядом с терминалом висела бы вторая иконка «Dumbo POS», ведущая в
+          настройки печати.
+        -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="false"
+            android:label="Dumbo POS · Service" />
+
+        <service
+            android:name=".PrintService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <!--
+          Нужен только для `dpm set-device-owner`: без назначенного владельца
+          киоск работает как обычное закрепление экрана, с ним — выйти нельзя.
+        -->
+        <receiver
+            android:name=".PosAdminReceiver"
+            android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN">
+            <meta-data
+                android:name="android.app.device_admin"
+                android:resource="@xml/device_admin" />
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+    </application>
+
+</manifest>

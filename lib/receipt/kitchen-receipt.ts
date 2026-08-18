@@ -116,15 +116,46 @@ function formatDateTime(value?: Date | string): string {
   )}`;
 }
 
+/**
+ * Шапка и подвал чека. Приходят из настроек (lib/pos/settings.ts), чтобы их
+ * можно было править в админке. Значения по умолчанию оставлены здесь, иначе
+ * вызовы без настроек (тесты, предпросмотр, LAN-агент) пришлось бы менять все
+ * разом.
+ */
+export interface ReceiptChrome {
+  header?: { title?: string; address?: string; phone?: string };
+  footer?: string;
+}
+
+const DEFAULT_CHROME: Required<ReceiptChrome> & {
+  header: Required<NonNullable<ReceiptChrome['header']>>;
+} = {
+  header: {
+    title: 'DUMBO SLICE PIZZA',
+    address: 'Kurhausstr. 11A - Bad Kissingen',
+    // Мобильный, а не стационарный 0971 72730: заказы идут через него, и тем же
+    // номером чек печатал print-agent.js. Стационарный остаётся в Impressum.
+    phone: 'Tel: +49 163 2165979',
+  },
+  footer: 'Kein Kassenbon',
+};
+
 /** Строит ops кухонного чека (Lieferando-стиль, по категориям). */
-export function buildKitchenReceiptOps(order: ReceiptOrder): ReceiptOp[] {
+export function buildKitchenReceiptOps(
+  order: ReceiptOrder,
+  chrome: ReceiptChrome = {}
+): ReceiptOp[] {
   const ops: ReceiptOp[] = [];
+  const title = chrome.header?.title ?? DEFAULT_CHROME.header.title;
+  const address = chrome.header?.address ?? DEFAULT_CHROME.header.address;
+  const phone = chrome.header?.phone ?? DEFAULT_CHROME.header.phone;
+  const footer = chrome.footer ?? DEFAULT_CHROME.footer;
 
   // Шапка
   ops.push({ type: 'align', value: 'center' });
-  ops.push({ type: 'text', text: 'DUMBO SLICE PIZZA', bold: true });
-  ops.push({ type: 'text', text: 'Kurhausstr. 11A - Bad Kissingen' });
-  ops.push({ type: 'text', text: 'Tel: 0971 72730' });
+  if (title) ops.push({ type: 'text', text: title, bold: true, double: true });
+  if (address) ops.push({ type: 'text', text: address });
+  if (phone) ops.push({ type: 'text', text: phone });
   ops.push({ type: 'line' });
 
   // Номер заказа + дата
@@ -132,10 +163,12 @@ export function buildKitchenReceiptOps(order: ReceiptOrder): ReceiptOp[] {
   ops.push({ type: 'lr', left: `#${order.orderId}`, right: formatDateTime(order.createdAt), bold: true });
 
   // Тип заказа
+  // Крупно: это первое, что кухня должна увидеть, взяв чек в руки.
   ops.push({
     type: 'text',
     text: order.deliveryType === 'pickup' ? 'ABHOLUNG' : 'LIEFERUNG',
     bold: true,
+    double: true,
   });
   if (order.desiredDeliveryTime) {
     ops.push({ type: 'text', text: `Zeit: ${order.desiredDeliveryTime}` });
@@ -149,7 +182,8 @@ export function buildKitchenReceiptOps(order: ReceiptOrder): ReceiptOp[] {
 
   // Позиции по категориям, внутри категории — по подкатегориям (меткам)
   for (const group of groupItemsByCategory(order.items)) {
-    ops.push({ type: 'text', text: group.category, bold: true }); // КАТЕГОРИЯ — жирная
+    // КАТЕГОРИЯ — жирная и крупная: по ней собирают заказ.
+    ops.push({ type: 'text', text: group.category, bold: true, double: true });
     for (const sub of groupItemsBySubcategory(group.items)) {
       if (sub.subcategory) {
         ops.push({ type: 'text', text: `* ${sub.subcategory} *`, bold: true }); // подзаголовок
@@ -181,17 +215,17 @@ export function buildKitchenReceiptOps(order: ReceiptOrder): ReceiptOp[] {
   // Оплата
   ops.push({ type: 'text', text: `ZAHLUNG: ${formatPaymentMethod(order.paymentMethod)}`, bold: true });
 
-  // Комментарий
+  // Комментарий клиента — самое пропускаемое место чека, поэтому крупно.
   if (order.notes && order.notes.trim()) {
     ops.push({ type: 'line' });
-    ops.push({ type: 'text', text: 'HINWEIS:', bold: true });
-    ops.push({ type: 'text', text: order.notes.trim() });
+    ops.push({ type: 'text', text: 'HINWEIS:', bold: true, double: true });
+    ops.push({ type: 'text', text: order.notes.trim(), double: true });
   }
 
   // Подвал
   ops.push({ type: 'line' });
   ops.push({ type: 'align', value: 'center' });
-  ops.push({ type: 'text', text: 'Kein Kassenbon' });
+  if (footer) ops.push({ type: 'text', text: footer });
   ops.push({ type: 'cut' });
 
   return ops;

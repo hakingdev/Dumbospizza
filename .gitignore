@@ -9,6 +9,8 @@ out/
 # production/build output
 build/
 dist/
+# предпросмотр чеков в байтах (scripts/preview-escpos.ts)
+.tmp/
 
 # TypeScript
 *.tsbuildinfo
