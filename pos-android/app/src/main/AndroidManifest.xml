@@ -3,6 +3,18 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!--
+      Выбор Wi-Fi внутри киоска. Прибор заперт в lock task и назначен владельцем
+      устройства: системные настройки открываются только из-под PIN, а сеть надо
+      уметь сменить в тот момент, когда терминал уже не грузится.
+
+      ACCESS_FINE_LOCATION здесь не про местоположение: с Android 10 без него
+      список сетей приходит ПУСТЫМ. Разрешение выдаёт себе сам владелец
+      устройства (WifiPicker.ensureReady) — диалога повару не показываем.
+    -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <!-- Служба печати должна пережить засыпание прибора: обычный фон Android
          усыпит, и заказы поедут пачками с опозданием. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />

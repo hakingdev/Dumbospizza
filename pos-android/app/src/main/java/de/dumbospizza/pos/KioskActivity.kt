@@ -13,7 +13,12 @@ import android.graphics.drawable.ColorDrawable
 import android.media.AudioAttributes
 import android.media.Ringtone
 import android.media.RingtoneManager
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.net.Uri
+import android.net.wifi.WifiManager
 import android.os.Handler
 import android.os.Looper
 import android.os.Build
@@ -72,6 +77,20 @@ class KioskActivity : Activity() {
 
     private lateinit var web: WebView
     private lateinit var offline: View
+    private lateinit var offlineReason: TextView
+
+    /**
+     * Последняя загрузка терминала провалилась.
+     *
+     * Флаг существует, потому что порядок обратных вызовов WebView против нас:
+     * после onReceivedError приходит onPageFinished — той же, упавшей страницы.
+     * Он прятал наш экран обратно, и на кухне оставалась СТАНДАРТНАЯ страница
+     * ошибки Chrome: без кнопки повтора, без выхода к Wi-Fi и по-английски.
+     */
+    private var loadFailed = false
+
+    /** Подписка на сеть. Снимается в onDestroy — иначе течёт между запусками. */
+    private var netCallback: ConnectivityManager.NetworkCallback? = null
 
     /** Куда смотрит терминал. Адрес тот же, что у службы печати. */
     private val startUrl: String
@@ -92,6 +111,7 @@ class KioskActivity : Activity() {
         applyDeviceOwnerPolicy()
         setContentView(buildUi())
         watchSystemBars()
+        watchNetwork()
         loadTerminal()
     }
 
@@ -212,9 +232,40 @@ class KioskActivity : Activity() {
             gravity = Gravity.CENTER
             setPadding(0, dp(8), 0, dp(20))
         })
+        // Причина отказа словами прибора.
+        //
+        // «Wi-Fi подключён, а страницы нет» — это несколько РАЗНЫХ поломок:
+        // сеть без интернета, неотвечающий DNS, сбитые часы прибора (тогда
+        // сертификат «ещё не действителен»). Различает их только код ошибки, и
+        // без него причину приходится угадывать по телефону с кухней.
+        offlineReason = TextView(this@KioskActivity).apply {
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            setTextColor(TEXT_MUTED)
+            gravity = Gravity.CENTER
+            setPadding(0, 0, 0, dp(20))
+            visibility = View.GONE
+        }
+        addView(offlineReason)
         addView(Button(this@KioskActivity).apply {
             text = "Erneut versuchen"
             setOnClickListener { loadTerminal() }
+        })
+        // Выбор сети ПРЯМО ЗДЕСЬ, своим списком.
+        //
+        // Это главная кнопка экрана отказа: чинить Wi-Fi надо ровно в тот
+        // момент, когда терминал не открылся. Системные настройки для этого не
+        // годятся — прибор заперт в lock task и назначен владельцем устройства,
+        // и туда пускают только со служебного экрана, из-под PIN. Повар в
+        // вечернюю смену PIN не знает и знать не должен.
+        addView(Button(this@KioskActivity).apply {
+            text = "WLAN verbinden"
+            setOnClickListener { showWifiPicker() }
+        })
+        // Системная панель остаётся запасной: там статический IP, забыть сеть и
+        // всё, чего в нашем коротком списке нет.
+        addView(Button(this@KioskActivity).apply {
+            text = "Systemeinstellungen"
+            setOnClickListener { openWifi() }
         })
     }
 
@@ -234,6 +285,7 @@ class KioskActivity : Activity() {
     // --- Загрузка ------------------------------------------------------------
 
     private fun loadTerminal() {
+        loadFailed = false
         offline.visibility = View.GONE
         // Документ запрашиваем с обязательной перепроверкой на сервере.
         //
@@ -246,6 +298,59 @@ class KioskActivity : Activity() {
         // содержимому, поэтому свежая страница подтянет свежие — чистить весь
         // кэш и заново качать всё по кухонному Wi-Fi незачем.
         web.loadUrl(startUrl, mapOf("Cache-Control" to "no-cache"))
+    }
+
+    /**
+     * Вернулась сеть — терминал открывается САМ.
+     *
+     * Без этого прибор, не открывшийся при включении, оставался на экране
+     * отказа сколько угодно: адрес грузится один раз на старте, и «интернет уже
+     * появился» ничего не меняет, пока кто-нибудь не нажмёт «Erneut versuchen».
+     * На кухне это выглядит как сломанный прибор при живом Wi-Fi.
+     *
+     * Ждём не подключения, а ПРОВЕРЕННОГО подключения (NET_CAPABILITY_VALIDATED):
+     * с порталом авторизации сеть подключена сразу, а интернет за ней
+     * появляется только после входа — и именно этот переход нам и нужен.
+     */
+    private fun watchNetwork() {
+        val manager = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return
+        // NET_CAPABILITY_VALIDATED в самом запросе не спрашивают — система его
+        // оттуда вычищает. Поэтому подписываемся на любую сеть с интернетом, а
+        // проверку читаем из её возможностей.
+        val request = NetworkRequest.Builder()
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .build()
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
+                if (!caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) return
+                // Колбэк приходит с системного потока, а WebView трогают только
+                // с главного. Перезагружаем ТОЛЬКО упавший терминал: работающий
+                // прерывать нельзя, кухня в этот момент принимает заказ.
+                runOnUiThread { if (loadFailed) loadTerminal() }
+            }
+        }
+        runCatching { manager.registerNetworkCallback(request, callback) }
+            .onSuccess { netCallback = callback }
+            .onFailure { Log.w(TAG, "слежение за сетью недоступно: ${it.message}") }
+    }
+
+    override fun onDestroy() {
+        netCallback?.let { callback ->
+            runCatching {
+                (getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager)
+                    .unregisterNetworkCallback(callback)
+            }
+        }
+        netCallback = null
+        super.onDestroy()
+    }
+
+    /** Свой экран отказа поверх WebView. Причина — мелкой строкой под текстом. */
+    private fun showOffline(reason: String?) {
+        loadFailed = true
+        offlineReason.text = reason.orEmpty()
+        offlineReason.visibility = if (reason.isNullOrBlank()) View.GONE else View.VISIBLE
+        offline.visibility = View.VISIBLE
     }
 
     private inner class TerminalClient : WebViewClient() {
@@ -264,18 +369,42 @@ class KioskActivity : Activity() {
             return url.host != host
         }
 
+        /** Новая загрузка — новая попытка: прошлый отказ больше не в счёт. */
+        override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
+            loadFailed = false
+        }
+
         override fun onReceivedError(
             view: WebView,
             request: WebResourceRequest,
             error: WebResourceError,
         ) {
             if (!request.isForMainFrame) return
-            Log.w(TAG, "загрузка не удалась: ${error.errorCode}")
-            offline.visibility = View.VISIBLE
+            Log.w(TAG, "загрузка не удалась: ${error.errorCode} ${error.description}")
+            showOffline("${error.description} (${error.errorCode})")
+        }
+
+        /**
+         * Ответ сервера с ошибкой — тоже отказ.
+         *
+         * Без этого прибор показывал бы 404 или 502 самого сайта: страницу, из
+         * которой киоск не выходит сам и на которой нет ни повтора, ни Wi-Fi.
+         */
+        override fun onReceivedHttpError(
+            view: WebView,
+            request: WebResourceRequest,
+            response: android.webkit.WebResourceResponse,
+        ) {
+            if (!request.isForMainFrame) return
+            Log.w(TAG, "сервер ответил ошибкой: ${response.statusCode}")
+            showOffline("Server: HTTP ${response.statusCode}")
         }
 
         override fun onPageFinished(view: WebView, url: String?) {
-            if (url?.startsWith("data:") != true) offline.visibility = View.GONE
+            // Только на удавшейся загрузке. Упавшая приходит сюда следом за
+            // onReceivedError, и снимать экран по ней — значит показать кухне
+            // страницу ошибки WebView вместо своей.
+            if (!loadFailed) offline.visibility = View.GONE
         }
     }
 
@@ -298,7 +427,10 @@ class KioskActivity : Activity() {
     private inner class TerminalBridge {
         @JavascriptInterface
         fun openWifiSettings() {
-            runOnUiThread { openWifi() }
+            // Наш список, а не системная панель: под lock task к настройкам
+            // пускают только со служебного экрана, и кнопка во вкладке «Mehr»
+            // на запертом приборе не делала ничего.
+            runOnUiThread { showWifiPicker() }
         }
 
         /**
@@ -343,6 +475,110 @@ class KioskActivity : Activity() {
         /** Имя того звука, который реально прозвучит. Пусто — звучать нечему. */
         @JavascriptInterface
         fun alertSoundName(): String = currentAlertName()
+    }
+
+    /**
+     * Свой выбор Wi-Fi поверх киоска.
+     *
+     * Диалог, а не чужая активность: lock task не прерывается, PIN не нужен,
+     * прибор не покидает терминал. Именно этого не хватало запертому прибору —
+     * сеть пропала, а сменить её было нечем.
+     *
+     * Список перечитывается кнопкой «Aktualisieren»: сканирование асинхронно, и
+     * первый заход часто приходит раньше результатов эфира.
+     */
+    private fun showWifiPicker() {
+        val problem = WifiPicker.ensureReady(this)
+        if (problem != null) {
+            AlertDialog.Builder(this)
+                .setTitle("WLAN")
+                .setMessage("$problem.\n\nSystemeinstellungen öffnen?")
+                .setPositiveButton("Einstellungen") { _, _ -> openWifi() }
+                .setNegativeButton("Abbrechen", null)
+                .show()
+            return
+        }
+
+        val networks = WifiPicker.scan(this)
+        if (networks.isEmpty()) {
+            AlertDialog.Builder(this)
+                .setTitle("WLAN")
+                .setMessage("Keine Netze gefunden. Der Suchlauf braucht ein paar Sekunden.")
+                .setPositiveButton("Aktualisieren") { _, _ -> showWifiPicker() }
+                .setNegativeButton("Abbrechen", null)
+                .show()
+            return
+        }
+
+        // Подпись строки: имя, замок и уровень в четырёх делениях. Уровень
+        // нужен на кухне буквально: прибор стоит за металлом вытяжки, и сеть с
+        // одним делением он «видит», но работать на ней не может.
+        val labels = networks.map { net ->
+            @Suppress("DEPRECATION") // calculateSignalLevel(int,int) — замена только с API 30
+            val bars = WifiManager.calculateSignalLevel(net.level, 4) + 1
+            "${net.ssid}  ${if (net.secured) "🔒" else "○"}  $bars/4"
+        }.toTypedArray()
+
+        AlertDialog.Builder(this)
+            .setTitle("WLAN wählen")
+            .setItems(labels) { _, index ->
+                val net = networks[index]
+                if (net.secured) askWifiPassword(net.ssid) else startWifiConnect(net.ssid, "")
+            }
+            .setPositiveButton("Aktualisieren") { _, _ -> showWifiPicker() }
+            .setNegativeButton("Abbrechen", null)
+            .show()
+    }
+
+    /** Пароль сети. Показываем открытым текстом по галочке — руки в перчатках. */
+    private fun askWifiPassword(ssid: String) {
+        val input = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            hint = "WLAN-Passwort"
+        }
+        val visible = android.widget.CheckBox(this).apply {
+            text = "Passwort anzeigen"
+            setOnCheckedChangeListener { _, checked ->
+                input.inputType = InputType.TYPE_CLASS_TEXT or
+                    if (checked) InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+                    else InputType.TYPE_TEXT_VARIATION_PASSWORD
+                input.setSelection(input.text.length)
+            }
+        }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), 0)
+            addView(input)
+            addView(visible)
+        }
+        AlertDialog.Builder(this)
+            .setTitle(ssid)
+            .setView(box)
+            .setPositiveButton("Verbinden") { _, _ ->
+                startWifiConnect(ssid, input.text.toString())
+            }
+            .setNegativeButton("Abbrechen", null)
+            .show()
+    }
+
+    /**
+     * Запустить подключение и сказать об этом словами.
+     *
+     * Успех здесь означает лишь «прибор принял сеть»: ассоциация, DHCP и
+     * проверка интернета занимают секунды. Дальше работает наблюдатель за
+     * сетью — как только интернет окажется проверенным, терминал откроется сам,
+     * и никаких кнопок нажимать не придётся.
+     */
+    private fun startWifiConnect(ssid: String, password: String) {
+        val started = WifiPicker.connect(this, ssid, password)
+        val text =
+            if (started) "Verbinde mit $ssid …"
+            else "Verbindung zu $ssid fehlgeschlagen — Passwort prüfen"
+        // На экране отказа пишем в него же, а поверх РАБОТАЮЩЕГО терминала —
+        // всплывающей строкой. Иначе смена сети из вкладки «Mehr» накрывала бы
+        // живую ленту заказов экраном «нет связи», которого там нет.
+        if (loadFailed) showOffline(text)
+        else android.widget.Toast.makeText(this, text, android.widget.Toast.LENGTH_LONG).show()
     }
 
     /**

@@ -110,3 +110,10 @@ Thumbs.db
 /scripts/printed-orders.json
 /scripts/printed-orders.json.tmp
 scripts/.backup-2plus1-targetItems-*.json
+
+# Ключ подписи кассового приложения. Репозиторий ПУБЛИЧНЫЙ: попадание ключа сюда
+# означает, что подписанную «нашим» именем сборку сможет собрать кто угодно.
+# Потеря ключа тоже дорога — обновить прибор без него нельзя, только сброс.
+# Поэтому файл живёт локально, а копия — в надёжном хранилище, не в git.
+pos-android/keystore/
+pos-android/keystore.properties
