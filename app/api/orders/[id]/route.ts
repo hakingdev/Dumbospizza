@@ -7,7 +7,7 @@ import { getServerSession } from 'next-auth';
 import { getCustomerSession } from '../../../../lib/customer-auth';
 import { verifyOrderAccessToken } from '../../../../lib/orders/access-token';
 import { rateLimit, getClientIp, logSecurityEvent } from '../../../../lib/security/rate-limit';
-import { sendOrderStatusNotification } from '../../../../lib/whatsapp';
+import { sendOrderEtaNotification, sendOrderStatusNotification } from '../../../../lib/whatsapp';
 import { earnForCompletedOrder, reverseOrder } from '../../../../lib/loyalty/service';
 import { syncOrderCardStatus } from '../../../../lib/telegram';
 import { ETA_MAX_MINUTES, ETA_MIN_MINUTES, isValidEtaMinutes } from '../../../../lib/orders/delay';
@@ -173,6 +173,11 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
     // etaSetAt двигаем вместе с минутами: обещание читается как «столько-то от
     // ЭТОГО момента», и без отметки времени оно молча состарится.
+    //
+    // Гостю о времени сообщаем только когда оно ИЗМЕНИЛОСЬ: каждое сообщение
+    // платное и читается как «время опять сдвинули». Та же защита стоит у кнопки
+    // «⏱ Время готовности» в Telegram.
+    const etaAnnounced = isValidEtaMinutes(etaMinutes) && order.etaMinutes !== Number(etaMinutes);
     if (isValidEtaMinutes(etaMinutes)) {
       order.etaMinutes = Number(etaMinutes);
       order.etaSetAt = new Date();
@@ -194,6 +199,21 @@ export async function PUT(request: NextRequest, { params }: Params) {
           console.error('Loyalty reverse on cancel:', e)
         );
       }
+    }
+
+    /**
+     * Время готовности гостю — ровно здесь, а не при создании заказа.
+     *
+     * Раньше обещание уходило сразу после оформления, посчитанное ИИ: гость
+     * получал «через 30 минут» до того, как кухня вообще увидела заказ, а потом
+     * ещё раз — когда кухня называла настоящее время. Теперь обещание одно и
+     * даёт его тот, кто будет готовить.
+     */
+    if (etaAnnounced) {
+      await sendOrderEtaNotification(
+        { phoneNumber: order.phoneNumber, orderNumber: order.orderNumber },
+        Number(etaMinutes)
+      ).catch((e) => console.error('WhatsApp eta notification:', e));
     }
 
     if (statusChanged) {

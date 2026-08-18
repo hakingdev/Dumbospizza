@@ -247,6 +247,9 @@ function orderToNotification(order: IOrder): OrderNotification {
     deliveryType: order.deliveryType,
     desiredDeliveryTime: order.desiredDeliveryTime,
     etaMinutes: order.etaMinutes,
+    // Без момента назначения минуты не превратить в час готовности — а именно
+    // час и остаётся верным, когда карточка повисела полчаса.
+    etaSetAt: order.etaSetAt ?? null,
     etaAnalysis: order.etaAnalysis || undefined
   };
 }
