@@ -134,14 +134,22 @@ function formatDateTime(value?: Date | string): string {
     .replace(',', '');
 }
 
-/** «20:30» по часам заведения. Пусто — времени нет. */
+/**
+ * «20:30» по часам заведения. Пусто — времени нет.
+ *
+ * Округляем до БЛИЖАЙШЕЙ минуты, а не отбрасываем секунды. Обещание считается
+ * от `etaSetAt` с секундами: заказ, принятый в 21:22:37 на 68 минут, попадает
+ * в 22:30:37 — и без округления печатался бы как «22:29», на минуту раньше
+ * названного гостю часа, да ещё и с ложной строкой расхождения.
+ */
 function formatClock(ms?: number | null): string {
   if (ms == null || !Number.isFinite(ms)) return '';
+  const rounded = Math.round(ms / 60_000) * 60_000;
   return new Intl.DateTimeFormat('de-DE', {
     hour: '2-digit',
     minute: '2-digit',
     timeZone: RECEIPT_TZ,
-  }).format(new Date(ms));
+  }).format(new Date(rounded));
 }
 
 /** Wunschzeit гостя в виде «HH:mm». Пусто — гость времени не называл. */
@@ -155,27 +163,33 @@ function normalizeDesired(value?: string): string {
 }
 
 /**
- * Время, К КОТОРОМУ заказ должен быть готов — крупной строкой.
+ * Час, К КОТОРОМУ заказ нужен у гостя — крупной строкой.
  *
- * Раньше на чеке стоял только Wunschzeit гостя, да и то мелко, а обещание,
- * которое прибор дал при приёме, не печаталось вовсе. Кухня получала бумагу,
- * по которой нельзя понять, к какому часу готовить: у заказа «на сейчас» там
- * не было времени совсем.
+ * Раньше на чеке было только время ПРИЁМА в шапке да мелкая строка с
+ * Wunschzeit. Времени, к которому заказ должен уехать, на бумаге не было
+ * вовсе — у заказа «на сейчас» ни одного часа, кроме момента печати.
  *
- * Печатаем ровно тот час, к которому заказ нужен:
- *   - обещание есть → FERTIG 20:30 (это и есть срок, его назвали гостю);
- *   - обещания ещё нет, но гость назвал час → WUNSCH 20:30;
- *   - Wunschzeit разошёлся с обещанием (кухня сдвинула ±5) → печатаем обе
- *     строки. Расхождение обязано быть видно на бумаге: иначе сборщик
- *     ориентируется на один час, а гостю назвали другой.
+ * Подпись зависит от типа заказа, и это не косметика: `etaMinutes` — обещание
+ * ГОСТЮ, то есть для доставки это час у двери, а не готовность на кухне.
+ * Назвать его «FERTIG» значило бы сдвинуть кухне ориентир на всё время дороги.
+ *
+ *   - доставка с обещанием  → LIEFERZEIT 22:30
+ *   - самовывоз с обещанием → ABHOLZEIT 22:30
+ *   - обещания ещё нет      → WUNSCHZEIT 22:30 (час, который назвал гость)
+ *
+ * Wunschzeit печатается второй строкой, только когда он разошёлся с обещанием
+ * (кухня сдвинула ±5): расхождение обязано быть видно, иначе сборщик готовит
+ * к одному часу, а гостю назвали другой. Совпал — второй строки нет, дублей
+ * на бумаге не держим.
  */
 function buildReadyTimeOps(order: ReceiptOrder): ReceiptOp[] {
   const promised = formatClock(order.promisedMs);
   const desired = normalizeDesired(order.desiredDeliveryTime);
 
   if (promised) {
+    const label = order.deliveryType === 'pickup' ? 'ABHOLZEIT' : 'LIEFERZEIT';
     const ops: ReceiptOp[] = [
-      { type: 'text', text: `FERTIG ${promised}`, bold: true, double: true },
+      { type: 'text', text: `${label} ${promised}`, bold: true, double: true },
     ];
     if (desired && desired !== promised) {
       ops.push({ type: 'text', text: `Wunsch: ${desired}` });
@@ -183,7 +197,7 @@ function buildReadyTimeOps(order: ReceiptOrder): ReceiptOp[] {
     return ops;
   }
   if (desired) {
-    return [{ type: 'text', text: `WUNSCH ${desired}`, bold: true, double: true }];
+    return [{ type: 'text', text: `WUNSCHZEIT ${desired}`, bold: true, double: true }];
   }
   return [];
 }

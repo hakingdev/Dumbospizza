@@ -217,12 +217,36 @@ describe('время на чеке', () => {
     expect(lines.join('\n')).not.toContain('16:10');
   });
 
-  it('печатает час, к которому заказ должен быть готов', () => {
+  it('печатает час, к которому заказ нужен у гостя', () => {
     const lines = render({
       desiredDeliveryTime: undefined,
       promisedMs: new Date('2026-08-18T18:30:00Z').getTime(), // 20:30 по Берлину
     });
-    expect(lines.join('\n')).toContain('FERTIG 20:30');
+    expect(lines.join('\n')).toContain('LIEFERZEIT 20:30');
+  });
+
+  it('у самовывоза подпись своя: гость приходит, а не везут', () => {
+    const text = render({
+      deliveryType: 'pickup',
+      desiredDeliveryTime: undefined,
+      promisedMs: new Date('2026-08-18T18:30:00Z').getTime(),
+    }).join('\n');
+    expect(text).toContain('ABHOLZEIT 20:30');
+    expect(text).not.toContain('LIEFERZEIT');
+  });
+
+  it('секунды в обещании не сдвигают час на минуту', () => {
+    // Обещание считается от etaSetAt с секундами, а минуты округляются при
+    // приёме — промах не больше 30 секунд в любую сторону. И 22:29:37, и
+    // 22:30:23 означают один и тот же названный гостю час 22:30.
+    for (const iso of ['2026-08-18T20:29:37Z', '2026-08-18T20:30:23Z']) {
+      const text = render({
+        desiredDeliveryTime: '22:30',
+        promisedMs: new Date(iso).getTime(),
+      }).join('\n');
+      expect(text).toContain('LIEFERZEIT 22:30');
+      expect(text).not.toContain('Wunsch: 22:30'); // ложного расхождения нет
+    }
   });
 
   it('расхождение обещания с Wunschzeit печатает обеими строками', () => {
@@ -232,7 +256,7 @@ describe('время на чеке', () => {
       desiredDeliveryTime: '20:30',
       promisedMs: new Date('2026-08-18T18:35:00Z').getTime(),
     }).join('\n');
-    expect(text).toContain('FERTIG 20:35');
+    expect(text).toContain('LIEFERZEIT 20:35');
     expect(text).toContain('Wunsch: 20:30');
   });
 
@@ -241,18 +265,19 @@ describe('время на чеке', () => {
       desiredDeliveryTime: '20:30',
       promisedMs: new Date('2026-08-18T18:30:00Z').getTime(),
     }).join('\n');
-    expect(text).toContain('FERTIG 20:30');
+    expect(text).toContain('LIEFERZEIT 20:30');
     expect(text).not.toContain('Wunsch: 20:30');
   });
 
   it('заказ ещё не принят — печатает желаемый час гостя', () => {
     const text = render({ desiredDeliveryTime: '19:45', promisedMs: null }).join('\n');
-    expect(text).toContain('WUNSCH 19:45');
+    expect(text).toContain('WUNSCHZEIT 19:45');
   });
 
   it('без времени вовсе строка не печатается', () => {
     const text = render({ desiredDeliveryTime: undefined, promisedMs: null }).join('\n');
-    expect(text).not.toContain('FERTIG');
-    expect(text).not.toContain('WUNSCH');
+    expect(text).not.toContain('LIEFERZEIT');
+    expect(text).not.toContain('ABHOLZEIT');
+    expect(text).not.toContain('WUNSCHZEIT');
   });
 });
