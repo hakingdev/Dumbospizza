@@ -29,6 +29,17 @@
             <action android:name="android.intent.action.DIAL" />
             <data android:scheme="tel" />
         </intent>
+        <!-- Выбор звука сигнала. Без этого блока startActivity падает с
+             ActivityNotFoundException, а resolveActivity возвращает null — и
+             пакет пикера не попадает в белый список lock task. Пикер живёт НЕ в
+             настройках: с Android 11 это отдельный com.android.soundpicker,
+             раньше — com.android.providers.media. Пакеты перечислены поимённо
+             на случай прошивки, где пикер объявлен без фильтра по действию. -->
+        <intent>
+            <action android:name="android.intent.action.RINGTONE_PICKER" />
+        </intent>
+        <package android:name="com.android.soundpicker" />
+        <package android:name="com.android.providers.media" />
     </queries>
 
     <application

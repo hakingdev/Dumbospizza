@@ -23,6 +23,8 @@ object PosPrefs {
     private const val KEY_RUNNING = "serviceEnabled"
     private const val KEY_CURSOR = "cursorMs"
     private const val KEY_PIN = "servicePin"
+    private const val KEY_ALERT_URI = "alertSoundUri"
+    private const val KEY_ALERT_NAME = "alertSoundName"
 
     /** ВАЖНО: www, не apex. dumbospizza.de отдаёт 308-редирект, а он способен
      *  продублировать печать при повторе запроса. Та же грабля описана в
@@ -55,6 +57,26 @@ object PosPrefs {
 
     fun setServicePin(c: Context, value: String) =
         prefs(c).edit().putString(KEY_PIN, value.trim()).apply()
+
+    /**
+     * Сигнал о новом заказе: URI выбранного системного звука. Пусто — повар
+     * ничего не выбирал, и звучит штатный будильник прибора.
+     *
+     * Рядом с URI лежит ЕГО ИМЯ, и это не дублирование. Прочитать название по
+     * content://-адресу можно только запросом в медиатеку: это диск, это
+     * миллисекунды, и это отваливается, когда провайдер звуков занят или звук
+     * успели удалить. Вкладка «Mehr» обязана нарисовать выбранное сразу и
+     * всегда, поэтому имя сохраняем в момент выбора.
+     */
+    fun alertSoundUri(c: Context): String = prefs(c).getString(KEY_ALERT_URI, "") ?: ""
+
+    fun alertSoundName(c: Context): String = prefs(c).getString(KEY_ALERT_NAME, "") ?: ""
+
+    fun setAlertSound(c: Context, uri: String, name: String) =
+        prefs(c).edit()
+            .putString(KEY_ALERT_URI, uri.trim())
+            .putString(KEY_ALERT_NAME, name.trim())
+            .apply()
 
     fun serviceEnabled(c: Context): Boolean = prefs(c).getBoolean(KEY_RUNNING, false)
     fun setServiceEnabled(c: Context, value: Boolean) =
