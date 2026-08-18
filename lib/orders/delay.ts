@@ -20,6 +20,21 @@ export function isValidDelayMinutes(value: unknown): boolean {
 }
 
 /**
+ * Допустимое обещание при ПРИЁМЕ заказа: целые 5…180 минут.
+ *
+ * Границы шире, чем у задержки, и живут здесь же — обе функции пишут в одну и
+ * ту же пару полей (etaMinutes/etaSetAt), и разъехавшиеся пределы означали бы,
+ * что заказ можно принять на срок, который потом нечем сдвинуть.
+ */
+export const ETA_MIN_MINUTES = 5;
+export const ETA_MAX_MINUTES = 180;
+
+export function isValidEtaMinutes(value: unknown): boolean {
+  const n = Number(value);
+  return Number.isInteger(n) && n >= ETA_MIN_MINUTES && n <= ETA_MAX_MINUTES;
+}
+
+/**
  * Новое обещание после задержки, минут ОТ ТЕКУЩЕГО МОМЕНТА:
  * остаток старого обещания (если ещё не истёк) + задержка. Просроченный заказ
  * получает ровно delayMinutes от «сейчас» — это и уходит гостю в WhatsApp.

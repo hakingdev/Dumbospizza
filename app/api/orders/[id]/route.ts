@@ -10,6 +10,7 @@ import { rateLimit, getClientIp, logSecurityEvent } from '../../../../lib/securi
 import { sendOrderStatusNotification } from '../../../../lib/whatsapp';
 import { earnForCompletedOrder, reverseOrder } from '../../../../lib/loyalty/service';
 import { syncOrderCardStatus } from '../../../../lib/telegram';
+import { ETA_MAX_MINUTES, ETA_MIN_MINUTES, isValidEtaMinutes } from '../../../../lib/orders/delay';
 
 interface Params {
   params: {
@@ -114,7 +115,20 @@ export async function PUT(request: NextRequest, { params }: Params) {
     }
     
     const data = await request.json();
-    const { status, notes, kitchenPrintStatus, customerPrintStatus } = data;
+    const { status, notes, kitchenPrintStatus, customerPrintStatus, etaMinutes } = data;
+
+    // Обещание времени готовности. Раньше его умел ставить только POST
+    // .../delay, то есть СДВИНУТЬ уже существующее — а поставить первое,
+    // принимая заказ, было нечем. Терминал кухни делает именно это.
+    if (etaMinutes !== undefined && etaMinutes !== null && !isValidEtaMinutes(etaMinutes)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `etaMinutes: целое число минут от ${ETA_MIN_MINUTES} до ${ETA_MAX_MINUTES}`,
+        },
+        { status: 400 }
+      );
+    }
 
     // Get the current order
     const order = await Order.findById(params.id);
@@ -155,6 +169,13 @@ export async function PUT(request: NextRequest, { params }: Params) {
     
     if (customerPrintStatus) {
       order.customerPrintStatus = customerPrintStatus;
+    }
+
+    // etaSetAt двигаем вместе с минутами: обещание читается как «столько-то от
+    // ЭТОГО момента», и без отметки времени оно молча состарится.
+    if (isValidEtaMinutes(etaMinutes)) {
+      order.etaMinutes = Number(etaMinutes);
+      order.etaSetAt = new Date();
     }
     
     // Save updates
