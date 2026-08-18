@@ -133,7 +133,13 @@ export function buildPrintJob(
   return {
     orderId: String(order._id ?? order.id),
     orderNumber: String(order.orderNumber ?? order._id ?? order.id),
-    printSeq: Number(order.printSeq) || 0,
+    // В модели заказа поле называется kitchenPrintSeq. Раньше здесь читалось
+    // несуществующее order.printSeq, то есть в задание ВСЕГДА уезжал ноль — и
+    // повтор печати на приборе не работал вовсе: ключ идемпотентности
+    // `orderId:printSeq` не менялся, прибор считал чек уже напечатанным и молча
+    // пропускал его. Чек при этом выходил на Epson (LAN-агент смотрит на
+    // kitchenPrintStatus), из-за чего поломка выглядела как «печатает не туда».
+    printSeq: Number(order.kitchenPrintSeq) || 0,
     copies: settings.copies,
     render: {
       width: settings.width,
