@@ -112,7 +112,7 @@ class KioskActivity : Activity() {
             // всплывающая «копировать» перекрывает кнопки.
             isLongClickable = false
             setOnLongClickListener { true }
-            configure(settings)
+            configure(this)
             webViewClient = TerminalClient()
         }
         root.addView(web, FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
@@ -125,7 +125,13 @@ class KioskActivity : Activity() {
         return root
     }
 
-    private fun configure(settings: WebSettings) {
+    /**
+     * Настройки WebView. Принимает сам view, а НЕ его settings: куки третьих
+     * сторон отключаются для конкретного view, а поле `web` в этот момент ещё
+     * не присвоено — вызов через него падал бы на старте активности.
+     */
+    private fun configure(view: WebView) {
+        val settings: WebSettings = view.settings
         settings.javaScriptEnabled = true
         settings.domStorageEnabled = true
         // Масштабирование запрещено: случайный щипок двумя пальцами уводит
@@ -141,7 +147,7 @@ class KioskActivity : Activity() {
         settings.userAgentString = settings.userAgentString + " DumboPOS/kiosk"
 
         CookieManager.getInstance().setAcceptCookie(true)
-        CookieManager.getInstance().setAcceptThirdPartyCookies(web, false)
+        CookieManager.getInstance().setAcceptThirdPartyCookies(view, false)
     }
 
     private fun buildOfflineView(): View = LinearLayout(this).apply {
