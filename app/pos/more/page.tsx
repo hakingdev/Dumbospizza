@@ -141,11 +141,22 @@ export default function MorePage() {
   /** Таймер, который обрывает проверочный звук. */
   const testTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Уход со страницы во время проверки не должен оставить висящий таймер:
-  // он оборвал бы уже настоящий сигнал.
+  /**
+   * Уход со страницы во время проверки обрывает и таймер, И сам звук.
+   *
+   * Одного таймера мало — на этом и попались. Выбранный сигнал зациклен (у
+   * будильника так и задумано), останавливает его только stopAlert, и если уйти
+   * с «Mehr», не дождавшись пяти секунд, обрывать становится некому: звук
+   * звенит до перезагрузки прибора.
+   *
+   * Оборвать безопасно: настоящий сигнал о заказе живёт своей жизнью и
+   * повторится на следующем тике через десять секунд.
+   */
   useEffect(() => {
     return () => {
-      if (testTimer.current) clearTimeout(testTimer.current);
+      if (!testTimer.current) return;
+      clearTimeout(testTimer.current);
+      stopPosChime();
     };
   }, []);
 
@@ -231,7 +242,13 @@ export default function MorePage() {
   const testAlert = () => {
     if (testTimer.current) clearTimeout(testTimer.current);
     playPosChime();
-    testTimer.current = setTimeout(stopPosChime, ALERT_TEST_MS);
+    testTimer.current = setTimeout(() => {
+      // Ссылку гасим вместе со звуком: по ней уход со страницы решает, надо ли
+      // обрывать. Оставленная просроченная ссылка означала бы, что следующий
+      // выход с «Mehr» глушит уже НАСТОЯЩИЙ сигнал о заказе.
+      testTimer.current = null;
+      stopPosChime();
+    }, ALERT_TEST_MS);
   };
 
   return (
