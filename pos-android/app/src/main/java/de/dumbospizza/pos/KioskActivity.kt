@@ -95,6 +95,16 @@ class KioskActivity : Activity() {
         super.onPause()
     }
 
+    /**
+     * Кнопка «домой» на уже запущенном киоске. Активность singleTask, поэтому
+     * система не пересоздаёт её, а зовёт сюда — и терминал обязан вернуться на
+     * ленту заказов. Иначе «домой» с экрана деталей не делала бы ничего.
+     */
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        loadTerminal()
+    }
+
     /** Назад листает историю терминала и НИКОГДА не закрывает киоск. */
     override fun onBackPressed() {
         if (web.canGoBack()) web.goBack()
@@ -192,6 +202,11 @@ class KioskActivity : Activity() {
 
     private fun loadTerminal() {
         offline.visibility = View.GONE
+        // Кэш чистим перед КАЖДОЙ явной загрузкой (старт киоска и кнопка
+        // «повторить»). Оба случая редки, а цена ошибки высокая: после выката
+        // прибор иначе показывает прошлую сборку — а однажды показал
+        // закэшированную 404 и не вышел из неё сам.
+        web.clearCache(true)
         web.loadUrl(startUrl)
     }
 
