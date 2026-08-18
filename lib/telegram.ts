@@ -1224,7 +1224,10 @@ export async function processTelegramUpdate(update: any): Promise<void> {
           const target = cardStatusForOrderStatus(status);
           if (!target) return { ok: true };
           const result = await moveOrderCard(toCardOrderInput(order), target, { config: forum });
-          if (result.ok) return { ok: true };
+          // 'stale' — карточку убрала ночная уборка; статус заказа это менять
+          // не мешает (кнопки под такой заказ уже не существует, но клик мог
+          // прилететь от кэша клиента).
+          if (result.ok || result.reason === 'stale') return { ok: true };
           return {
             ok: false,
             error:

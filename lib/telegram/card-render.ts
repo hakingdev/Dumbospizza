@@ -19,7 +19,12 @@ import {
   type CardStatus,
   type ForumConfig,
 } from './forum';
-import { buildOrderBodyText, escapeHtml, type OrderNotification } from './order-message';
+import {
+  buildOrderBodyText,
+  escapeHtml,
+  type OrderEtaView,
+  type OrderNotification,
+} from './order-message';
 import type { CardHistoryEntry } from './card-store';
 
 const TZ = 'Europe/Berlin';
@@ -128,7 +133,16 @@ export function renderCardText(input: CardTextInput): string {
 
   const timeline = renderTimeline(statusHistory);
 
-  return [`${header}${courierLine}${problemLine}`, buildOrderBodyText(order), timeline]
+  // Кухонные числа живут, пока работает кухня. Дальше карточка про дорогу, а
+  // закрытая — только про факты (см. OrderEtaView).
+  const etaView: OrderEtaView =
+    status === 'cooking' ? 'kitchen' : isTerminalCardStatus(status) ? 'none' : 'road';
+
+  return [
+    `${header}${courierLine}${problemLine}`,
+    buildOrderBodyText(order, { etaView }),
+    timeline,
+  ]
     .filter(Boolean)
     .join('\n\n');
 }

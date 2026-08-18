@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { posDisplayStatus } from '../../lib/pos/board';
 import type {
   PosBoardCounts,
   PosBoardOrder,
@@ -279,7 +280,9 @@ export function posOrderNote(
 ): { text: string; overdue: boolean } {
   const left = order.dueMs == null ? null : order.dueMs - nowMs;
 
-  switch (order.status) {
+  // Экранный статус, а не статус базы: у доставки ready_for_delivery — это
+  // «уехал», и строка под карточкой обязана говорить то же, что вкладка.
+  switch (posDisplayStatus(order)) {
     case 'new':
       return { text: 'Neu · noch nicht angenommen', overdue: false };
 
@@ -289,11 +292,9 @@ export function posOrderNote(
         ? { text: `Noch ${posCountdown(left)} Min · fertig ${posClock(order.dueMs)}`, overdue: false }
         : { text: `Überfällig · +${posCountdown(left)} Min`, overdue: true };
 
+    // Сюда доходит только самовывоз: доставку posDisplayStatus увёл в 'delivering'.
     case 'ready':
-      return {
-        text: order.deliveryType === 'pickup' ? 'Fertig · wartet auf Abholung' : 'Fertig · wartet auf Fahrer',
-        overdue: false,
-      };
+      return { text: 'Fertig · wartet auf Abholung', overdue: false };
 
     case 'delivering':
       return {
@@ -317,11 +318,12 @@ export function posOrderNote(
 }
 
 /**
- * Какие статусы базы попадают на какую вкладку.
+ * Какие ЭКРАННЫЕ статусы (posDisplayStatus) попадают на какую вкладку.
  *
  * «Zubereitung» держит и непринятые, и готовые заказы: для кухни это всё ещё
  * работа на столе. Спрятать их за отдельными вкладками значило бы потерять
- * заказ, который никто не принял.
+ * заказ, который никто не принял. Готовая доставка сюда уже не попадает —
+ * posDisplayStatus считает её 'delivering', 'ready' остаётся за самовывозом.
  */
 export const POS_TAB_STATUSES: Record<string, PosBoardStatus[]> = {
   preparing: ['new', 'preparing', 'ready'],

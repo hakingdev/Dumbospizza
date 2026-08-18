@@ -4,6 +4,7 @@ import {
   countByStatus,
   orderChannel,
   orderDueMs,
+  posDisplayStatus,
   posEuro,
   summarizeItems,
   toBoardOrder,
@@ -139,6 +140,26 @@ describe('строка ленты', () => {
   });
 });
 
+describe('экранный статус', () => {
+  it('готовая доставка = «в пути»: её уже увёз курьер', () => {
+    // Кнопка «🚚 Доставка» в Telegram ставит ready_for_delivery, карточка
+    // уезжает в тему доставки, гость получает «ist unterwegs» — терминал
+    // обязан говорить то же самое.
+    expect(posDisplayStatus({ status: 'ready', deliveryType: 'delivery' })).toBe('delivering');
+  });
+
+  it('готовый самовывоз остаётся готовым: «unterwegs» у него не бывает', () => {
+    expect(posDisplayStatus({ status: 'ready', deliveryType: 'pickup' })).toBe('ready');
+  });
+
+  it('остальные статусы не трогает', () => {
+    for (const status of ['new', 'preparing', 'delivering', 'delivered', 'cancelled'] as const) {
+      expect(posDisplayStatus({ status, deliveryType: 'delivery' })).toBe(status);
+      expect(posDisplayStatus({ status, deliveryType: 'pickup' })).toBe(status);
+    }
+  });
+});
+
 describe('счётчики вкладок', () => {
   it('считает по статусам и не забывает пустые', () => {
     const rows = [
@@ -154,5 +175,16 @@ describe('счётчики вкладок', () => {
       delivered: 1,
       cancelled: 0,
     });
+  });
+
+  it('готовую доставку кладёт в «Unterwegs», а самовывоз — нет', () => {
+    // Иначе над лентой с уехавшими заказами стоит «Unterwegs 0».
+    const rows = [
+      { status: 'ready', deliveryType: 'delivery' },
+      { status: 'ready', deliveryType: 'pickup' },
+    ] as PosBoardOrder[];
+    const counts = countByStatus(rows);
+    expect(counts.delivering).toBe(1);
+    expect(counts.ready).toBe(1);
   });
 });

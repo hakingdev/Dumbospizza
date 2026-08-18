@@ -53,6 +53,27 @@ export function toOrderStatus(status: PosBoardStatus): string {
   return TO_ORDER[status];
 }
 
+/**
+ * Статус, которым заказ показывают на экране терминала.
+ *
+ * `ready_for_delivery` у доставки означает не «стоит готовый на полке», а
+ * «уехал к гостю»: в Telegram кнопка так и называется («🚚 Доставка»), карточка
+ * переезжает в тему доставки, и гость в ту же секунду получает «ist unterwegs»
+ * (STATUS_LABELS в lib/whatsapp.ts). Терминал был единственным местом, где
+ * такой заказ оставался в «Zubereitung» — кухня видела на столе работу,
+ * которой там уже нет, а вкладка «Unterwegs» стояла пустой.
+ *
+ * У самовывоза «unterwegs» не бывает: там тот же статус значит «ждёт гостя»,
+ * и заказ обязан остаться на кухонной вкладке.
+ */
+export function posDisplayStatus(order: {
+  status: PosBoardStatus;
+  deliveryType?: string | null;
+}): PosBoardStatus {
+  if (order.status === 'ready' && order.deliveryType !== 'pickup') return 'delivering';
+  return order.status;
+}
+
 /** Статусы, которые кухня считает незакрытыми: их показываем без ограничения по дате. */
 export const POS_ACTIVE_ORDER_STATUSES = [
   'new',
@@ -195,6 +216,11 @@ function statusChangedMs(order: any): number | null {
 /** Сколько заказов в каждом статусе — числа на вкладках. */
 export type PosBoardCounts = Record<PosBoardStatus, number>;
 
+/**
+ * Считаем по ЭКРАННОМУ статусу (posDisplayStatus), а не по статусу базы: число
+ * на вкладке и её содержимое обязаны совпадать, иначе «Unterwegs 0» стоит над
+ * лентой, в которой заказы уже в пути.
+ */
 export function countByStatus(orders: PosBoardOrder[]): PosBoardCounts {
   const counts: PosBoardCounts = {
     new: 0,
@@ -204,6 +230,6 @@ export function countByStatus(orders: PosBoardOrder[]): PosBoardCounts {
     delivered: 0,
     cancelled: 0,
   };
-  for (const order of orders) counts[order.status] += 1;
+  for (const order of orders) counts[posDisplayStatus(order)] += 1;
   return counts;
 }

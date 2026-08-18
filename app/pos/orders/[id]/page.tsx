@@ -29,7 +29,7 @@ import {
   usePosOrder,
   type PosOrderDetail,
 } from '../../../../components/pos/data';
-import { toOrderStatus, type PosBoardStatus } from '../../../../lib/pos/board';
+import { posDisplayStatus, toOrderStatus, type PosBoardStatus } from '../../../../lib/pos/board';
 
 /**
  * 07 · Bestelldetails, а также 16, 17 (состояния печати), 18–21 (по статусам)
@@ -83,12 +83,13 @@ const VIEW: Record<
     // лишнее касание и заказ, забытый в статусе, которого никто не ведёт.
     actions: [CANCEL, { label: 'Ist unterwegs', next: 'delivering' }],
   },
-  // Статус остаётся живым: его ставят из Telegram и админки, и такой заказ
-  // терминал обязан показать и уметь довести до конца.
+  // Готовый САМОВЫВОЗ: доставку с этим статусом экран показывает как
+  // 'delivering' (см. posDisplayStatus), сюда доходит только заказ, который
+  // ждёт гостя у стойки. Ему нужен один жест — «забрал», а не «уехал».
   ready: {
     step: 3,
     canExtend: false,
-    actions: [CANCEL, { label: 'Ist unterwegs', next: 'delivering' }],
+    actions: [CANCEL, { label: 'Abgeholt', next: 'delivered' }],
   },
   delivering: {
     step: 3,
@@ -124,7 +125,9 @@ const PAYMENT_LABEL: Record<string, string> = {
 function headline(order: PosOrderDetail, nowMs: number) {
   const left = order.dueMs == null ? null : order.dueMs - nowMs;
 
-  switch (order.status) {
+  // По экранному статусу: уехавшая доставка обязана показывать «Ankunft
+  // geplant», а не «Wartet auf den Fahrer» — водитель уже с заказом.
+  switch (posDisplayStatus(order)) {
     case 'new':
       return {
         bigValue: posClock(order.createdMs),
@@ -140,13 +143,13 @@ function headline(order: PosOrderDetail, nowMs: number) {
         subTop: left >= 0 ? 'Minuten übrig' : 'Minuten überfällig',
         subBottom: `Fertig um ${posClock(order.dueMs)} Uhr`,
       };
+    // Только самовывоз: доставка ушла в ветку 'delivering'.
     case 'ready': {
       const since = order.closedMs ? Math.round((nowMs - order.closedMs) / 60_000) : null;
       return {
         bigValue: posClock(order.closedMs ?? order.dueMs),
         subTop: since == null ? 'Fertig' : `Fertig seit ${since} Minuten`,
-        subBottom:
-          order.deliveryType === 'pickup' ? 'Wartet auf den Gast' : 'Wartet auf den Fahrer',
+        subBottom: 'Wartet auf den Gast',
       };
     }
     case 'delivering':
@@ -186,7 +189,7 @@ export default function OrderDetailPage() {
   const [busy, setBusy] = useState(false);
 
   const order = state.status === 'ready' ? state.data : null;
-  const view = order ? VIEW[order.status] : null;
+  const view = order ? VIEW[posDisplayStatus(order)] : null;
 
   const say = (message: string) => {
     setToast(message);
@@ -247,7 +250,7 @@ export default function OrderDetailPage() {
         {order && view && nowMs != null && (
           <>
             <PosStatusTimeCard
-              status={order.status}
+              status={posDisplayStatus(order)}
               asideLabel={`Angenommen ${posClock(order.createdMs)}`}
               {...headline(order, nowMs)}
               progressPercent={
