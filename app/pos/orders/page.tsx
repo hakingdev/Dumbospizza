@@ -17,9 +17,9 @@ import {
   posFetch,
   posOrderMeta,
   posOrderNote,
-  usePosBoard,
   usePosNow,
 } from '../../../components/pos/data';
+import { usePosBoardContext } from '../../../components/pos/board-context';
 import { PosScreenState } from '../../../components/pos/screen-state';
 
 /**
@@ -44,7 +44,7 @@ const TAB_LABELS: { key: string; label: string }[] = [
 ];
 
 export default function OrdersPage() {
-  const { state, refresh, skewRef } = usePosBoard();
+  const { state, refresh, skewRef } = usePosBoardContext();
   const nowMs = usePosNow(skewRef);
   const [active, setActive] = useState('preparing');
   const [busy, setBusy] = useState(false);
