@@ -342,7 +342,26 @@ export async function moveOrderCard(
         : { ok: false, reason: 'send_failed' as const };
     }
 
+    // Статус карточки тот же — но ТЕКСТ мог измениться.
+    //
+    // `new` и `preparing` дают одну и ту же карточку «cooking», поэтому приём
+    // заказа сюда и попадает. Раньше здесь стоял безусловный noop, и получалось,
+    // что кухня приняла заказ и назначила время, а карточка об этом не узнавала
+    // никогда: в ней оставалось исходное обещание и подпись «не принят».
     if (card.status === target) {
+      const text = cardText(order, target, card.statusHistory, card.courier);
+      try {
+        await d.api.edit({
+          messageId: card.messageId,
+          text,
+          keyboard: keyboardForCard(card, d.config, d.now()),
+        });
+      } catch (e) {
+        // «message is not modified» — обычный ответ, когда менять нечего.
+        if (!isNotModifiedError(e)) {
+          d.log('обновление карточки на месте не удалось', (e as Error)?.message);
+        }
+      }
       return { ok: true, reason: 'noop', messageId: card.messageId, topicId: card.topicId };
     }
 

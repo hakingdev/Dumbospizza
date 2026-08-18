@@ -233,7 +233,7 @@ describe('moveOrderCard', () => {
     expect(sent).toHaveLength(0);
   });
 
-  it('статус в БД уже целевой → no-op без единого обращения к Telegram', async () => {
+  it('статус в БД уже целевой → карточка не переезжает, но текст обновляется', async () => {
     const store = new MemoryCardStore();
     await seedCard(store, 'ready');
     const { api, sent, deleted, edited } = makeApi();
@@ -241,7 +241,12 @@ describe('moveOrderCard', () => {
     const result = await moveOrderCard(ORDER, 'ready', { config: CONFIG, store, api, log: silent });
 
     expect(result.reason).toBe('noop');
-    expect([...sent, ...deleted, ...edited]).toHaveLength(0);
+    // Новых сообщений и удалений нет — переезжать некуда.
+    expect([...sent, ...deleted]).toHaveLength(0);
+    // А текст перерисовывается: `new` и `preparing` дают один и тот же статус
+    // карточки, и без этого приём заказа с назначенным временем не доезжал бы
+    // до неё никогда.
+    expect(edited).toHaveLength(1);
   });
 
   it('старую карточку удалили вручную → перенос доводится до конца', async () => {
