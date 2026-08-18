@@ -6,7 +6,9 @@ import {
   driveMinutesFromKm,
   roundEtaTo5,
   heuristicEta,
+  isCookedStatus,
   normalizeEtaVerdict,
+  splitActiveQueue,
   normalizeStaffing,
   DEFAULT_STAFFING,
   type EtaContext,
@@ -139,6 +141,7 @@ function makeContext(overrides: Partial<EtaContext['newOrder']> = {}, queue: Eta
       ...overrides,
     },
     queue,
+    cooked: [],
   };
 }
 
@@ -188,6 +191,73 @@ describe('heuristicEta', () => {
   it('уже уехавшие заказы (delivering) не считаются очередью кухни', () => {
     const eta = heuristicEta(makeContext({}, [queuedOrder('delivering'), queuedOrder('ready_for_delivery')]));
     expect(eta.etaMinutes).toBe(35);
+  });
+});
+
+/**
+ * Разделение очереди — то, из-за чего гость получал минуты за чужую еду,
+ * которая давно готова: в промпт ИИ уезжал ОДИН список, и приготовленный заказ
+ * выглядел в нём работой впереди (со станциями и временем готовки).
+ */
+describe('splitActiveQueue', () => {
+  const row = (orderNumber: string, status: string, extra: Record<string, any> = {}) => ({
+    _id: orderNumber,
+    orderNumber,
+    status,
+    deliveryType: 'delivery',
+    createdAt: new Date('2026-08-18T17:00:00Z'),
+    items: [{ name: 'Pizza Margherita', quantity: 2, category: 'Pizza' }],
+    ...extra,
+  });
+
+  const NOW = new Date('2026-08-18T17:20:00Z').getTime();
+
+  it('на кухне остаются только new и preparing', () => {
+    const { queue, cooked } = splitActiveQueue(
+      [
+        row('001', 'new'),
+        row('002', 'preparing'),
+        row('003', 'ready_for_delivery'),
+        row('004', 'delivering'),
+      ],
+      { now: NOW }
+    );
+
+    expect(queue.map((o) => o.orderNumber)).toEqual(['001', '002']);
+    expect(cooked.map((o) => o.orderNumber)).toEqual(['003', '004']);
+  });
+
+  it('у приготовленного заказа не показываем станции и время готовки', () => {
+    const { cooked } = splitActiveQueue([row('003', 'ready_for_delivery')], { now: NOW });
+    // Пицца в заказе есть, но у плиты работы от него больше нет.
+    expect(cooked[0]).not.toHaveProperty('units');
+    expect(cooked[0]).not.toHaveProperty('itemCount');
+    expect(cooked[0].minutesAgo).toBe(20);
+  });
+
+  it('сам оцениваемый заказ в свою же очередь не попадает', () => {
+    const { queue } = splitActiveQueue([row('001', 'preparing'), row('002', 'new')], {
+      excludeId: '001',
+      now: NOW,
+    });
+    expect(queue.map((o) => o.orderNumber)).toEqual(['002']);
+  });
+
+  it('остаток обещания считается от etaSetAt, а не от создания', () => {
+    const { queue } = splitActiveQueue(
+      [row('001', 'preparing', { etaMinutes: 30, etaSetAt: new Date('2026-08-18T17:10:00Z') })],
+      { now: NOW }
+    );
+    // Обещали 30 минут в 17:10, сейчас 17:20 → осталось 20.
+    expect(queue[0].promiseRemainingMinutes).toBe(20);
+  });
+
+  it('isCookedStatus знает ровно два статуса', () => {
+    expect(isCookedStatus('ready_for_delivery')).toBe(true);
+    expect(isCookedStatus('delivering')).toBe(true);
+    expect(isCookedStatus('preparing')).toBe(false);
+    expect(isCookedStatus('new')).toBe(false);
+    expect(isCookedStatus(undefined)).toBe(false);
   });
 });
 

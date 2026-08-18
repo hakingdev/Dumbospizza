@@ -188,6 +188,21 @@ interface QueueOrderContext {
   desiredDeliveryTime?: string;
 }
 
+/**
+ * Готовый заказ: работы у плиты больше нет, но курьер ещё занят.
+ * Полей меньше, чем у очереди, намеренно — станции и время готовки для
+ * приготовленного заказа не значат ничего, и модель не должна их видеть.
+ */
+interface CookedOrderContext {
+  orderNumber: string;
+  status: string;
+  minutesAgo: number;
+  deliveryType: 'delivery' | 'pickup';
+  address?: string;
+  distanceKm?: number;
+  coordinates?: { lat: number; lng: number };
+}
+
 export interface EtaContext {
   nowBerlin: string;
   restaurantAddress: string;
@@ -205,7 +220,14 @@ export interface EtaContext {
     driveMinutesEstimate?: number;
     coordinates?: { lat: number; lng: number };
   };
+  /** Очередь НА КУХНЮ: заказы, которые ещё предстоит готовить. */
   queue: QueueOrderContext[];
+  /**
+   * Заказы, которые уже приготовлены: ждут курьера (ready_for_delivery) или
+   * едут (delivering). Кухне они работы не добавляют — влияют только на
+   * занятость курьера и на то, можно ли увезти новый заказ тем же рейсом.
+   */
+  cooked: CookedOrderContext[];
 }
 
 function formatAddress(order: any): string | undefined {
@@ -259,6 +281,74 @@ async function resolveOrderGeo(
   }
 }
 
+/** Заказ приготовлен: ждёт курьера или уже едет. Кухне работы не добавляет. */
+export function isCookedStatus(status: unknown): boolean {
+  return status === 'ready_for_delivery' || status === 'delivering';
+}
+
+/**
+ * Активные заказы → две очереди, и это главное в оценке.
+ *
+ * Работу кухне добавляют только те, кого ещё готовят (new/preparing). Заказ,
+ * отданный курьеру, у плиты не занимает никого — но раньше он приезжал в промпт
+ * одним списком с готовящимися, вместе со станциями и временем готовки. Модель
+ * честно считала его работой впереди и накидывала гостю время за еду, которая
+ * давно готова. Эвристика (heuristicEta) так не ошибалась — расходились два
+ * пути одной и той же оценки, а до гостя доходил тот, что ошибался.
+ */
+export function splitActiveQueue(
+  activeOrders: any[],
+  opts: { excludeId?: string; now?: number } = {}
+): { queue: QueueOrderContext[]; cooked: CookedOrderContext[] } {
+  const now = opts.now ?? Date.now();
+  const queue: QueueOrderContext[] = [];
+  const cooked: CookedOrderContext[] = [];
+
+  for (const o of activeOrders) {
+    const id = String(o._id ?? o.id ?? '');
+    if (opts.excludeId && id === opts.excludeId) continue;
+
+    const createdMs = new Date(o.createdAt).getTime();
+    const minutesAgo = Math.max(0, Math.round((now - createdMs) / 60_000));
+
+    if (isCookedStatus(o.status)) {
+      cooked.push({
+        orderNumber: o.orderNumber,
+        status: o.status,
+        minutesAgo,
+        deliveryType: o.deliveryType,
+        address: formatAddress(o),
+        distanceKm: o.etaAnalysis?.distanceKm,
+        coordinates: o.etaAnalysis?.coordinates,
+      });
+      continue;
+    }
+
+    const promised = o.etaMinutes ?? undefined;
+    const etaSetMs = o.etaSetAt ? new Date(o.etaSetAt).getTime() : createdMs;
+    queue.push({
+      orderNumber: o.orderNumber,
+      status: o.status,
+      minutesAgo,
+      deliveryType: o.deliveryType,
+      address: formatAddress(o),
+      units: computeStationUnits(o.items || []),
+      itemCount: (o.items || []).reduce(
+        (sum: number, it: any) => sum + (Number(it.quantity) || 1),
+        0
+      ),
+      promisedEtaMinutes: promised,
+      promiseRemainingMinutes:
+        promised != null ? Math.round(promised - (now - etaSetMs) / 60_000) : undefined,
+      distanceKm: o.etaAnalysis?.distanceKm,
+      coordinates: o.etaAnalysis?.coordinates,
+      desiredDeliveryTime: o.desiredDeliveryTime || undefined,
+    });
+  }
+
+  return { queue, cooked };
+}
+
 /** Собирает контекст для оценки: новый заказ + активная очередь + геоданные. */
 export async function buildEtaContext(order: any): Promise<EtaContext> {
   const [storeSettings, staffingSetting] = await Promise.all([
@@ -281,35 +371,9 @@ export async function buildEtaContext(order: any): Promise<EtaContext> {
     console.error('[eta] queue lookup failed:', (e as Error)?.message);
   }
 
-  const now = Date.now();
-  const queue: QueueOrderContext[] = activeOrders
-    .filter((o) => String(o._id ?? o.id) !== String(order._id ?? order.id))
-    .map((o) => {
-      const createdMs = new Date(o.createdAt).getTime();
-      const minutesAgo = Math.max(0, Math.round((now - createdMs) / 60_000));
-      const promised = o.etaMinutes ?? undefined;
-      const etaSetMs = o.etaSetAt ? new Date(o.etaSetAt).getTime() : createdMs;
-      return {
-        orderNumber: o.orderNumber,
-        status: o.status,
-        minutesAgo,
-        deliveryType: o.deliveryType,
-        address: formatAddress(o),
-        units: computeStationUnits(o.items || []),
-        itemCount: (o.items || []).reduce(
-          (sum: number, it: any) => sum + (Number(it.quantity) || 1),
-          0
-        ),
-        promisedEtaMinutes: promised,
-        promiseRemainingMinutes:
-          promised != null
-            ? Math.round(promised - (now - etaSetMs) / 60_000)
-            : undefined,
-        distanceKm: o.etaAnalysis?.distanceKm,
-        coordinates: o.etaAnalysis?.coordinates,
-        desiredDeliveryTime: o.desiredDeliveryTime || undefined,
-      };
-    });
+  const { queue, cooked } = splitActiveQueue(activeOrders, {
+    excludeId: String(order._id ?? order.id ?? ''),
+  });
 
   return {
     nowBerlin: berlinNowString(),
@@ -333,6 +397,7 @@ export async function buildEtaContext(order: any): Promise<EtaContext> {
       coordinates: geo.coordinates,
     },
     queue,
+    cooked,
   };
 }
 
@@ -434,6 +499,7 @@ ${buildKitchenModelLines(staffing)
   .map((l) => `- ${l}`)
   .join('\n')}
 - Back-to-back orders are NOT started immediately one after another: there is always a 15-20 minute spacing between consecutive orders (driver turnaround, oven capacity). Apply this when several orders are queued.
+- ACTIVE QUEUE lists ONLY orders that still have to be cooked. ALREADY COOKED lists orders that are finished (waiting for the driver or already on the road): they cost the kitchen ZERO time, never add spacing for them and never count them as work ahead of this order. Use them only to judge driver availability and to combine trips.
 
 Delivery model:
 - PICKUP orders (deliveryType "pickup"): etaMinutes is ONLY the preparation time incl. queue — when the food is ready at the counter. deliveryMinutes MUST be 0; never add driver or road time.
@@ -477,8 +543,11 @@ export async function analyzeEtaWithClaude(context: EtaContext): Promise<OrderEt
           'NEW ORDER (estimate this one):',
           JSON.stringify(context.newOrder, null, 2),
           '',
-          `ACTIVE QUEUE (${context.queue.length} orders, oldest first):`,
+          `ACTIVE QUEUE — still to cook (${context.queue.length} orders, oldest first):`,
           JSON.stringify(context.queue, null, 2),
+          '',
+          `ALREADY COOKED — no kitchen work left, driver only (${context.cooked.length}):`,
+          JSON.stringify(context.cooked, null, 2),
         ].join('\n'),
       },
     ],

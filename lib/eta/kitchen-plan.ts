@@ -33,6 +33,7 @@ import {
   heuristicPrepMinutes,
   driveMinutesFromKm,
   buildKitchenModelLines,
+  isCookedStatus,
   normalizeStaffing,
   KITCHEN_STAFFING_KEY,
   DEFAULT_STAFFING,
@@ -113,6 +114,9 @@ export function buildDispatchRules(courierCount: number): string[] {
 export const PLAN_STATUSES = ['new', 'preparing', 'ready_for_delivery', 'delivering'] as const;
 /** Заказы старше этого возраста не берём (зависшие статусы). */
 const PLAN_LOOKBACK_MS = 3 * 60 * 60 * 1000;
+
+/** Станции приготовленного заказа свободны — работы у плиты не осталось. */
+const EMPTY_UNITS: StationUnits = { pizza: 0, fryer: 0, sushi: 0 };
 
 export interface PlanOrderContext {
   /** id заказа в БД — для действий из панели (не отправляется в промпт). */
@@ -200,7 +204,11 @@ export async function buildKitchenPlanContext(): Promise<KitchenPlanContext> {
     const createdMs = new Date(o.createdAt).getTime();
     const promised = o.etaMinutes ?? undefined;
     const etaSetMs = o.etaSetAt ? new Date(o.etaSetAt).getTime() : createdMs;
-    const units = computeStationUnits(o.items || []);
+    // Приготовленному заказу нужен только курьер: станции у него свободны, и
+    // время готовки — ноль. Иначе правило «ready_for_delivery уже готов» в
+    // промпте спорит с цифрами в тех же данных, а спор модель решает по цифрам.
+    const cooked = isCookedStatus(o.status);
+    const units = cooked ? EMPTY_UNITS : computeStationUnits(o.items || []);
     const addr = o.deliveryType === 'delivery' ? o.deliveryAddress : undefined;
     const distanceKm = o.etaAnalysis?.distanceKm;
 
@@ -220,7 +228,7 @@ export async function buildKitchenPlanContext(): Promise<KitchenPlanContext> {
         (it: any) => `${Math.max(1, Number(it.quantity) || 1)}x ${it.name}`
       ),
       units,
-      prepMinutesEstimate: heuristicPrepMinutes(units, staffing),
+      prepMinutesEstimate: cooked ? 0 : heuristicPrepMinutes(units, staffing),
       promisedEtaMinutes: promised,
       promiseRemainingMinutes:
         promised != null ? Math.round(promised - (now - etaSetMs) / 60_000) : undefined,
