@@ -110,6 +110,15 @@ class MemoryCardStore implements OrderCardStore {
     this.rows.set(orderId, updated);
     return updated;
   }
+  // Уборка прошедших смен проверяется отдельно (telegram-card-cleanup.test.ts).
+  async listOlderThan(before: Date, limit: number) {
+    return Array.from(this.rows.values())
+      .filter((r) => (r.createdAt?.getTime() ?? 0) < before.getTime())
+      .slice(0, limit);
+  }
+  async forget(orderId: string) {
+    this.rows.delete(orderId);
+  }
 }
 
 /** Общий счётчик message_id: у разных «инстансов» бота id не должны совпадать. */
@@ -220,6 +229,8 @@ describe('moveOrderCard', () => {
       setCourier: (...args) => store.setCourier(...args),
       appendHistory: (...args) => store.appendHistory(...args),
       upsert: (...args) => store.upsert(...args),
+      listOlderThan: (...args) => store.listOlderThan(...args),
+      forget: (...args) => store.forget(...args),
     };
 
     const result = await moveOrderCard(ORDER, 'ready', {
@@ -406,6 +417,10 @@ describe('moveOrderCard', () => {
       config: CONFIG,
       store,
       api,
+      // Часы прибиты к смене заказа: у заказа ПРОШЛОЙ смены карточки быть не
+      // должно — её убрали ночью, и воскрешать её нельзя
+      // (см. telegram-card-cleanup.test.ts).
+      now: () => new Date('2026-06-20T18:00:00Z'),
       log: silent,
     });
 

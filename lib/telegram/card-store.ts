@@ -11,7 +11,7 @@
  * Стор инъектируется в тестах (setOrderCardStoreForTests) — движок переезда
  * ничего не знает ни о Postgres, ни о drizzle.
  */
-import { and, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, lt, sql } from 'drizzle-orm';
 import db from '../db/client';
 import { orderCards, orders } from '../db/schema';
 import type { CardStatus } from './forum';
@@ -68,9 +68,17 @@ export interface OrderCardStore {
   setMessage(orderId: string, message: { messageId: number; topicId: number }): Promise<void>;
   setCourier(orderId: string, courier: string): Promise<OrderCardRow | null>;
   appendHistory(orderId: string, entry: CardHistoryEntry): Promise<OrderCardRow | null>;
+  /**
+   * Карточки, созданные раньше `before` — работа прошедших смен.
+   * Отдаются от старых к новым: если лимит обрежет выборку, уйдёт сначала то,
+   * что дольше всех мозолит глаза.
+   */
+  listOlderThan(before: Date, limit: number): Promise<OrderCardRow[]>;
+  /** Забыть карточку: сообщения в Telegram больше нет, строке не на что указывать. */
+  forget(orderId: string): Promise<void>;
 }
 
-type DbExecutor = Pick<typeof db, 'select' | 'insert' | 'update'>;
+type DbExecutor = Pick<typeof db, 'select' | 'insert' | 'update' | 'delete'>;
 
 function toRow(row: any): OrderCardRow | null {
   if (!row) return null;
@@ -195,6 +203,20 @@ class DrizzleOrderCardStore implements OrderCardStore {
       .where(eq(orderCards.orderId, orderId))
       .returning();
     return toRow(rows[0]);
+  }
+
+  async listOlderThan(before: Date, limit: number): Promise<OrderCardRow[]> {
+    const rows = await this.dbx
+      .select()
+      .from(orderCards)
+      .where(lt(orderCards.createdAt, before))
+      .orderBy(asc(orderCards.createdAt))
+      .limit(limit);
+    return rows.map(toRow).filter((row): row is OrderCardRow => row !== null);
+  }
+
+  async forget(orderId: string): Promise<void> {
+    await this.dbx.delete(orderCards).where(eq(orderCards.orderId, orderId));
   }
 
   /**

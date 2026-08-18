@@ -51,6 +51,7 @@ import {
   type InlineKeyboardMarkup,
 } from './card-render';
 import { escapeHtml, type OrderNotification } from './order-message';
+import { isStaleForWorkingDay } from '../orders/working-day';
 import { getTelegramOutbox, OUTBOX_PRIORITY, type TelegramOutbox } from './outbox';
 
 /** Всё, что нужно, чтобы нарисовать карточку заказа. */
@@ -236,7 +237,9 @@ export type MoveReason =
   | 'raced'
   | 'created'
   | 'send_failed'
-  | 'disabled';
+  | 'disabled'
+  /** Заказ прошлой смены, его карточку убрали — воскрешать нечего. */
+  | 'stale';
 
 export interface MoveResult {
   ok: boolean;
@@ -335,6 +338,14 @@ export async function moveOrderCard(
     // Карточки нет: заказ старше форума, либо запись потеряна. Создаём её
     // сразу в целевой теме — это лучше, чем молча оставить заказ без карточки.
     if (!card) {
+      // Кроме одного случая: заказ прошедшей смены. Его карточку убрала ночная
+      // уборка (lib/telegram/card-cleanup.ts), и «создать в целевой теме»
+      // означало бы прислать кухне вчерашний заказ как новую работу — стоит
+      // менеджеру закрыть его в админке неделю спустя.
+      if (isStaleForWorkingDay(order.createdAt, d.now())) {
+        d.log('заказ прошлой смены — карточку не воскрешаю', { order: order.orderNumber, target });
+        return { ok: false, reason: 'stale' as const };
+      }
       d.log('карточки нет — создаю в целевой теме', { order: order.orderNumber, target });
       const created = await createOrderCardUnlocked(d, order, target);
       return created
