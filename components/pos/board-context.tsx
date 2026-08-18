@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useRef, type ReactNode } from 'react';
 import { usePosBoard, type PosBoard, type PosLoad } from './data';
-import { playPosChime, unlockPosSound } from './sound';
+import { playPosChime, stopPosChime, unlockPosSound } from './sound';
 
 /**
  * Лента терминала, общая на все экраны.
@@ -83,6 +83,12 @@ function usePosNewOrderChime(state: PosLoad<PosBoard>) {
   useEffect(() => {
     if (!hasPending) return;
     const timer = setInterval(playPosChime, CHIME_REPEAT_MS);
-    return () => clearInterval(timer);
+    return () => {
+      clearInterval(timer);
+      // Заказ приняли — обрываем звук, не дожидаясь конца рингтона. Выбранный
+      // на приборе звук может тянуться полминуты, и звонок поверх уже принятого
+      // заказа учит не обращать на него внимания.
+      stopPosChime();
+    };
   }, [hasPending]);
 }

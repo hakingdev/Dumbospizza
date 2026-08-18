@@ -1,12 +1,14 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { PosStatusBar } from '../../../components/pos/primitives';
 import { PosBottomNav } from '../../../components/pos/order-list';
 import { PosSwitch } from '../../../components/pos/menu';
 import { PosScreenState } from '../../../components/pos/screen-state';
 import { posClock, posFetch, usePosNow, usePosResource } from '../../../components/pos/data';
+import { POS_ALERT_SOUND_EVENT, posBridge } from '../../../components/pos/bridge';
+import { playPosChime, stopPosChime } from '../../../components/pos/sound';
 import type { PosPrintSettings } from '../../../lib/pos/settings';
 
 /**
@@ -19,15 +21,14 @@ import type { PosPrintSettings } from '../../../lib/pos/settings';
  */
 
 /**
- * Мост, который киоск подставляет в страницу (KioskActivity.TerminalBridge).
- * В обычном браузере его нет — и кнопки сетей тоже не будет: нажимать мёртвую
- * кнопку хуже, чем не видеть её вовсе.
+ * Мост, который киоск подставляет в страницу, описан в components/pos/bridge.
+ * В обычном браузере его нет — и карточек прибора тоже не будет: нажимать
+ * мёртвую кнопку хуже, чем не видеть её вовсе. Проверяем не «мост вообще», а
+ * каждый нужный метод: на приборе может стоять сборка apk постарше.
  */
-declare global {
-  interface Window {
-    DumboPos?: { openWifiSettings?: () => void };
-  }
-}
+
+/** Сколько звучит проверка. Полминуты рингтона на кухне никому не нужны. */
+const ALERT_TEST_MS = 5_000;
 
 interface PosSettingsView {
   settings: PosPrintSettings;
@@ -131,12 +132,70 @@ export default function MorePage() {
   );
   const nowMs = usePosNow(skewRef, 30_000);
   const [busy, setBusy] = useState(false);
-  /** Есть ли мост в приложение. Проверяем после монтирования: на сервере его нет. */
-  const [onDevice, setOnDevice] = useState(false);
+  /** Умеет ли прибор открыть настройки сети. Проверяем после монтирования: на сервере моста нет. */
+  const [hasWifi, setHasWifi] = useState(false);
+  /** Умеет ли прибор выбирать и проигрывать штатный звук Android. */
+  const [hasAlert, setHasAlert] = useState(false);
+  /** Имя выбранного звука. `null` — прибор ещё ничего не сказал или звучать нечему. */
+  const [alertName, setAlertName] = useState<string | null>(null);
+  /** Таймер, который обрывает проверочный звук. */
+  const testTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Уход со страницы во время проверки не должен оставить висящий таймер:
+  // он оборвал бы уже настоящий сигнал.
+  useEffect(() => {
+    return () => {
+      if (testTimer.current) clearTimeout(testTimer.current);
+    };
+  }, []);
+
+  /** Спросить прибор об имени звука. Вызов синхронный, ответ — просто строка. */
+  const readAlertName = useCallback(() => {
+    const bridge = posBridge();
+    if (typeof bridge?.alertSoundName !== 'function') return;
+    try {
+      const name = bridge.alertSoundName().trim();
+      setAlertName(name.length > 0 ? name : null);
+    } catch {
+      // Мост есть, но ответить не смог — показываем «не выбран», а не старое имя:
+      // соврать про звук хуже, чем признать, что не знаем.
+      setAlertName(null);
+    }
+  }, []);
 
   useEffect(() => {
-    setOnDevice(typeof window.DumboPos?.openWifiSettings === 'function');
-  }, []);
+    const bridge = posBridge();
+    setHasWifi(typeof bridge?.openWifiSettings === 'function');
+    setHasAlert(typeof bridge?.pickAlertSound === 'function' && typeof bridge?.playAlert === 'function');
+    readAlertName();
+  }, [readAlertName]);
+
+  /**
+   * Узнать, что человек вернулся с системного выбора звука.
+   *
+   * Пикер — чужая Activity поверх киоска: страница не размонтируется, WebView всё
+   * это время жив, и никакого «смонтировались заново» не случится. Поэтому о
+   * выборе сообщает само приложение — событием POS_ALERT_SOUND_EVENT, которое
+   * оно шлёт в окно, когда результат пикера дошёл до onActivityResult.
+   *
+   * `visibilitychange` и `focus` — страховка, а не дубль: событие приложения
+   * прилетает ровно один раз, и если страница в этот момент перезагружалась
+   * (WebView перезапустил её, пока пикер был открыт), слушателя в ней ещё не
+   * было и событие пропало бы. Тогда имя обновится на возврате в окно.
+   * Лишнее чтение не жалко — это SharedPreferences, а не сеть.
+   */
+  useEffect(() => {
+    if (!hasAlert) return;
+    const again = () => readAlertName();
+    window.addEventListener(POS_ALERT_SOUND_EVENT, again);
+    document.addEventListener('visibilitychange', again);
+    window.addEventListener('focus', again);
+    return () => {
+      window.removeEventListener(POS_ALERT_SOUND_EVENT, again);
+      document.removeEventListener('visibilitychange', again);
+      window.removeEventListener('focus', again);
+    };
+  }, [hasAlert, readAlertName]);
 
   const view = state.status === 'ready' ? state.data : null;
   const s = view?.settings;
@@ -154,6 +213,27 @@ export default function MorePage() {
     setBusy(false);
   };
 
+  /** Открыть системный выбор звука. Новое имя придёт событием, ждать здесь нечего. */
+  const pickAlert = () => posBridge()?.pickAlertSound?.();
+
+  /**
+   * Проверка звука.
+   *
+   * Зовём тот же playPosChime, что и лента заказов, а не мост напрямую: проверять
+   * надо ровно то, что зазвучит в смену, вместе с запасным сигналом. Иначе
+   * проверка пройдёт, а заказ придёт молча.
+   *
+   * И обрываем сами через несколько секунд: выбранный рингтон бывает длиной в
+   * полминуты, а на проверке хватает начала — иначе повар стоит и ждёт тишины.
+   * Если ровно в эти секунды придёт настоящий заказ, ему сигнал укоротится, но
+   * он тут же зазвонит снова: лента повторяет звонок, пока заказ не приняли.
+   */
+  const testAlert = () => {
+    if (testTimer.current) clearTimeout(testTimer.current);
+    playPosChime();
+    testTimer.current = setTimeout(stopPosChime, ALERT_TEST_MS);
+  };
+
   return (
     <>
       <PosStatusBar time={posClock(nowMs)} />
@@ -165,17 +245,47 @@ export default function MorePage() {
       <div className="pos-scroll flex min-h-px w-full flex-1 flex-col gap-[12px] px-[16px] pb-[14px] pt-[6px]">
         <PosScreenState state={state} onRetry={refresh} />
 
-        {onDevice && (
+        {hasWifi && (
           <Card title="GERÄT-NETZWERK">
             <button
               type="button"
-              onClick={() => window.DumboPos?.openWifiSettings?.()}
+              onClick={() => posBridge()?.openWifiSettings?.()}
               className="pos-label-m flex h-[48px] w-full items-center justify-center rounded-[12px] border border-[var(--pos-border-strong)] bg-[var(--pos-bg-surface-2)] text-[var(--pos-text-primary)]"
             >
               WLAN einrichten
             </button>
             <span className="pos-body-s text-[var(--pos-text-muted)]">
               Öffnet die Netzwerkauswahl des Geräts. Danach zurück mit der Zurück-Taste.
+            </span>
+          </Card>
+        )}
+
+        {hasAlert && (
+          <Card title="SIGNAL">
+            <div className="flex w-full flex-col gap-[2px]">
+              <span className="pos-title-s text-[var(--pos-text-primary)]">Ton bei neuer Bestellung</span>
+              {/* Пусто — на приборе не нашлось ни одного пригодного звука, и
+                  зазвучит встроенный сигнал страницы. Пишем это прямо: «—»
+                  человек прочитал бы как «звука не будет». */}
+              <span className="pos-body-s text-[var(--pos-text-muted)]">{alertName ?? 'Internes Signal'}</span>
+            </div>
+            <button
+              type="button"
+              onClick={pickAlert}
+              className="pos-label-m flex h-[48px] w-full items-center justify-center rounded-[12px] border border-[var(--pos-border-strong)] bg-[var(--pos-bg-surface-2)] text-[var(--pos-text-primary)]"
+            >
+              Ton auswählen
+            </button>
+            <button
+              type="button"
+              onClick={testAlert}
+              className="pos-label-m flex h-[48px] w-full items-center justify-center rounded-[12px] border border-[var(--pos-border-strong)] bg-[var(--pos-bg-surface-2)] text-[var(--pos-text-primary)]"
+            >
+              Ton testen
+            </button>
+            <span className="pos-body-s text-[var(--pos-text-muted)]">
+              Nach der Auswahl zurück mit der Zurück-Taste. Der Ton wiederholt sich alle 10 Sekunden, bis
+              die Bestellung angenommen ist.
             </span>
           </Card>
         )}
