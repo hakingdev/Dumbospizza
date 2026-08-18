@@ -100,11 +100,18 @@ const VIEW: Record<
   cancelled: { canExtend: false, actions: [BACK] },
 };
 
-/** kitchenPrintStatus из базы → три состояния карточки бона. */
+/**
+ * kitchenPrintStatus из базы → состояние карточки бона.
+ *
+ * `pending` и `printing` РАЗНЫЕ. В `pending` заказ лежит сколько угодно: пока
+ * выключена автопечать или пока агент до него не дошёл. Сваливать их в одно
+ * «в очереди» значило блокировать кнопку печати навсегда.
+ */
 function toPrintState(status: string): PosPrintState {
   if (status === 'completed') return 'printed';
   if (status === 'failed') return 'failed';
-  return 'queued';
+  if (status === 'printing') return 'queued';
+  return 'pending';
 }
 
 const PAYMENT_LABEL: Record<string, string> = {
