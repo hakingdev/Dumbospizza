@@ -14,6 +14,7 @@
  */
 
 import { OrderNotification } from './telegram';
+import { orderDueMs } from './orders/promise';
 import {
   buildKitchenReceiptOps,
   type ReceiptOp,
@@ -35,6 +36,7 @@ function toReceiptOrder(order: OrderNotification): ReceiptOrder {
     phoneNumber: order.phoneNumber,
     address: order.address,
     desiredDeliveryTime: order.desiredDeliveryTime,
+    promisedMs: orderDueMs(order as any),
     notes: order.notes,
     items: order.items,
     deliveryFee: order.deliveryFee,

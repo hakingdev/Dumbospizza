@@ -29,6 +29,11 @@ export interface ReceiptOrder {
   phoneNumber?: string;
   address?: string;
   desiredDeliveryTime?: string;
+  /**
+   * Обещанное время готовности, epoch ms (lib/orders/promise.ts). null — заказ
+   * ещё не принят и обещания нет.
+   */
+  promisedMs?: number | null;
   notes?: string;
   items: ReceiptItem[];
   deliveryFee?: number;
@@ -107,13 +112,80 @@ export function groupItemsBySubcategory(
   return order.map((subcategory) => ({ subcategory, items: map.get(subcategory)! }));
 }
 
+/**
+ * Часовой пояс заведения. Считать по часам сервера нельзя: на Vercel он живёт
+ * в UTC, и чек уезжал на два часа назад — кухня читала «19:03» на заказе,
+ * принятом в 21:03.
+ */
+const RECEIPT_TZ = 'Europe/Berlin';
+
 function formatDateTime(value?: Date | string): string {
   const d = value ? new Date(value) : new Date();
   if (Number.isNaN(d.getTime())) return '';
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(
-    d.getMinutes()
-  )}`;
+  return new Intl.DateTimeFormat('de-DE', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: RECEIPT_TZ,
+  })
+    .format(d)
+    .replace(',', '');
+}
+
+/** «20:30» по часам заведения. Пусто — времени нет. */
+function formatClock(ms?: number | null): string {
+  if (ms == null || !Number.isFinite(ms)) return '';
+  return new Intl.DateTimeFormat('de-DE', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: RECEIPT_TZ,
+  }).format(new Date(ms));
+}
+
+/** Wunschzeit гостя в виде «HH:mm». Пусто — гость времени не называл. */
+function normalizeDesired(value?: string): string {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(String(value ?? '').trim());
+  if (!match) return '';
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (hours > 23 || minutes > 59) return '';
+  return `${String(hours).padStart(2, '0')}:${match[2]}`;
+}
+
+/**
+ * Время, К КОТОРОМУ заказ должен быть готов — крупной строкой.
+ *
+ * Раньше на чеке стоял только Wunschzeit гостя, да и то мелко, а обещание,
+ * которое прибор дал при приёме, не печаталось вовсе. Кухня получала бумагу,
+ * по которой нельзя понять, к какому часу готовить: у заказа «на сейчас» там
+ * не было времени совсем.
+ *
+ * Печатаем ровно тот час, к которому заказ нужен:
+ *   - обещание есть → FERTIG 20:30 (это и есть срок, его назвали гостю);
+ *   - обещания ещё нет, но гость назвал час → WUNSCH 20:30;
+ *   - Wunschzeit разошёлся с обещанием (кухня сдвинула ±5) → печатаем обе
+ *     строки. Расхождение обязано быть видно на бумаге: иначе сборщик
+ *     ориентируется на один час, а гостю назвали другой.
+ */
+function buildReadyTimeOps(order: ReceiptOrder): ReceiptOp[] {
+  const promised = formatClock(order.promisedMs);
+  const desired = normalizeDesired(order.desiredDeliveryTime);
+
+  if (promised) {
+    const ops: ReceiptOp[] = [
+      { type: 'text', text: `FERTIG ${promised}`, bold: true, double: true },
+    ];
+    if (desired && desired !== promised) {
+      ops.push({ type: 'text', text: `Wunsch: ${desired}` });
+    }
+    return ops;
+  }
+  if (desired) {
+    return [{ type: 'text', text: `WUNSCH ${desired}`, bold: true, double: true }];
+  }
+  return [];
 }
 
 /**
@@ -170,9 +242,7 @@ export function buildKitchenReceiptOps(
     bold: true,
     double: true,
   });
-  if (order.desiredDeliveryTime) {
-    ops.push({ type: 'text', text: `Zeit: ${order.desiredDeliveryTime}` });
-  }
+  for (const op of buildReadyTimeOps(order)) ops.push(op);
   if (order.customerName) ops.push({ type: 'text', text: `Kunde: ${order.customerName}` });
   if (order.phoneNumber) ops.push({ type: 'text', text: `Tel: ${order.phoneNumber}` });
   if (order.deliveryType === 'delivery' && order.address) {

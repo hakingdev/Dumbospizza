@@ -204,3 +204,55 @@ describe('buildKitchenReceiptOps — Aktions-/Gratis-Positionen', () => {
     expect(paidLine).toContain('EUR 7,90');
   });
 });
+
+describe('время на чеке', () => {
+  const render = (order: Partial<ReceiptOrder>) =>
+    renderOpsToText(buildKitchenReceiptOps({ ...sampleOrder, ...order }), 42);
+
+  it('шапка идёт по часам заведения, а не по часам сервера', () => {
+    // Заказ 18.08.2026 в 18:10 по Берлину. Сервер на Vercel живёт в UTC — и
+    // печатал «16:10», час, в который заведение ещё закрыто.
+    const lines = render({ createdAt: '2026-08-18T16:10:00Z' });
+    expect(lines.join('\n')).toContain('18.08.2026 18:10');
+    expect(lines.join('\n')).not.toContain('16:10');
+  });
+
+  it('печатает час, к которому заказ должен быть готов', () => {
+    const lines = render({
+      desiredDeliveryTime: undefined,
+      promisedMs: new Date('2026-08-18T18:30:00Z').getTime(), // 20:30 по Берлину
+    });
+    expect(lines.join('\n')).toContain('FERTIG 20:30');
+  });
+
+  it('расхождение обещания с Wunschzeit печатает обеими строками', () => {
+    // Гость просил 20:30, кухня сдвинула на 20:35: на бумаге обязаны быть оба
+    // часа, иначе сборщик готовит к одному, а гостю назвали другой.
+    const text = render({
+      desiredDeliveryTime: '20:30',
+      promisedMs: new Date('2026-08-18T18:35:00Z').getTime(),
+    }).join('\n');
+    expect(text).toContain('FERTIG 20:35');
+    expect(text).toContain('Wunsch: 20:30');
+  });
+
+  it('совпадающий Wunschzeit не дублируется', () => {
+    const text = render({
+      desiredDeliveryTime: '20:30',
+      promisedMs: new Date('2026-08-18T18:30:00Z').getTime(),
+    }).join('\n');
+    expect(text).toContain('FERTIG 20:30');
+    expect(text).not.toContain('Wunsch: 20:30');
+  });
+
+  it('заказ ещё не принят — печатает желаемый час гостя', () => {
+    const text = render({ desiredDeliveryTime: '19:45', promisedMs: null }).join('\n');
+    expect(text).toContain('WUNSCH 19:45');
+  });
+
+  it('без времени вовсе строка не печатается', () => {
+    const text = render({ desiredDeliveryTime: undefined, promisedMs: null }).join('\n');
+    expect(text).not.toContain('FERTIG');
+    expect(text).not.toContain('WUNSCH');
+  });
+});

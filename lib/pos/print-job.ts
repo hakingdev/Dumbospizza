@@ -13,6 +13,7 @@
  * lib/receipt/escpos.ts — раскладка у обоих одна.
  */
 
+import { orderDueMs } from '../orders/promise';
 import {
   buildKitchenReceiptOps,
   type ReceiptItem,
@@ -76,6 +77,9 @@ export function orderToReceiptOrder(order: AnyRecord): ReceiptOrder {
     phoneNumber: order.phoneNumber,
     address: formatOrderAddress(order),
     desiredDeliveryTime: order.desiredDeliveryTime,
+    // Час, к которому заказ обещан гостю: на чеке он печатается крупно, и
+    // считается ровно тем же правилом, что и таймер на ленте прибора.
+    promisedMs: orderDueMs(order),
     notes: order.notes,
     deliveryFee: order.deliveryFee,
     totalAmount: order.total,
