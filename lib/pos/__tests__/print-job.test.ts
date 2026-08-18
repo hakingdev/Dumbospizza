@@ -15,7 +15,9 @@ const dbOrder = {
   total: 54.2,
   deliveryFee: 3,
   paymentMethod: 'cash',
-  printSeq: 4,
+  // Поле называется именно так — как в модели заказа. Тест раньше подсовывал
+  // выдуманное `printSeq` и потому не замечал, что код читает несуществующее поле.
+  kitchenPrintSeq: 4,
   items: [
     {
       name: 'Pizza Margherita',
@@ -66,11 +68,22 @@ describe('filterItemsByWorkshops', () => {
 describe('buildPrintJob', () => {
   const settings = DEFAULT_POS_PRINT_SETTINGS;
 
-  it('переносит printSeq — иначе подтверждение затрёт Nachdruck', () => {
+  it('переносит kitchenPrintSeq — иначе повтор печати не доедет до прибора', () => {
     const job = buildPrintJob(dbOrder, settings)!;
     expect(job.printSeq).toBe(4);
     expect(job.orderNumber).toBe('260818007');
     expect(job.orderId).toBe('abc123');
+  });
+
+  it('номер задания берётся из поля модели, а не из выдуманного', () => {
+    // Прибор различает напечатанное по ключу `orderId:printSeq`. Если номер
+    // всегда ноль, повтор для него — тот же самый чек, и он молча пропускает
+    // его: бумага не выходит, а объяснить это нечем.
+    const withoutSeq = buildPrintJob({ ...dbOrder, kitchenPrintSeq: undefined }, settings)!;
+    expect(withoutSeq.printSeq).toBe(0);
+
+    const reprinted = buildPrintJob({ ...dbOrder, kitchenPrintSeq: 2 }, settings)!;
+    expect(reprinted.printSeq).toBe(2);
   });
 
   it('параметры начертания берутся из настроек, а не из кода', () => {
