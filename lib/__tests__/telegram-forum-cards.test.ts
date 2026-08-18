@@ -693,6 +693,85 @@ describe('renderCardText', () => {
     expect(text).toContain('💰 <b>Итого: 21.90 €</b>');
   });
 
+  /**
+   * Обещание готовности живёт ровно пока работает кухня.
+   *
+   * Реальный случай (#260818006): заказ приняли в 18:11 на 60 минут, курьер
+   * уехал в 18:32 — и карточка в теме «Доставка» продолжала показывать
+   * «~60 мин (готов к 19:11)». Читается это как «ИИ пересчитал и накинул час»,
+   * хотя гость получит еду минут через десять.
+   */
+  it('уехавшая карточка не показывает обещание готовности', () => {
+    const withEta = {
+      ...ORDER.notification,
+      etaMinutes: 60,
+      etaSetAt: new Date('2026-06-20T16:41:00Z'),
+      etaAnalysis: {
+        etaMinutes: 44,
+        prepMinutes: 32,
+        deliveryMinutes: 12,
+        distanceKm: 10.9,
+        loadLevel: 'normal' as const,
+        advisory: null,
+        routeHint: null,
+        reasoning: 'test',
+        source: 'ai' as const,
+        queueSize: 0,
+      },
+    };
+    const base = {
+      order: withEta,
+      createdAt: ORDER.createdAt,
+      statusHistory: [{ status: 'cooking', timestamp: '2026-06-20T16:40:00Z' }],
+    };
+
+    const cooking = renderCardText({ ...base, status: 'cooking' });
+    expect(cooking).toContain('Клиенту сообщено: ~60 мин');
+    expect(cooking).toContain('готовка ~32 мин');
+
+    // В дороге: ни обещания, ни минут готовки — но километры курьеру нужны.
+    for (const status of ['ready', 'on_the_way'] as const) {
+      const text = renderCardText({ ...base, status });
+      expect(text).not.toContain('Клиенту сообщено');
+      expect(text).not.toContain('готов к');
+      expect(text).not.toContain('готовка ~');
+      expect(text).toContain('10.9 км до адреса');
+    }
+
+    // Закрытая карточка — только факты.
+    const delivered = renderCardText({ ...base, status: 'delivered' });
+    expect(delivered).not.toContain('Клиенту сообщено');
+    expect(delivered).not.toContain('км до адреса');
+  });
+
+  it('подсказка по маршруту остаётся у курьера в пути', () => {
+    const text = renderCardText({
+      order: {
+        ...ORDER.notification,
+        etaMinutes: 45,
+        etaSetAt: new Date('2026-06-20T16:41:00Z'),
+        etaAnalysis: {
+          etaMinutes: 45,
+          prepMinutes: 20,
+          deliveryMinutes: 10,
+          distanceKm: 4.2,
+          loadLevel: 'normal' as const,
+          advisory: null,
+          routeHint: 'С #260620002: сначала Kissinger 2, потом 148',
+          reasoning: 'test',
+          source: 'ai' as const,
+          queueSize: 1,
+        },
+      },
+      status: 'on_the_way',
+      createdAt: ORDER.createdAt,
+      statusHistory: [{ status: 'cooking', timestamp: '2026-06-20T16:40:00Z' }],
+    });
+
+    expect(text).toContain('🗺 С #260620002: сначала Kissinger 2, потом 148');
+    expect(text).not.toContain('Клиенту сообщено');
+  });
+
   it('непринятый заказ не выдаёт себя за готовящийся', () => {
     // Тема у `new` и `preparing` одна, поэтому карточка обязана сказать
     // словами, что кухня заказ ещё не взяла и время не назначила.

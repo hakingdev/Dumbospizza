@@ -75,7 +75,21 @@ function buildMapsUrl(address: string): string {
  * способ оплаты, состав. Заголовок дописывает вызывающий (обычное сообщение —
  * «НОВЫЙ ЗАКАЗ», карточка форума — номер/время/статус).
  */
-export function buildOrderBodyText(order: OrderNotification): string {
+/**
+ * Что из времени показывать в теле заказа.
+ *
+ *  'kitchen' — заказ ещё готовят: обещание клиенту и разбивка оценки на месте.
+ *  'road'    — еда уехала: обещание готовности больше не событие, а расстояние
+ *              и подсказка по маршруту курьеру ещё нужны.
+ *  'none'    — заказ закрыт: ни обещаний, ни оценок.
+ */
+export type OrderEtaView = 'kitchen' | 'road' | 'none';
+
+export function buildOrderBodyText(
+  order: OrderNotification,
+  opts: { etaView?: OrderEtaView } = {}
+): string {
+  const etaView = opts.etaView ?? 'kitchen';
   const itemsList = order.items
     .map((item) => {
       const customizationsText = item.customizations?.length
@@ -118,24 +132,37 @@ export function buildOrderBodyText(order: OrderNotification): string {
   // Рядом с минутами — час готовности. Карточка висит в теме до конца заказа, и
   // через полчаса «~45 мин» уже ничего не значит: считать от чего именно, никто
   // не помнит. Точное время остаётся верным всегда.
+  //
+  // Как только еда уехала, строка исчезает. Обещание «~60 мин (готов к 19:11)»
+  // на карточке, которую курьер уже везёт, читается как «ИИ пересчитал и
+  // накинул час»: время в ней будущее, а готовность — дело прошлое. Настоящие
+  // времена видно в хронологии внизу карточки.
   const readyAt = formatReadyAt(order);
-  const etaLine = order.etaMinutes
-    ? `\n⏱ Клиенту сообщено: ~${order.etaMinutes} мин${readyAt ? ` (готов к ${readyAt})` : ''}`
-    : '';
+  const etaLine =
+    etaView === 'kitchen' && order.etaMinutes
+      ? `\n⏱ Клиенту сообщено: ~${order.etaMinutes} мин${readyAt ? ` (готов к ${readyAt})` : ''}`
+      : '';
 
   // Разбивка AI-оценки: готовка/доставка/км + короткая инструкция по маршруту.
   // advisory (совет по загрузке) в Telegram НЕ показываем — по просьбе
   // ресторана: длинные советы мешают; они остаются в панели AI-плана кухни.
+  //
+  // В пути минуты готовки и доставки уже ничего не решают — остаются
+  // километры и подсказка по маршруту: это то, что нужно курьеру за рулём.
   let etaDetails = '';
-  const analysis = order.etaAnalysis;
+  const analysis = etaView === 'none' ? undefined : order.etaAnalysis;
   if (analysis) {
-    const parts = [`готовка ~${analysis.prepMinutes} мин`];
-    if (order.deliveryType === 'delivery' && analysis.deliveryMinutes > 0) {
-      const km = analysis.distanceKm != null ? `, ${analysis.distanceKm} км` : '';
-      parts.push(`доставка ~${analysis.deliveryMinutes} мин${km}`);
+    if (etaView === 'kitchen') {
+      const parts = [`готовка ~${analysis.prepMinutes} мин`];
+      if (order.deliveryType === 'delivery' && analysis.deliveryMinutes > 0) {
+        const km = analysis.distanceKm != null ? `, ${analysis.distanceKm} км` : '';
+        parts.push(`доставка ~${analysis.deliveryMinutes} мин${km}`);
+      }
+      const sourceMark = analysis.source === 'ai' ? '🤖 AI' : '🤖 Оценка (без AI)';
+      etaDetails = `\n${sourceMark}: ${parts.join(', ')}`;
+    } else if (order.deliveryType === 'delivery' && analysis.distanceKm != null) {
+      etaDetails = `\n📏 ${analysis.distanceKm} км до адреса`;
     }
-    const sourceMark = analysis.source === 'ai' ? '🤖 AI' : '🤖 Оценка (без AI)';
-    etaDetails = `\n${sourceMark}: ${parts.join(', ')}`;
     if (analysis.routeHint) etaDetails += `\n🗺 ${escapeHtml(analysis.routeHint)}`;
   }
 
