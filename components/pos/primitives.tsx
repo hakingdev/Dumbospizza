@@ -166,10 +166,15 @@ export function PosRow({
 }: {
   label: string;
   value: ReactNode;
-  tone?: 'default' | 'paid';
+  /** 'warning' — то, что меняет решение кухни (например, заказ на время). */
+  tone?: 'default' | 'paid' | 'warning';
 }) {
   const valueColor =
-    tone === 'paid' ? 'text-[var(--pos-status-delivered)]' : 'text-[var(--pos-text-primary)]';
+    tone === 'paid'
+      ? 'text-[var(--pos-status-delivered)]'
+      : tone === 'warning'
+        ? 'text-[var(--pos-status-preparing)]'
+        : 'text-[var(--pos-text-primary)]';
   return (
     <div className="flex w-full items-center gap-[8px]">
       <span className="pos-body-m shrink-0 text-[var(--pos-text-secondary)]">{label}</span>

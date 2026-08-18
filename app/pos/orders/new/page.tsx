@@ -100,6 +100,18 @@ export default function NewOrderPage() {
                 <PosDivider />
                 <PosRow label="Eingegangen" value={posClock(order.createdMs)} />
                 <PosDivider />
+                {/* Заказ на время видно ДО приёма: на следующем экране этот час
+                    уже стоит в окне готовности, и решение принимается зная его. */}
+                {order.desiredMs != null && (
+                  <>
+                    <PosRow
+                      label="Wunschzeit"
+                      value={posClock(order.desiredMs)}
+                      tone="warning"
+                    />
+                    <PosDivider />
+                  </>
+                )}
                 <PosRow
                   label="Zahlung"
                   value={order.paid ? 'bezahlt' : 'offen'}

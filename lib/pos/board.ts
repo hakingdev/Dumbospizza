@@ -10,6 +10,7 @@
  */
 
 import { formatOrderAddress } from './print-job';
+import { orderDueMs } from '../orders/promise';
 
 /** Статусы в том виде, в каком их различает терминал. */
 export type PosBoardStatus =
@@ -103,29 +104,80 @@ export function berlinDayKey(value: Date | string | number, timeZone = BERLIN_TZ
   }).format(d);
 }
 
+/**
+ * Смещение зоны относительно UTC в конкретный момент, мс.
+ *
+ * Считается форматированием, а не таблицей правил: летнее время, високосные
+ * секунды и исторические сдвиги знает ICU, а не мы.
+ */
+function zoneOffsetMs(atMs: number, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).formatToParts(new Date(atMs));
+  const num = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? '0');
+  // en-US с hour12:false отдаёт полночь как «24» — Date.UTC приняла бы её за
+  // следующие сутки.
+  const hour = num('hour') % 24;
+  const asUtc = Date.UTC(num('year'), num('month') - 1, num('day'), hour, num('minute'), num('second'));
+  return asUtc - atMs;
+}
+
+/**
+ * Wunschzeit гостя «20:30» → момент времени, epoch ms.
+ *
+ * Час гость называет по часам ЗАВЕДЕНИЯ, а сервер на Vercel живёт в UTC —
+ * поэтому «20:30» без зоны означало бы 22:30 по Берлину летом.
+ *
+ * `reference` — момент, к суткам которого час относится (время заказа).
+ * Заказ в 23:50 «на 00:15» — это следующие сутки; шесть часов допуска отделяют
+ * такой случай от Wunschzeit, которая просто прошла (гость ждёт, кухня опоздала).
+ */
+export function desiredTimeMs(
+  desired: unknown,
+  reference: Date | string | number,
+  timeZone = BERLIN_TZ
+): number | null {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(String(desired ?? '').trim());
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (hours > 23 || minutes > 59) return null;
+
+  const refMs = reference instanceof Date ? reference.getTime() : new Date(reference).getTime();
+  if (Number.isNaN(refMs)) return null;
+
+  const day = berlinDayKey(refMs, timeZone);
+  if (!day) return null;
+  const [year, month, date] = day.split('-').map(Number);
+
+  // Двухшаговый перевод: смещение сначала берём по наивной метке, потом
+  // уточняем по уже полученному моменту. В ночь перевода часов один шаг
+  // ошибается ровно на час.
+  const naiveUtc = Date.UTC(year, month - 1, date, hours, minutes);
+  const firstGuess = naiveUtc - zoneOffsetMs(naiveUtc, timeZone);
+  let ms = naiveUtc - zoneOffsetMs(firstGuess, timeZone);
+  if (ms < refMs - 6 * 3_600_000) ms += 24 * 3_600_000;
+  return ms;
+}
+
 /** «24,80 €» — формат экрана. На чеке формат другой, он в formatEuro. */
 export function posEuro(value: unknown): string {
   return `${(Number(value) || 0).toFixed(2).replace('.', ',')} €`;
 }
 
 /**
- * Когда заказ обещан гостю, epoch ms. null — обещания ещё нет.
- *
- * Считается от `etaSetAt`, а не от создания заказа: продление сдвигает именно
- * эту пару полей, и лента обязана показывать сдвинутый срок, а не исходный.
+ * Когда заказ обещан гостю, epoch ms. Правило переехало в lib/orders/promise.ts:
+ * тот же срок печатается на чеке кухни, и разойтись эти два ответа не должны.
+ * Реэкспорт оставлен, чтобы вызовы ленты не менялись.
  */
-export function orderDueMs(order: {
-  etaMinutes?: number | null;
-  etaSetAt?: Date | string | null;
-  createdAt?: Date | string | null;
-}): number | null {
-  const minutes = Number(order.etaMinutes);
-  if (!Number.isFinite(minutes)) return null;
-  const base = order.etaSetAt ?? order.createdAt;
-  const baseMs = base ? new Date(base).getTime() : NaN;
-  if (Number.isNaN(baseMs)) return null;
-  return baseMs + minutes * 60_000;
-}
+export { orderDueMs } from '../orders/promise';
 
 /** Сколько позиций перечислять в карточке, прежде чем свернуть в «+N». */
 const ITEMS_PREVIEW = 3;
@@ -165,6 +217,13 @@ export interface PosBoardOrder {
   total: string;
   /** Обещанное время готовности, epoch ms. Отсчёт прибор ведёт сам. */
   dueMs: number | null;
+  /**
+   * Wunschzeit гостя, epoch ms. null — заказ «как можно скорее».
+   *
+   * Приходит моментом, а не строкой «20:30»: считать час в зоне заведения
+   * должен тот, кто знает дату заказа, а не экран.
+   */
+  desiredMs: number | null;
   /** На сколько минут дано обещание — из него считается полоса прогресса. */
   etaMinutes: number | null;
   /** Когда заказ приняли, epoch ms — для подписи «Angenommen 18:47». */
@@ -195,6 +254,7 @@ export function toBoardOrder(order: any): PosBoardOrder | null {
     items: summarizeItems(order.items ?? []),
     total: posEuro(order.total),
     dueMs: orderDueMs(order),
+    desiredMs: desiredTimeMs(order.desiredDeliveryTime, order.createdAt ?? Date.now()),
     etaMinutes: Number.isFinite(Number(order.etaMinutes)) ? Number(order.etaMinutes) : null,
     createdMs: order.createdAt ? new Date(order.createdAt).getTime() : 0,
     closedMs: statusChangedMs(order),

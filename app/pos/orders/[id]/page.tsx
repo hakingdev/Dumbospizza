@@ -132,7 +132,10 @@ function headline(order: PosOrderDetail, nowMs: number) {
       return {
         bigValue: posClock(order.createdMs),
         subTop: 'Eingegangen',
-        subBottom: 'Zeit noch nicht gesetzt',
+        subBottom:
+          order.desiredMs == null
+            ? 'Zeit noch nicht gesetzt'
+            : `Wunschzeit ${posClock(order.desiredMs)}`,
       };
     case 'preparing':
       if (left == null) {

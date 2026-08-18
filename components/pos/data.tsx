@@ -284,7 +284,13 @@ export function posOrderNote(
   // «уехал», и строка под карточкой обязана говорить то же, что вкладка.
   switch (posDisplayStatus(order)) {
     case 'new':
-      return { text: 'Neu · noch nicht angenommen', overdue: false };
+      return {
+        text:
+          order.desiredMs == null
+            ? 'Neu · noch nicht angenommen'
+            : `Neu · Wunschzeit ${posClock(order.desiredMs)}`,
+        overdue: false,
+      };
 
     case 'preparing':
       if (left == null) return { text: 'Zeit noch nicht gesetzt', overdue: false };

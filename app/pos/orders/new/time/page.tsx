@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useMemo, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   PosActionBar,
@@ -18,6 +18,17 @@ import {
   usePosOrder,
 } from '../../../../../components/pos/data';
 import { toOrderStatus } from '../../../../../lib/pos/board';
+import {
+  POS_ETA_INITIAL,
+  POS_ETA_MAX_MINUTES,
+  POS_ETA_MIN_MINUTES,
+  POS_ETA_PRESETS,
+  POS_ETA_STEP,
+  posDesiredChoice,
+  posEtaView,
+  posShiftEta,
+  type PosEtaChoice,
+} from '../../../../../lib/pos/eta-choice';
 
 /**
  * 02 · Zeit festlegen (Figma 10:18).
@@ -26,38 +37,47 @@ import { toOrderStatus } from '../../../../../lib/pos/board';
  * поэтому промах ценой в полчаса дороже лишнего касания — отсюда и крупный
  * стрелочный шаг ±5, и пресеты, и подтверждение с временем прямо на кнопке.
  *
- * Пресеты названы «aus der Küche»: это те же значения, которыми оперирует
- * стоп-бот, а не произвольный набор.
+ * Заказ НА ВРЕМЯ открывается сразу на желаемом часе, и ±5 двигает именно его
+ * (арифметика — в lib/pos/eta-choice.ts). Раньше экран всегда предлагал «через
+ * 30 минут»: заказ, который гость просил на 20:30, принимали на 19:10, и
+ * обещание уходило гостю до того, как кто-нибудь замечал Wunschzeit на чеке.
  *
  * Подтверждение делает ровно одно обращение — PUT /api/orders/[id] со статусом
  * и `etaMinutes`. Раньше поставить ПЕРВОЕ обещание было нечем: существовал
  * только POST .../delay, который сдвигает уже назначенное.
  */
 
-const PRESETS = [30, 45, 60, 90, 120] as const;
-const STEP = 5;
-const MIN_MINUTES = 5;
-const MAX_MINUTES = 180;
-
 function SetTimeScreen() {
   const router = useRouter();
   const search = useSearchParams();
   const orderId = search.get('id');
   const { state, refresh, skewRef } = usePosOrder(orderId);
+  // Часы тикают минутно: в виде «к 20:30» от них зависит не только подпись, но
+  // и число минут, которое уедет на сервер.
   const nowMs = usePosNow(skewRef, 15_000);
 
-  const [minutes, setMinutes] = useState(30);
+  const [choice, setChoice] = useState<PosEtaChoice>(POS_ETA_INITIAL);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const order = state.status === 'ready' ? state.data : null;
+  const desiredMs = order?.desiredMs ?? null;
 
-  /** Время готовности = время СЕРВЕРА + minutes: часы прибора могут уехать. */
-  const target = useMemo(
-    () => (nowMs == null ? '—' : posClock(nowMs + minutes * 60_000)),
-    [nowMs, minutes]
-  );
-  const clamp = (v: number) => Math.min(MAX_MINUTES, Math.max(MIN_MINUTES, v));
+  /**
+   * Wunschzeit подставляется ОДИН раз на заказ: экран перечитывается каждые пять
+   * секунд, и без этой отметки опрос затирал бы правку кухни через ±5.
+   */
+  const filledFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!order || nowMs == null || filledFor.current === order.id) return;
+    const desired = posDesiredChoice(order.desiredMs, nowMs);
+    filledFor.current = order.id;
+    if (desired) setChoice(desired);
+  }, [order, nowMs]);
+
+  const { minutes, targetMs, clamped } = posEtaView(choice, nowMs);
+  const target = posClock(targetMs);
+  const atDesired = choice.mode === 'at' && desiredMs != null && choice.ms === desiredMs;
 
   /**
    * Принять заказ = назначить обещание и перевести в «готовится». Одним PUT,
@@ -102,24 +122,39 @@ function SetTimeScreen() {
           </span>
         </div>
 
+        {/* Заказ на время. Стоит НАД выбором: это условие задачи, а не подсказка. */}
+        {desiredMs != null && (
+          <div className="flex w-full items-center gap-[8px] rounded-[12px] bg-[var(--pos-tint-preparing)] px-[12px] py-[10px]">
+            <span className="pos-label-m text-[var(--pos-status-preparing)]">
+              Bestellung auf Zeit
+            </span>
+            <span className="h-px min-w-px flex-1" />
+            <span className="pos-label-m pos-num text-[var(--pos-status-preparing)]">
+              Wunschzeit {posClock(desiredMs)}
+            </span>
+          </div>
+        )}
+
         <div className="flex w-full flex-col items-center gap-[12px] rounded-[18px] border border-[var(--pos-border-strong)] bg-[var(--pos-bg-surface)] p-[14px]">
           <span className="pos-overline text-[var(--pos-text-muted)]">FERTIG GEGEN</span>
           <div className="flex w-full items-center gap-[12px]">
             <PosStepButton
               label="−5"
-              onClick={() => setMinutes((v) => clamp(v - STEP))}
-              disabled={minutes <= MIN_MINUTES}
+              onClick={() => setChoice((prev) => posShiftEta(prev, -POS_ETA_STEP, nowMs))}
+              disabled={minutes <= POS_ETA_MIN_MINUTES}
             />
             <div className="flex min-w-px flex-1 flex-col items-center gap-[2px]">
               <span className="pos-display-m pos-num text-[var(--pos-accent)]">{target}</span>
               <span className="pos-body-s text-[var(--pos-text-secondary)]">
-                in {minutes} Minuten
+                {/* У заказа на время подпись короче: «in 88 Minuten» с пометкой
+                    Wunschzeit не влезает в 360 dp и роняет карточку на две строки. */}
+                {atDesired ? `Wunschzeit · ${minutes} Min` : `in ${minutes} Minuten`}
               </span>
             </div>
             <PosStepButton
               label="+5"
-              onClick={() => setMinutes((v) => clamp(v + STEP))}
-              disabled={minutes >= MAX_MINUTES}
+              onClick={() => setChoice((prev) => posShiftEta(prev, POS_ETA_STEP, nowMs))}
+              disabled={minutes >= POS_ETA_MAX_MINUTES}
             />
           </div>
         </div>
@@ -128,35 +163,57 @@ function SetTimeScreen() {
 
         <div className="flex w-full flex-col gap-[10px]">
           <div className="flex w-full gap-[10px]">
-            {PRESETS.slice(0, 3).map((preset) => (
+            {POS_ETA_PRESETS.slice(0, 3).map((preset) => (
               <PosTimeChip
                 key={preset}
                 label={`${preset} Min`}
-                selected={minutes === preset}
-                onClick={() => setMinutes(preset)}
+                selected={choice.mode === 'in' && choice.minutes === preset}
+                onClick={() => setChoice({ mode: 'in', minutes: preset })}
               />
             ))}
           </div>
           <div className="flex w-full gap-[10px]">
-            {PRESETS.slice(3).map((preset) => (
+            {POS_ETA_PRESETS.slice(3).map((preset) => (
               <PosTimeChip
                 key={preset}
                 label={`${preset} Min`}
-                selected={minutes === preset}
-                onClick={() => setMinutes(preset)}
+                selected={choice.mode === 'in' && choice.minutes === preset}
+                onClick={() => setChoice({ mode: 'in', minutes: preset })}
               />
             ))}
-            {/* «Andere» — не пресет: подсвечивается, когда значение задано шагами. */}
-            <PosTimeChip
-              label="Andere"
-              selected={!PRESETS.includes(minutes as (typeof PRESETS)[number])}
-            />
+            {/* У заказа на время последняя фишка — возврат к желаемому часу
+                после правок ±5. Без неё вернуться к нему нечем. */}
+            {desiredMs != null ? (
+              <PosTimeChip
+                label={posClock(desiredMs)}
+                selected={atDesired}
+                onClick={() => setChoice({ mode: 'at', ms: desiredMs })}
+              />
+            ) : (
+              /* «Andere» — не пресет: подсвечивается, когда значение задано шагами. */
+              <PosTimeChip
+                label="Andere"
+                selected={
+                  choice.mode === 'at' ||
+                  !POS_ETA_PRESETS.includes(choice.minutes as (typeof POS_ETA_PRESETS)[number])
+                }
+              />
+            )}
           </div>
         </div>
 
         <p className="pos-body-s w-full text-[var(--pos-text-muted)]">
-          Presets aus der Küche: 30 / 45 / 60 / 90 / 120 Min. Feinjustierung mit ±5.
+          {desiredMs != null
+            ? `Gast wünscht ${posClock(desiredMs)}. Mit ±5 von dieser Zeit verschieben, Presets rechnen ab jetzt.`
+            : 'Presets aus der Küche: 30 / 45 / 60 / 90 / 120 Min. Feinjustierung mit ±5.'}
         </p>
+
+        {clamped && (
+          <p className="pos-body-s w-full rounded-[12px] bg-[var(--pos-tint-preparing)] px-[12px] py-[10px] text-[var(--pos-status-preparing)]">
+            Weiter als {POS_ETA_MAX_MINUTES} Minuten voraus kann nicht zugesagt werden —
+            Bestellung später annehmen oder {target} bestätigen.
+          </p>
+        )}
 
         {error && (
           <p className="pos-body-s w-full rounded-[12px] bg-[var(--pos-tint-cancelled)] px-[12px] py-[10px] text-[var(--pos-status-cancelled)]">

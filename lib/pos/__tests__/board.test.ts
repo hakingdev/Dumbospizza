@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   berlinDayKey,
+  desiredTimeMs,
   countByStatus,
   orderChannel,
   orderDueMs,
@@ -186,5 +187,48 @@ describe('счётчики вкладок', () => {
     const counts = countByStatus(rows);
     expect(counts.delivering).toBe(1);
     expect(counts.ready).toBe(1);
+  });
+});
+
+describe('Wunschzeit', () => {
+  // Заказ 18 августа, 19:00 по Берлину (лето, UTC+2).
+  const created = new Date('2026-08-18T17:00:00Z');
+
+  it('считает названный час в зоне заведения, а не в UTC сервера', () => {
+    expect(desiredTimeMs('20:30', created)).toBe(new Date('2026-08-18T18:30:00Z').getTime());
+  });
+
+  it('зимой берёт другое смещение', () => {
+    const winter = new Date('2026-01-18T18:00:00Z'); // 19:00 по Берлину, UTC+1
+    expect(desiredTimeMs('20:30', winter)).toBe(new Date('2026-01-18T19:30:00Z').getTime());
+  });
+
+  it('час после полуночи относит к следующим суткам', () => {
+    const late = new Date('2026-08-18T21:50:00Z'); // 23:50 по Берлину
+    expect(desiredTimeMs('00:15', late)).toBe(new Date('2026-08-18T22:15:00Z').getTime());
+  });
+
+  it('прошедший час оставляет в прошлом — кухня опоздала, а не ждёт сутки', () => {
+    const late = new Date('2026-08-18T18:40:00Z'); // 20:40 по Берлину
+    expect(desiredTimeMs('20:30', late)).toBe(new Date('2026-08-18T18:30:00Z').getTime());
+  });
+
+  it('без Wunschzeit и на мусоре отдаёт null', () => {
+    expect(desiredTimeMs(null, created)).toBeNull();
+    expect(desiredTimeMs('', created)).toBeNull();
+    expect(desiredTimeMs('so schnell wie möglich', created)).toBeNull();
+    expect(desiredTimeMs('25:00', created)).toBeNull();
+  });
+
+  it('доносит желаемый час до карточки прибора', () => {
+    const board = toBoardOrder({
+      _id: 'x',
+      orderNumber: 'A-1',
+      status: 'new',
+      createdAt: created,
+      desiredDeliveryTime: '20:30',
+      items: [],
+    });
+    expect(board?.desiredMs).toBe(new Date('2026-08-18T18:30:00Z').getTime());
   });
 });
