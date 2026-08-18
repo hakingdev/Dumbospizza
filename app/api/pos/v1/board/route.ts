@@ -6,12 +6,12 @@ import { authorizePos } from '../../../../../lib/pos/auth';
 import {
   POS_ACTIVE_ORDER_STATUSES,
   POS_FINISHED_ORDER_STATUSES,
-  berlinDayKey,
   countByStatus,
   posEuro,
   toBoardOrder,
   type PosBoardOrder,
 } from '../../../../../lib/pos/board';
+import { workingDayStart } from '../../../../../lib/orders/working-day';
 import {
   activeWorkshopBlocks,
   isBlockActive,
@@ -22,25 +22,6 @@ import {
 
 export const dynamic = 'force-dynamic';
 
-/** Окно выборки закрытых заказов. Дальше отсеиваем по календарному дню Берлина. */
-const FINISHED_WINDOW_MS = 24 * 60 * 60 * 1000;
-
-/**
- * Насколько старым может быть НЕЗАКРЫТЫЙ заказ, чтобы попасть на прибор.
- *
- * Сначала окна не было вовсе: раз заказ не закрыт — значит работа. На проде это
- * оказалось неверно. Заказы месячной давности, которые просто забыли перевести
- * в «завершён», числятся активными до сих пор, и кухня получила ленту из мусора,
- * где настоящий заказ не отличить от прошлогоднего.
- *
- * Сутки, а не «сегодня»: смена заканчивается в 22:00, и заказ, принятый в 21:50,
- * обязан дожить на экране до конца приготовления, даже если наступила полночь.
- *
- * База при этом НЕ трогается: старые заказы остаются в админке как были. Терминал
- * лишь перестаёт выдавать их за текущую работу.
- */
-const ACTIVE_WINDOW_MS = 24 * 60 * 60 * 1000;
-
 /**
  * GET /api/pos/v1/board — всё, что нужно ленте терминала, одним запросом.
  *
@@ -48,10 +29,10 @@ const ACTIVE_WINDOW_MS = 24 * 60 * 60 * 1000;
  * числа на вкладках и состояние стопа кухни меняются вместе, и три отдельных
  * запроса показали бы ленту одной секунды со счётчиками другой.
  *
- * Показывает работу текущей смены, а не историю: незакрытые заказы за последние
- * сутки, закрытые — за сегодняшний день Берлина. Всё, что старше, остаётся в
- * админке, но на кухню не попадает: заказ, забытый в статусе «готовится» месяц
- * назад, — это не работа на столе.
+ * Показывает РАБОЧИЙ ДЕНЬ, а не историю: всё, что принято после 01:00 по Берлину.
+ * В час ночи доставки уже нет, и всё незакрытое перестало быть работой — экран
+ * начинает следующую смену с чистого листа. Заказы никуда не деваются, они
+ * остаются в админке; терминал просто перестаёт выдавать их за текущую работу.
  */
 export async function GET(request: NextRequest) {
   const auth = await authorizePos(request);
@@ -64,26 +45,28 @@ export async function GET(request: NextRequest) {
     const now = new Date();
     const nowMs = now.getTime();
 
+    // Одна граница на всё: и незакрытые, и закрытые заказы живут ровно текущую
+    // смену. Раньше окон было два (сутки и календарный день), и заказ мог
+    // исчезнуть из «Geliefert» в полночь, оставшись в «Zubereitung» до утра.
+    const since = workingDayStart(now);
+
     const [activeRows, finishedRows, settings] = await Promise.all([
       Order.find({
         status: { $in: [...POS_ACTIVE_ORDER_STATUSES] },
-        createdAt: { $gte: new Date(nowMs - ACTIVE_WINDOW_MS) },
+        createdAt: { $gte: since },
       })
         .sort({ createdAt: 1 })
         .lean(),
       Order.find({
         status: { $in: [...POS_FINISHED_ORDER_STATUSES] },
-        createdAt: { $gte: new Date(nowMs - FINISHED_WINDOW_MS) },
+        createdAt: { $gte: since },
       })
         .sort({ createdAt: -1 })
         .lean(),
       getSetting<Record<string, any>>('storeSettings', {}),
     ]);
 
-    const today = berlinDayKey(now);
-    const finishedToday = (finishedRows as any[]).filter(
-      (order) => berlinDayKey(order.createdAt) === today
-    );
+    const finishedToday = finishedRows as any[];
 
     const orders = [...(activeRows as any[]), ...finishedToday]
       .map(toBoardOrder)

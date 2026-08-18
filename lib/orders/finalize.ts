@@ -6,7 +6,7 @@ import { recordPromotionOrderAnalytics } from '../promotions/order-integration';
 import { sendServerPurchaseConversionEvents } from '../conversions/server-purchase-events';
 import { sendOrderNotification, sendPlainTelegramMessage, escapeHtml } from '../telegram';
 import { printOrderReceipts } from '../printing';
-import { sendOrderPlacedNotification, sendOrderEtaNotification } from '../whatsapp';
+import { sendOrderPlacedNotification } from '../whatsapp';
 import { estimateAndApplyOrderEta, type OrderEtaAnalysis } from '../eta/order-eta';
 import type { IOrder } from '../models/order.model';
 
@@ -139,16 +139,14 @@ export async function finalizeOrderPlacement(order: any, request: NextRequest): 
   // ВАЖНО (Vercel serverless): уведомления нужно ДОЖДАТЬСЯ до ответа,
   // иначе функция замораживается и Telegram/WhatsApp/конверсии не отправляются.
   await Promise.all([
-    // WhatsApp клиенту с объявленным временем (шаблон ORDER_ETA) — тот же
-    // канал, что и кнопка «⏱ Время готовности» в Telegram.
-    etaAnalysis
-      ? sendOrderEtaNotification(
-          { phoneNumber: order.phoneNumber, orderNumber: order.orderNumber },
-          etaAnalysis.etaMinutes
-        ).catch((err) => {
-          console.error('Error sending WhatsApp ETA notification:', err);
-        })
-      : Promise.resolve(),
+    // Время готовности гостю здесь НЕ обещаем.
+    //
+    // Раньше сразу после оформления уходило время, посчитанное ИИ, — то есть
+    // обещание, которого кухня не давала и о заказе ещё не знала. Дальше кухня
+    // называла своё, и гость получал второе сообщение с другим временем.
+    // Теперь обещание одно, и его отправляет тот, кто принял заказ:
+    // PUT /api/orders/[id] с etaMinutes (кнопка приёма на приборе) и кнопка
+    // «⏱ Время готовности» в Telegram. Оценка ИИ остаётся в карточке для кухни.
     // Пиковая загрузка — отдельное громкое сообщение в Telegram с рекомендацией.
     etaAnalysis?.loadLevel === 'peak' && etaAnalysis.advisory
       ? sendPlainTelegramMessage(

@@ -37,8 +37,26 @@ export interface OrderNotification {
   desiredDeliveryTime?: string;
   /** Объявленное клиенту время готовности, мин (AI или кнопка «⏱ Время готовности»). */
   etaMinutes?: number;
+  /**
+   * Когда это время назначили. Без него минуты не превратить в час готовности:
+   * `etaMinutes` считается ОТ этого момента, а не от создания заказа — продление
+   * двигает именно эту пару полей.
+   */
+  etaSetAt?: Date | string | null;
   /** AI-оценка: разбивка готовка/доставка, расстояние, загрузка, советы. */
   etaAnalysis?: OrderEtaAnalysis;
+}
+
+/** «15:03» по времени заведения. Пусто — обещания нет или оно неполное. */
+function formatReadyAt(order: OrderNotification): string {
+  if (!order.etaMinutes || !order.etaSetAt) return '';
+  const setAt = new Date(order.etaSetAt);
+  if (Number.isNaN(setAt.getTime())) return '';
+  return new Intl.DateTimeFormat('ru-RU', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'Europe/Berlin',
+  }).format(new Date(setAt.getTime() + order.etaMinutes * 60_000));
 }
 
 export function escapeHtml(text: string): string {
@@ -96,7 +114,14 @@ export function buildOrderBodyText(order: OrderNotification): string {
 
   // Клиенту уже сказали время — держим его в сообщении, иначе после ухода
   // всплывашки оператор не вспомнит, что и когда пообещали.
-  const etaLine = order.etaMinutes ? `\n⏱ Клиенту сообщено: ~${order.etaMinutes} мин` : '';
+  //
+  // Рядом с минутами — час готовности. Карточка висит в теме до конца заказа, и
+  // через полчаса «~45 мин» уже ничего не значит: считать от чего именно, никто
+  // не помнит. Точное время остаётся верным всегда.
+  const readyAt = formatReadyAt(order);
+  const etaLine = order.etaMinutes
+    ? `\n⏱ Клиенту сообщено: ~${order.etaMinutes} мин${readyAt ? ` (готов к ${readyAt})` : ''}`
+    : '';
 
   // Разбивка AI-оценки: готовка/доставка/км + короткая инструкция по маршруту.
   // advisory (совет по загрузке) в Telegram НЕ показываем — по просьбе
