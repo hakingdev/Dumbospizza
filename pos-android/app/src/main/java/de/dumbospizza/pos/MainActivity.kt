@@ -1,9 +1,12 @@
 package de.dumbospizza.pos
 
 import android.app.Activity
+import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
+import android.os.Build
 import android.os.RemoteException
+import android.provider.Settings
 import android.text.InputType
 import android.util.TypedValue
 import android.view.ViewGroup
@@ -111,6 +114,7 @@ class MainActivity : Activity() {
         root.addView(button("Параметры принтера") { showPrinterInfo() })
         root.addView(button("Пробный чек") { printProbeReceipt() })
         root.addView(button("Самотест принтера") { selfTest() })
+        root.addView(button("Wi-Fi и сеть") { openWifiSettings() })
         // Возврат в киоск — тот же, что по кнопке «Назад», но названный словами:
         // системных кнопок на закреплённом экране может не быть вовсе.
         root.addView(button("← ВЕРНУТЬСЯ В ТЕРМИНАЛ") { finish() })
@@ -172,6 +176,24 @@ class MainActivity : Activity() {
         PosPrefs.setServiceEnabled(this, false)
         PrintService.stop(this)
         log("служба остановлена")
+    }
+
+    /**
+     * Настройки Wi-Fi прибора.
+     *
+     * Единственный путь к ним с запертого киоска, поэтому кнопка живёт здесь, за
+     * PIN. Сначала пробуем панель подключений: она показывает только сети и не
+     * даёт разгуляться по всем настройкам прибора. Если панели нет (до Android 10),
+     * открываем обычный экран Wi-Fi.
+     */
+    private fun openWifiSettings() {
+        val opened = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            runCatching { startActivity(Intent(Settings.Panel.ACTION_WIFI)) }.isSuccess
+        } else false
+        if (!opened) {
+            runCatching { startActivity(Intent(Settings.ACTION_WIFI_SETTINGS)) }
+                .onFailure { log("✗ настройки Wi-Fi недоступны: ${it.message}") }
+        }
     }
 
     // --- Диагностика ---------------------------------------------------------

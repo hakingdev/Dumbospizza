@@ -18,6 +18,11 @@
         <intent>
             <action android:name="woyou.aidlservice.jiuiv5.IWoyouService" />
         </intent>
+        <!-- Экран Wi-Fi: без объявления resolveActivity его не видит и настройки
+             не попадают в белый список киоска. -->
+        <intent>
+            <action android:name="android.settings.WIFI_SETTINGS" />
+        </intent>
         <!-- Звонок с карточки гостя: без объявления намерения ACTION_DIAL на
              Android 11 не находит ни одного приложения. -->
         <intent>

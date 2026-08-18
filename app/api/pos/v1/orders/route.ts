@@ -21,7 +21,7 @@ const MAX_WINDOW_MS = 2 * 60 * 60 * 1000;
 /**
  * GET /api/pos/v1/orders?sinceMs=<epoch>&limit=<n>
  *
- * Свежие заказы для печати на POS-приборе. Эндпойнт СТРОГО ЧИТАЮЩИЙ.
+ * Заказы для печати на POS-приборе. Эндпойнт СТРОГО ЧИТАЮЩИЙ.
  *
  * Прибор — наблюдатель, как и Telegram: он показывает и печатает заказ, но не
  * владеет им. Состояние заказа (`kitchenPrintStatus`) остаётся за LAN-агентом,
@@ -32,6 +32,16 @@ const MAX_WINDOW_MS = 2 * 60 * 60 * 1000;
  * Учёт напечатанного ведёт сам прибор (PosPrefs): у него persistent-хранилище
  * ключей `orderId:printSeq`, переживающее перезапуск. Поэтому серверу не нужны
  * ни новое поле, ни таблица, ни миграция.
+ *
+ * Окно считается по `updatedAt`, а НЕ по `createdAt`. Сначала было по createdAt —
+ * и повтор печати не работал вовсе: «Erneut drucken» поднимает `kitchenPrintSeq`,
+ * но время создания не трогает, поэтому заказ уже никогда не попадал в выборку и
+ * прибор о повторе не узнавал. Обратной связи при этом нет никакой: сервер
+ * отвечает «поставлено в очередь», а чек не выходит.
+ *
+ * Лишних чеков это не даёт: заказ вернётся в выборку и после смены статуса, но
+ * ключ `orderId:printSeq` у него прежний, и прибор такой заказ пропустит. Печатает
+ * он только то, чего не видел, — а повтор это и есть новый printSeq.
  */
 export async function GET(request: NextRequest) {
   const auth = authorizePosDevice(request);
@@ -65,10 +75,10 @@ export async function GET(request: NextRequest) {
     // отсекает visibleOrderStatusFilter.
     const orders = await Order.find({
       status: visibleOrderStatusFilter(null),
-      createdAt: { $gt: since },
+      updatedAt: { $gt: since },
       $or: [{ paymentMethod: { $ne: 'online' } }, { paymentStatus: 'completed' }],
     })
-      .sort({ createdAt: 1 })
+      .sort({ updatedAt: 1 })
       .limit(limit)
       .lean();
 
