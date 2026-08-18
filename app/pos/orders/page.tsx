@@ -20,6 +20,7 @@ import {
   usePosNow,
 } from '../../../components/pos/data';
 import { usePosBoardContext } from '../../../components/pos/board-context';
+import { posDisplayStatus } from '../../../lib/pos/board';
 import { PosScreenState } from '../../../components/pos/screen-state';
 
 /**
@@ -68,13 +69,15 @@ export default function OrdersPage() {
     if (!board || nowMs == null) return [];
     const wanted = new Set(POS_TAB_STATUSES[active] ?? []);
     return board.orders
-      .filter((order) => wanted.has(order.status))
+      .filter((order) => wanted.has(posDisplayStatus(order)))
       .map((order) => {
         const note = posOrderNote(order, nowMs);
         return {
           id: order.id,
           number: order.number,
-          status: order.status,
+          // Бейдж на карточке — экранный статус: заказ на вкладке «Unterwegs»
+          // не может быть подписан «Bereit zur Lieferung».
+          status: posDisplayStatus(order),
           meta: posOrderMeta(order),
           items: order.items,
           note: note.text,
