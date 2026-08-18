@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { PosStatusBar } from '../../../components/pos/primitives';
 import { PosBottomNav } from '../../../components/pos/order-list';
@@ -17,6 +17,17 @@ import type { PosPrintSettings } from '../../../lib/pos/settings';
  * правит тот, кто стоит у принтера и видит бумагу, — поэтому они здесь, а не
  * только в админке.
  */
+
+/**
+ * Мост, который киоск подставляет в страницу (KioskActivity.TerminalBridge).
+ * В обычном браузере его нет — и кнопки сетей тоже не будет: нажимать мёртвую
+ * кнопку хуже, чем не видеть её вовсе.
+ */
+declare global {
+  interface Window {
+    DumboPos?: { openWifiSettings?: () => void };
+  }
+}
 
 interface PosSettingsView {
   settings: PosPrintSettings;
@@ -120,6 +131,12 @@ export default function MorePage() {
   );
   const nowMs = usePosNow(skewRef, 30_000);
   const [busy, setBusy] = useState(false);
+  /** Есть ли мост в приложение. Проверяем после монтирования: на сервере его нет. */
+  const [onDevice, setOnDevice] = useState(false);
+
+  useEffect(() => {
+    setOnDevice(typeof window.DumboPos?.openWifiSettings === 'function');
+  }, []);
 
   const view = state.status === 'ready' ? state.data : null;
   const s = view?.settings;
@@ -147,6 +164,21 @@ export default function MorePage() {
 
       <div className="pos-scroll flex min-h-px w-full flex-1 flex-col gap-[12px] px-[16px] pb-[14px] pt-[6px]">
         <PosScreenState state={state} onRetry={refresh} />
+
+        {onDevice && (
+          <Card title="GERÄT-NETZWERK">
+            <button
+              type="button"
+              onClick={() => window.DumboPos?.openWifiSettings?.()}
+              className="pos-label-m flex h-[48px] w-full items-center justify-center rounded-[12px] border border-[var(--pos-border-strong)] bg-[var(--pos-bg-surface-2)] text-[var(--pos-text-primary)]"
+            >
+              WLAN einrichten
+            </button>
+            <span className="pos-body-s text-[var(--pos-text-muted)]">
+              Öffnet die Netzwerkauswahl des Geräts. Danach zurück mit der Zurück-Taste.
+            </span>
+          </Card>
+        )}
 
         <Card title="KÜCHE">
           <Link

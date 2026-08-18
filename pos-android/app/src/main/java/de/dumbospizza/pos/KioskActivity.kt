@@ -23,7 +23,9 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
+import android.provider.Settings
 import android.webkit.CookieManager
+import android.webkit.JavascriptInterface
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
@@ -142,6 +144,10 @@ class KioskActivity : Activity() {
             setOnLongClickListener { true }
             configure(this)
             webViewClient = TerminalClient()
+            // Мост в приложение. Страница не может открыть системные настройки
+            // сама — только нативный код. Интерфейс намеренно из одного метода:
+            // всё, что здесь появится, станет доступно любой открытой странице.
+            addJavascriptInterface(TerminalBridge(), "DumboPos")
         }
         root.addView(web, FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
 
@@ -268,6 +274,34 @@ class KioskActivity : Activity() {
         }
     }
 
+    /**
+     * То, что терминалу нужно от прибора. Пока одно: сети.
+     *
+     * Запертый киоск иначе не переподключить к другому Wi-Fi, а кухня переезжает
+     * вместе с роутером. Кнопка живёт во вкладке «Mehr», рядом с остальными
+     * настройками прибора, — искать её на скрытом служебном экране никто не станет.
+     */
+    private inner class TerminalBridge {
+        @JavascriptInterface
+        fun openWifiSettings() {
+            runOnUiThread { openWifi() }
+        }
+    }
+
+    /**
+     * Сети. Сначала панель подключений — она показывает только список сетей и не
+     * даёт уйти вглубь настроек прибора. Полный экран Wi-Fi остаётся запасным.
+     */
+    private fun openWifi() {
+        val opened = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            runCatching { startActivity(Intent(Settings.Panel.ACTION_WIFI)) }.isSuccess
+        } else false
+        if (!opened) {
+            runCatching { startActivity(Intent(Settings.ACTION_WIFI_SETTINGS)) }
+                .onFailure { Log.w(TAG, "настройки Wi-Fi недоступны: ${it.message}") }
+        }
+    }
+
     // --- Киоск ---------------------------------------------------------------
 
     private fun enterLockTask() {
@@ -307,7 +341,7 @@ class KioskActivity : Activity() {
         // Android 11 фильтрует видимость чужих пакетов, и на приборе он вернул
         // null — настройки в список не попали и панель Wi-Fi молча не открывалась.
         val settingsPackage = packageManager
-            .resolveActivity(Intent(android.provider.Settings.ACTION_WIFI_SETTINGS), 0)
+            .resolveActivity(Intent(Settings.ACTION_WIFI_SETTINGS), 0)
             ?.activityInfo
             ?.packageName
         val allowed = listOfNotNull(packageName, dialer, settingsPackage, SETTINGS_PACKAGE)
