@@ -77,12 +77,18 @@ const VIEW: Record<
   preparing: {
     step: 2,
     canExtend: true,
-    actions: [CANCEL, { label: 'Fertig melden', next: 'ready' }],
+    // Сразу в «Unterwegs», минуя «Bereit zur Lieferung». Для ресторана это один
+    // шаг: заказ снимают с кухни и отдают курьеру, промежуточного состояния
+    // «стоит готовый на полке» в реальной смене нет — а лишняя кнопка означала
+    // лишнее касание и заказ, забытый в статусе, которого никто не ведёт.
+    actions: [CANCEL, { label: 'Ist unterwegs', next: 'delivering' }],
   },
+  // Статус остаётся живым: его ставят из Telegram и админки, и такой заказ
+  // терминал обязан показать и уметь довести до конца.
   ready: {
     step: 3,
     canExtend: false,
-    actions: [CANCEL, { label: 'Übergeben', next: 'delivering' }],
+    actions: [CANCEL, { label: 'Ist unterwegs', next: 'delivering' }],
   },
   delivering: {
     step: 3,
