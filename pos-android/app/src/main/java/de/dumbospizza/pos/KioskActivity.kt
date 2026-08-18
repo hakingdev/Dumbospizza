@@ -155,6 +155,10 @@ class KioskActivity : Activity() {
         // рассчитан на свои размеры и не должен зависеть от настроек прибора.
         settings.textZoom = 100
         settings.userAgentString = settings.userAgentString + " DumboPOS/kiosk"
+        // Сигнал о новом заказе должен зазвучать сам. Браузер по умолчанию
+        // запрещает звук до касания экрана — на кухне это означало бы, что
+        // первый заказ смены придёт молча.
+        settings.mediaPlaybackRequiresUserGesture = false
 
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(view, false)

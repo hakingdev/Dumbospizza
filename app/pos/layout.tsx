@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import './pos.css';
+import { PosBoardProvider } from '../../components/pos/board-context';
 
 export const metadata: Metadata = {
   title: 'Bestellannahme',
@@ -20,5 +21,11 @@ export const viewport: Viewport = {
 };
 
 export default function PosLayout({ children }: { children: React.ReactNode }) {
-  return <div className="pos-root flex flex-col">{children}</div>;
+  // Лента поднята сюда, чтобы сигнал о новом заказе звучал на ЛЮБОМ экране:
+  // повар может стоять в меню или в стоп-листе, и именно тогда заказ и придёт.
+  return (
+    <div className="pos-root flex flex-col">
+      <PosBoardProvider>{children}</PosBoardProvider>
+    </div>
+  );
 }

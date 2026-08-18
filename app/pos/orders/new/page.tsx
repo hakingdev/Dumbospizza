@@ -15,10 +15,10 @@ import {
   posClock,
   posCountdown,
   posFetch,
-  usePosBoard,
   usePosNow,
   usePosOrder,
 } from '../../../../components/pos/data';
+import { usePosBoardContext } from '../../../../components/pos/board-context';
 import { toOrderStatus } from '../../../../lib/pos/board';
 
 /**
@@ -37,7 +37,7 @@ import { toOrderStatus } from '../../../../lib/pos/board';
 
 export default function NewOrderPage() {
   const router = useRouter();
-  const { state: boardState, refresh: refreshBoard, skewRef } = usePosBoard();
+  const { state: boardState, refresh: refreshBoard, skewRef } = usePosBoardContext();
   const nowMs = usePosNow(skewRef);
   const [busy, setBusy] = useState(false);
 
