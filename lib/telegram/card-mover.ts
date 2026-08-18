@@ -61,6 +61,12 @@ export interface CardOrderInput {
   orderNumber: string;
   createdAt?: Date | string | null;
   notification: OrderNotification;
+  /**
+   * Заказ принят кухней. `false` — он ещё в статусе `new`, и карточка обязана
+   * сказать об этом словами: тема у «нового» и «готовится» одна.
+   * `undefined` — источник не знает (старые вызовы), считаем принятым.
+   */
+  accepted?: boolean;
 }
 
 export interface SendCardInput {
@@ -286,6 +292,7 @@ function cardText(
     statusHistory: history,
     createdAt: order.createdAt,
     courier,
+    awaitingAcceptance: order.accepted === false,
   });
 }
 

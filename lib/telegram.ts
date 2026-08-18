@@ -258,6 +258,9 @@ export function toCardOrderInput(order: any): CardOrderInput {
     orderNumber: order.orderNumber,
     createdAt: order.createdAt,
     notification: orderToNotification(order as IOrder),
+    // Принят = кто-то принял решение и увёл заказ из `new`: кухня на приборе
+    // (тогда назначено и время) либо человек кнопкой в этой же группе.
+    accepted: order.status !== 'new',
   };
 }
 

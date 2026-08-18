@@ -673,6 +673,35 @@ describe('renderCardText', () => {
     expect(text).toContain('💰 <b>Итого: 21.90 €</b>');
   });
 
+  it('непринятый заказ не выдаёт себя за готовящийся', () => {
+    // Тема у `new` и `preparing` одна, поэтому карточка обязана сказать
+    // словами, что кухня заказ ещё не взяла и время не назначила.
+    const text = renderCardText({
+      order: ORDER.notification,
+      status: 'cooking',
+      createdAt: ORDER.createdAt,
+      statusHistory: [{ status: 'cooking', timestamp: '2026-06-20T16:40:00Z' }],
+      awaitingAcceptance: true,
+    });
+
+    expect(text).toContain('Статус: <b>Не принят</b>');
+    expect(text).toContain('Кухня ещё не назначила время');
+    expect(text).not.toContain('Статус: <b>🔥 Готовится</b>');
+  });
+
+  it('после приёма карточка снова называется «Готовится»', () => {
+    const text = renderCardText({
+      order: ORDER.notification,
+      status: 'cooking',
+      createdAt: ORDER.createdAt,
+      statusHistory: [{ status: 'cooking', timestamp: '2026-06-20T16:40:00Z' }],
+      awaitingAcceptance: false,
+    });
+
+    expect(text).toContain('Статус: <b>🔥 Готовится</b>');
+    expect(text).not.toContain('Не принят');
+  });
+
   it('в хронологии видно, кто брал заказ и что случилось', () => {
     const text = renderCardText({
       order: ORDER.notification,

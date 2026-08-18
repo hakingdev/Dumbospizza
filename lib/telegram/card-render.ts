@@ -89,6 +89,14 @@ export interface CardTextInput {
   /** Время приёма заказа (orders.created_at). */
   createdAt?: Date | string | null;
   courier?: string | null;
+  /**
+   * Кухня заказ ещё НЕ взяла (статус `new`).
+   *
+   * Тема у `new` и `preparing` одна — «🔥 Готовится», и переезжать лишний раз
+   * незачем. Но пока никто не принял заказ и не назначил время, подпись
+   * «Готовится» врёт: на кухне его ещё никто не видел.
+   */
+  awaitingAcceptance?: boolean;
 }
 
 /**
@@ -99,9 +107,13 @@ export function renderCardText(input: CardTextInput): string {
 
   const placedAt = formatTime(input.createdAt);
   const headerTime = placedAt ? ` · 🕐 ${placedAt}` : '';
+  const waiting = Boolean(input.awaitingAcceptance) && status === 'cooking';
+  // Вторая строка объясняет, чего именно ждём: «Не принят» без пояснения
+  // читается как поломка, а не как ожидание действия кухни.
+  const waitingHint = waiting ? '\n⏳ Кухня ещё не назначила время' : '';
   const header =
-    `${CARD_STATUS_EMOJI[status]} <b>Заказ #${escapeHtml(order.orderId)}</b>${headerTime}` +
-    `\nСтатус: <b>${CARD_STATUS_LABELS[status]}</b>`;
+    `${waiting ? '🆕' : CARD_STATUS_EMOJI[status]} <b>Заказ #${escapeHtml(order.orderId)}</b>${headerTime}` +
+    `\nСтатус: <b>${waiting ? 'Не принят' : CARD_STATUS_LABELS[status]}</b>${waitingHint}`;
 
   const courierLine = courier ? `\n🧍 Курьер: ${escapeHtml(courier)}` : '';
 
