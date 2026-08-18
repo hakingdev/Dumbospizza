@@ -54,10 +54,6 @@ export async function GET(request: NextRequest) {
     const settings = await getPosPrintSettings();
     const nowMs = Date.now();
 
-    if (!settings.enabled) {
-      return NextResponse.json({ success: true, jobs: [], paused: true, serverTimeMs: nowMs });
-    }
-
     const { searchParams } = new URL(request.url);
     const limit = Math.min(
       MAX_BATCH,
@@ -73,14 +69,28 @@ export async function GET(request: NextRequest) {
     // Гейт по оплате тот же, что у агента: неоплаченный онлайн-заказ на кухню не
     // уезжает, оплата при получении проходит всегда. Драфты pending_payment
     // отсекает visibleOrderStatusFilter.
-    const orders = await Order.find({
+    const base = {
       status: visibleOrderStatusFilter(null),
       updatedAt: { $gt: since },
       $or: [{ paymentMethod: { $ne: 'online' } }, { paymentStatus: 'completed' }],
-    })
-      .sort({ updatedAt: 1 })
-      .limit(limit)
-      .lean();
+    };
+
+    /**
+     * Выключатель называется «АВТОМАТИЧЕСКИ печатать» — и гасить он должен
+     * только автоматику.
+     *
+     * Раньше он закрывал эндпойнт целиком: при выключенной автопечати прибор не
+     * получал НИЧЕГО, и кнопка «Erneut drucken» переставала работать вместе с
+     * ней. Со стороны кухни это выглядело как сломанная кнопка: сервер отвечает
+     * «поставлено в очередь», бумага не выходит, и никто не может объяснить почему.
+     *
+     * Явная просьба человека сильнее настройки: заказ с `kitchenPrintSeq > 0`
+     * (кто-то нажал «печатать ещё раз») уезжает на прибор всегда. Идемпотентность
+     * держит сам прибор по ключу `orderId:printSeq` — второго чека не будет.
+     */
+    const filter = settings.enabled ? base : { ...base, kitchenPrintSeq: { $gt: 0 } };
+
+    const orders = await Order.find(filter).sort({ updatedAt: 1 }).limit(limit).lean();
 
     const jobs = orders
       .map((order: any) => buildPrintJob(order, { ...settings, workshops: null }))
@@ -89,6 +99,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       jobs,
+      /** Автопечать выключена: сюда попадают только заказы, напечатать которые попросили руками. */
+      paused: !settings.enabled,
       // Прибор двигает курсор по времени СЕРВЕРА, а не своим: часы на приборе
       // могут уехать, и тогда он либо пропустит заказы, либо начнёт их повторять.
       serverTimeMs: nowMs,

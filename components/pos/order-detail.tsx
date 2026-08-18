@@ -107,7 +107,17 @@ export function PosStatusTimeCard({
   );
 }
 
-export type PosPrintState = 'printed' | 'queued' | 'failed';
+/**
+ * Состояние кухонного бона.
+ *
+ * `pending` отделён от `queued` НЕ ради красоты. Заказ лежит в `pending` сколько
+ * угодно: пока автопечать выключена или пока агент до него не дошёл. Раньше оба
+ * случая назывались «в очереди» и кнопка в них была заблокирована — то есть на
+ * заказе, который никто не собирался печатать, кнопка печати не нажималась
+ * вовсе, и со стороны кухни это выглядело как «ничего не происходит».
+ * Блокировать имеет смысл только `queued` — когда задание правда в работе.
+ */
+export type PosPrintState = 'printed' | 'pending' | 'queued' | 'failed';
 
 const PRINT_STATE: Record<
   PosPrintState,
@@ -120,12 +130,19 @@ const PRINT_STATE: Record<
     action: 'Erneut drucken',
     busy: false,
   },
+  pending: {
+    label: 'Noch nicht gedruckt',
+    color: 'var(--pos-text-muted)',
+    tint: 'var(--pos-bg-surface-2)',
+    action: 'Jetzt drucken',
+    busy: false,
+  },
   queued: {
-    label: 'In der Warteschlange',
+    label: 'Wird gedruckt',
     color: 'var(--pos-status-preparing)',
     tint: 'var(--pos-tint-preparing)',
-    // Пока задание в очереди, кнопка заблокирована: второе нажатие добавило бы
-    // второй чек, а не ускорило первый.
+    // Пока задание правда в работе, кнопка заблокирована: второе нажатие
+    // добавило бы второй чек, а не ускорило первый.
     action: 'Wird gedruckt …',
     busy: true,
   },
