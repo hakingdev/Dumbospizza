@@ -9,7 +9,10 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import android.os.Build
 import android.os.Bundle
 import android.telecom.TelecomManager
@@ -76,8 +79,13 @@ class KioskActivity : Activity() {
         // Кухонный экран не должен гаснуть: разбудить его мокрыми руками в
         // перчатках — отдельная операция, а заказ ждать не будет.
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        // Фон ОКНА, а не только вёрстки: пока системные панели уезжают, на их
+        // месте видно именно его, и по умолчанию он чёрный — на кухне это
+        // выглядело как полосы сверху и снизу.
+        window.setBackgroundDrawable(ColorDrawable(BACKGROUND))
         applyDeviceOwnerPolicy()
         setContentView(buildUi())
+        watchSystemBars()
         loadTerminal()
     }
 
@@ -85,6 +93,16 @@ class KioskActivity : Activity() {
         super.onResume()
         hideSystemBars()
         enterLockTask()
+    }
+
+    /**
+     * Возврат фокуса — снова прячем панели. Свайп сверху показывает их временно,
+     * но если в этот момент что-то перехватило фокус (диалог, звонок), система
+     * оставляет их висеть, и терминал остаётся с полосами.
+     */
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) hideSystemBars()
     }
 
     override fun onPause() {
@@ -206,12 +224,17 @@ class KioskActivity : Activity() {
 
     private fun loadTerminal() {
         offline.visibility = View.GONE
-        // Кэш чистим перед КАЖДОЙ явной загрузкой (старт киоска и кнопка
-        // «повторить»). Оба случая редки, а цена ошибки высокая: после выката
-        // прибор иначе показывает прошлую сборку — а однажды показал
-        // закэшированную 404 и не вышел из неё сам.
-        web.clearCache(true)
-        web.loadUrl(startUrl)
+        // Документ запрашиваем с обязательной перепроверкой на сервере.
+        //
+        // Раньше здесь стоял clearCache(), и он не работал: метод асинхронный,
+        // загрузка стартовала раньше очистки, и прибор снова показывал ту же
+        // закэшированную страницу — в нашем случае 404, снятую ДО выката, из
+        // которой киоск не выходил сам.
+        //
+        // Заголовок действует только на сам документ. Ассеты Next именованы по
+        // содержимому, поэтому свежая страница подтянет свежие — чистить весь
+        // кэш и заново качать всё по кухонному Wi-Fi незачем.
+        web.loadUrl(startUrl, mapOf("Cache-Control" to "no-cache"))
     }
 
     private inner class TerminalClient : WebViewClient() {
@@ -276,7 +299,20 @@ class KioskActivity : Activity() {
         val dialer = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             (getSystemService(Context.TELECOM_SERVICE) as? TelecomManager)?.defaultDialerPackage
         } else null
-        val allowed = listOfNotNull(packageName, dialer).toTypedArray()
+        // Настройки в белом списке ради Wi-Fi: запертый прибор иначе невозможно
+        // переподключить к другой сети, а кухня переезжает вместе с роутером.
+        // Открыть их можно только со служебного экрана, то есть из-под PIN.
+        //
+        // Имя пакета берём и резолвом, и константой. Резолва одного мало:
+        // Android 11 фильтрует видимость чужих пакетов, и на приборе он вернул
+        // null — настройки в список не попали и панель Wi-Fi молча не открывалась.
+        val settingsPackage = packageManager
+            .resolveActivity(Intent(android.provider.Settings.ACTION_WIFI_SETTINGS), 0)
+            ?.activityInfo
+            ?.packageName
+        val allowed = listOfNotNull(packageName, dialer, settingsPackage, SETTINGS_PACKAGE)
+            .distinct()
+            .toTypedArray()
         runCatching { dpm.setLockTaskPackages(admin, allowed) }
             .onFailure { Log.w(TAG, "setLockTaskPackages: ${it.message}") }
 
@@ -327,6 +363,28 @@ class KioskActivity : Activity() {
         startActivity(Intent(this, MainActivity::class.java))
     }
 
+    /**
+     * Панели, вызванные свайпом, обязаны уйти сами.
+     *
+     * Android скрывает их по своему таймеру не всегда: после свайпа они могут
+     * остаться до следующего касания. На кухне руки заняты, поэтому прячем их
+     * сами — с задержкой, чтобы человек успел прочитать заряд и часы, ради
+     * которых свайпал.
+     */
+    /** Заметить, что панели показались, и завести таймер на их скрытие. */
+    private fun watchSystemBars() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
+        window.decorView.setOnApplyWindowInsetsListener { view, insets ->
+            if (insets.isVisible(android.view.WindowInsets.Type.systemBars())) scheduleHideBars()
+            view.onApplyWindowInsets(insets)
+        }
+    }
+
+    private fun scheduleHideBars() {
+        hideHandler.removeCallbacksAndMessages(null)
+        hideHandler.postDelayed({ hideSystemBars() }, BARS_VISIBLE_MS)
+    }
+
     private fun hideSystemBars() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             window.setDecorFitsSystemWindows(false)
@@ -350,8 +408,14 @@ class KioskActivity : Activity() {
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
+    private val hideHandler = Handler(Looper.getMainLooper())
+
     private companion object {
         const val TAG = "PosKiosk"
+        /** Штатные настройки Android. Резолв их не всегда видит — см. applyDeviceOwnerPolicy. */
+        const val SETTINGS_PACKAGE = "com.android.settings"
+        /** Сколько держать панели после свайпа, прежде чем спрятать самим. */
+        const val BARS_VISIBLE_MS = 4000L
         // Те же значения, что у терминала в app/pos/pos.css: пока грузится
         // страница, экран не должен мигать белым или чёрным.
         val BACKGROUND = Color.parseColor("#faf7f2")
