@@ -44,31 +44,45 @@ export function usePosBoardContext(): PosBoardValue {
   return value;
 }
 
+/** Как часто напоминать о непринятом заказе. */
+const CHIME_REPEAT_MS = 10_000;
+
 /**
- * Звонит, когда на ленте появился НЕПРИНЯТЫЙ заказ, которого раньше не было.
+ * Звонит, пока заказ не приняли.
  *
- * Первый ответ сервера только запоминается и не звучит: иначе перезагрузка
- * страницы и каждый перезапуск киоска устраивали бы концерт из заказов, которые
- * повар уже видел. Забытый заказ при этом не потеряется — он остаётся на экране
- * и никуда не девается.
+ * Одного сигнала на приход мало: в шуме кухни его пропускают, а непринятый заказ
+ * — это гость, который ждёт ответа и не знает, услышали ли его. Поэтому звонок
+ * повторяется каждые десять секунд, пока на ленте есть заказ в статусе «новый»,
+ * и замолкает ровно тогда, когда ему назначили время и приняли.
+ *
+ * Заодно звонит и на первый ответ сервера — в отличие от прежнего поведения.
+ * Раньше первая выборка только запоминалась, чтобы перезапуск киоска не устраивал
+ * концерт; теперь молчать нельзя: если прибор перезагрузился, а заказ так и висит
+ * непринятым, тишина означала бы, что о нём никто не узнает.
  */
 function usePosNewOrderChime(state: PosLoad<PosBoard>) {
-  const seen = useRef<Set<string> | null>(null);
+  const seen = useRef<Set<string>>(new Set());
 
+  const pending =
+    state.status === 'ready' ? state.data.orders.filter((order) => order.status === 'new') : [];
+  const pendingIds = pending.map((order) => order.id).join(',');
+  const hasPending = pending.length > 0;
+
+  // Приход нового заказа — звонок немедленно, не дожидаясь очередного повтора.
   useEffect(() => {
     if (state.status !== 'ready') return;
-    const incoming = state.data.orders.filter((order) => order.status === 'new');
-
-    if (seen.current === null) {
-      seen.current = new Set(incoming.map((order) => order.id));
-      return;
-    }
-
-    const fresh = incoming.filter((order) => !seen.current!.has(order.id));
-    // Множество пересобираем по текущей ленте, а не копим вечно: принятый заказ
-    // должен забыться, иначе возврат в «новые» (например, после отмены приёма)
-    // пройдёт молча.
-    seen.current = new Set(incoming.map((order) => order.id));
+    const ids = pendingIds ? pendingIds.split(',') : [];
+    const fresh = ids.filter((id) => !seen.current.has(id));
+    // Множество пересобираем по текущей ленте: принятый заказ должен забыться,
+    // иначе его возврат в «новые» пройдёт молча.
+    seen.current = new Set(ids);
     if (fresh.length > 0) playPosChime();
-  }, [state]);
+  }, [pendingIds, state.status]);
+
+  // Напоминание, пока не приняли.
+  useEffect(() => {
+    if (!hasPending) return;
+    const timer = setInterval(playPosChime, CHIME_REPEAT_MS);
+    return () => clearInterval(timer);
+  }, [hasPending]);
 }
