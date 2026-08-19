@@ -16,8 +16,23 @@
  * Первичная настройка на ПК: npm install; npx playwright install chromium;
  * node toggle.mjs login (вход в Partner Hub один раз).
  */
+import fs from 'node:fs';
 import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { runOff, runOn } from './core.mjs';
+
+// .env рядом со скриптом (KEY=value построчно) — чтобы на кассовом ПК не
+// настраивать переменные окружения; реальный env имеет приоритет.
+try {
+  const envFile = path.join(path.dirname(fileURLToPath(import.meta.url)), '.env');
+  for (const line of fs.readFileSync(envFile, 'utf8').split(/\r?\n/)) {
+    const m = /^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/.exec(line);
+    if (m && !(m[1] in process.env)) process.env[m[1]] = m[2].replace(/^["']|["']$/g, '');
+  }
+} catch {
+  /* .env нет — ок, работаем от переменных окружения */
+}
 
 const API_BASE_URL = (process.env.API_BASE_URL || 'https://www.dumbospizza.de').replace(/\/$/, '');
 const SECRET = process.env.LIEFERANDO_AGENT_SECRET || process.env.PRINT_AGENT_SECRET || '';
