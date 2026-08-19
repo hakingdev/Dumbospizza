@@ -27,6 +27,13 @@
  */
 import { getSetting, setSetting } from './settings';
 import {
+  AGENT_OFFLINE_MS,
+  getLieferandoState,
+  requestLieferandoToggle,
+  type LieferandoAction,
+  type LieferandoState,
+} from './lieferando-makilove';
+import {
   EMPTY_WORKSHOP_BLOCKS,
   WORKSHOPS,
   WORKSHOP_BLOCKS_KEY,
@@ -59,6 +66,13 @@ export const ctrlBlock = (scope: ControlScope, minutes: 30 | 60) =>
 export const ctrlUnblock = (scope: ControlScope) => `ctrl_${scope}_unblock`;
 export const ctrlStatus = (scope: ControlScope) => `ctrl_${scope}_status`;
 
+// Кнопки экрана Lieferando (выключение позиций MakiLove в Partner Hub).
+// Выполняет не сервер, а агент на кассовом ПК — см. lib/lieferando-makilove.ts.
+export const LIEF_MENU = 'ctrl_lief_menu';
+export const LIEF_OFF = 'ctrl_lief_off';
+export const LIEF_ON = 'ctrl_lief_on';
+export const LIEF_STATUS = 'ctrl_lief_status';
+
 /** Старые кнопки (панель до появления цехов) — трактуем как «весь приём». */
 export const CTRL_BLOCK_30 = 'ctrl_block_30';
 export const CTRL_BLOCK_60 = 'ctrl_block_60';
@@ -77,7 +91,10 @@ export type ControlAction =
   | { type: 'unblock'; scope: ControlScope }
   | { type: 'status'; scope: ControlScope }
   | { type: 'menu'; scope: ControlScope }
-  | { type: 'root' };
+  | { type: 'root' }
+  | { type: 'lief_menu' }
+  | { type: 'lief_status' }
+  | { type: 'lief_toggle'; action: LieferandoAction };
 
 export type ControlResult = {
   handled: boolean;
@@ -86,6 +103,7 @@ export type ControlResult = {
     | 'unblocked'
     | 'status'
     | 'menu'
+    | 'lieferando'
     | 'panel'
     | 'wrong_chat'
     | 'not_ours'
@@ -142,6 +160,14 @@ export function parseControlAction(data: unknown): ControlAction | null {
       return { type: 'status', scope: 'all' };
     case CTRL_ROOT:
       return { type: 'root' };
+    case LIEF_MENU:
+      return { type: 'lief_menu' };
+    case LIEF_STATUS:
+      return { type: 'lief_status' };
+    case LIEF_OFF:
+      return { type: 'lief_toggle', action: 'off' };
+    case LIEF_ON:
+      return { type: 'lief_toggle', action: 'on' };
   }
 
   const menu = /^ctrl_menu_([a-z]+)$/.exec(data);
@@ -259,6 +285,7 @@ export function buildRootKeyboard(): ControlPanel['keyboard'] {
     inline_keyboard: [
       ...WORKSHOP_IDS.map((id) => [{ text: SCOPE_LABELS[id], callback_data: ctrlMenu(id) }]),
       [{ text: SCOPE_LABELS.all, callback_data: ctrlMenu('all') }],
+      [{ text: '🛵 Lieferando MakiLove', callback_data: LIEF_MENU }],
       [{ text: '🔄 Обновить', callback_data: CTRL_ROOT }],
     ],
   };
@@ -339,15 +366,91 @@ export function buildScopeText(
     .join('\n');
 }
 
+// --- экран Lieferando (позиции MakiLove в Partner Hub) -------------------------
+
+export function buildLieferandoKeyboard(): ControlPanel['keyboard'] {
+  return {
+    inline_keyboard: [
+      [
+        { text: '🔴 Выключить всё', callback_data: LIEF_OFF },
+        { text: '🟢 Включить всё', callback_data: LIEF_ON },
+      ],
+      [
+        { text: '🔄 Обновить', callback_data: LIEF_STATUS },
+        { text: '⬅️ Назад', callback_data: CTRL_ROOT },
+      ],
+    ],
+  };
+}
+
+/**
+ * Экран Lieferando. Команду выполняет агент на кассовом ПК (поллинг ~20 сек),
+ * поэтому показываем весь конвейер: очередь → выполняется → итог + жив ли агент.
+ */
+export function buildLieferandoText(
+  lief: LieferandoState,
+  now: Date = new Date(),
+  timeZone = TZ
+): string {
+  const stateLine =
+    lief.itemsState === 'off'
+      ? '🔴 Позиции ВЫКЛЮЧЕНЫ (по данным последнего запуска)'
+      : lief.itemsState === 'on'
+        ? '🟢 Позиции включены (по данным последнего запуска)'
+        : '⚪️ Состояние ещё не известно';
+
+  const lines = ['🛵 <b>Lieferando — MakiLove</b>', '', stateLine];
+
+  if (lief.command) {
+    lines.push(
+      `⏳ Команда «${lief.command.action === 'off' ? 'выключить' : 'включить'}» ждёт агента…`
+    );
+  }
+  if (lief.running) {
+    lines.push(
+      `⚙️ Агент выполняет «${lief.running.action === 'off' ? 'выключить' : 'включить'}» (с ${formatTime(new Date(lief.running.startedAt), timeZone)})`
+    );
+  }
+  if (lief.lastResult) {
+    const r = lief.lastResult;
+    lines.push(
+      r.ok
+        ? `Последний запуск: ✅ ${r.action === 'off' ? 'выключено' : 'включено'} ${r.count} позиций в ${formatTime(new Date(r.finishedAt), timeZone)}` +
+            (r.failed ? ` (ошибок: ${r.failed})` : '')
+        : `Последний запуск: ❌ ${r.message || 'ошибка'} (${formatTime(new Date(r.finishedAt), timeZone)})`
+    );
+  }
+
+  const seen = lief.agentSeenAt ? new Date(lief.agentSeenAt) : null;
+  const offline = !seen || now.getTime() - seen.getTime() > AGENT_OFFLINE_MS;
+  lines.push(
+    offline
+      ? `⚠️ Агент не на связи${seen ? ` (последний раз: ${formatTime(seen, timeZone)})` : ' (ещё ни разу не поллил)'} — проверьте кассовый ПК.`
+      : `Агент на связи (${formatTime(seen!, timeZone)}).`
+  );
+
+  lines.push('', 'ℹ️ Выключение действует до конца дня — утром Lieferando включит позиции сам.');
+  return lines.join('\n');
+}
+
 /** Экран целиком (текст + клавиатура) по действию/навигации. */
 export function buildPanel(
-  view: { type: 'root' } | { type: 'scope'; scope: ControlScope },
+  view:
+    | { type: 'root' }
+    | { type: 'scope'; scope: ControlScope }
+    | { type: 'lieferando'; lief: LieferandoState },
   state: BlockState,
   now: Date = new Date(),
   timeZone = TZ
 ): ControlPanel {
   if (view.type === 'root') {
     return { text: buildRootText(state, now, timeZone), keyboard: buildRootKeyboard() };
+  }
+  if (view.type === 'lieferando') {
+    return {
+      text: buildLieferandoText(view.lief, now, timeZone),
+      keyboard: buildLieferandoKeyboard(),
+    };
   }
   return {
     text: buildScopeText(view.scope, state, now, timeZone),
@@ -358,6 +461,8 @@ export function buildPanel(
 /** Короткий toast для answerCallbackQuery. */
 function toastFor(action: ControlAction, state: BlockState, now: Date = new Date()): string {
   if (action.type === 'root' || action.type === 'menu') return '';
+  if (action.type === 'lief_menu' || action.type === 'lief_status' || action.type === 'lief_toggle')
+    return '';
   const until = untilForScope(state, action.scope);
   const what = action.scope === 'all' ? 'Приём' : WORKSHOPS[action.scope].ru;
   if (action.type === 'block' && until) {
@@ -381,6 +486,9 @@ export interface ControlDeps {
   sendPanel: (chatId: number | string, panel: ControlPanel) => PromiseLike<unknown>;
   getBlockState: () => PromiseLike<Record<string, any>>;
   applyAction: (action: ControlAction, now?: Date) => PromiseLike<BlockState>;
+  /** Экран Lieferando (опционально — без них кнопка отвечает «не настроено»). */
+  getLieferandoState?: () => PromiseLike<LieferandoState>;
+  requestLieferandoToggle?: (action: LieferandoAction) => PromiseLike<LieferandoState>;
   allowedChatId: string;
   log?: (...args: any[]) => void;
 }
@@ -417,6 +525,47 @@ export async function handleControlUpdate(
     if (!action) {
       await ack();
       return { handled: false, reason: 'not_ours' };
+    }
+
+    // Экран Lieferando — отдельный конвейер: пишем КОМАНДУ агенту, а не блокировку.
+    if (
+      action.type === 'lief_menu' ||
+      action.type === 'lief_status' ||
+      action.type === 'lief_toggle'
+    ) {
+      if (!deps.getLieferandoState || !deps.requestLieferandoToggle) {
+        await ack('Lieferando не настроен');
+        return { handled: false, reason: 'error' };
+      }
+      let lief: LieferandoState;
+      try {
+        lief =
+          action.type === 'lief_toggle'
+            ? await deps.requestLieferandoToggle(action.action)
+            : await deps.getLieferandoState();
+      } catch (e) {
+        log('lieferando action failed', (e as Error)?.message);
+        await ack('Ошибка сохранения');
+        return { handled: false, reason: 'error' };
+      }
+      await ack(
+        action.type === 'lief_toggle'
+          ? `📤 Команда агенту: ${action.action === 'off' ? 'выключить' : 'включить'} MakiLove`
+          : ''
+      );
+      const messageId = cbq?.message?.message_id;
+      if (messageId != null) {
+        try {
+          await deps.editPanel(
+            chatId,
+            messageId,
+            buildPanel({ type: 'lieferando', lief }, EMPTY_BLOCK_STATE)
+          );
+        } catch (e) {
+          log('editPanel failed', (e as Error)?.message);
+        }
+      }
+      return { handled: true, reason: 'lieferando' };
     }
 
     // Навигация (⬅️ Назад / открыть цех) ничего не пишет — только перерисовка.
@@ -524,8 +673,27 @@ export async function processControlUpdate(
     getBlockState: () =>
       getSetting<Record<string, any>>(STORE_SETTINGS_KEY, {}).then((v) => v || {}),
     applyAction: (action) => applyBlockAction(action),
+    getLieferandoState: () => getLieferandoState(),
+    requestLieferandoToggle: (action) => requestLieferandoToggle(action),
     allowedChatId: config.chatId,
   };
 
   return handleControlUpdate(update, deps);
+}
+
+/** Служебное сообщение в группу стоп-бота (например, отчёт агента Lieferando). */
+export async function sendControlMessage(text: string): Promise<boolean> {
+  const cfg = await getControlConfig();
+  if (!cfg.botToken || !cfg.chatId) return false;
+  try {
+    const res = await tgApi(cfg.botToken, 'sendMessage', {
+      chat_id: cfg.chatId,
+      text,
+      parse_mode: 'HTML',
+    });
+    return Boolean(res?.ok);
+  } catch (e) {
+    console.error('[tg-control] sendControlMessage failed', (e as Error)?.message);
+    return false;
+  }
 }

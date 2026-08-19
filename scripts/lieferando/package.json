@@ -1,0 +1,15 @@
+{
+  "name": "lieferando-makilove-toggle",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "login": "node toggle.mjs login",
+    "list": "node toggle.mjs list",
+    "off": "node toggle.mjs off",
+    "on": "node toggle.mjs on",
+    "agent": "node agent.mjs"
+  },
+  "dependencies": {
+    "playwright": "^1.49.0"
+  }
+}

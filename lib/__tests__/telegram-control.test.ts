@@ -26,6 +26,9 @@ import {
   CTRL_UNBLOCK,
   CTRL_STATUS,
   CTRL_ROOT,
+  LIEF_MENU,
+  LIEF_OFF,
+  LIEF_ON,
   type BlockState,
 } from '../telegram-control';
 
@@ -156,6 +159,7 @@ describe('buildPanel', () => {
     expect(data).toContain(ctrlMenu('pizza'));
     expect(data).toContain(ctrlMenu('sushi'));
     expect(data).toContain(ctrlMenu('all'));
+    expect(data).toContain(LIEF_MENU);
   });
 
   it('экран цеха: кнопки со своей областью + назад', () => {
@@ -320,6 +324,55 @@ describe('handleControlUpdate', () => {
     const res = await handleControlUpdate(cbUpdate('status_ready_1'), deps);
     expect(deps.applyAction).not.toHaveBeenCalled();
     expect(res).toEqual({ handled: false, reason: 'not_ours' });
+  });
+
+  it('Lieferando: кнопка «Выключить» ставит команду и рисует экран Lieferando', async () => {
+    const lief = {
+      command: { id: 'c1', action: 'off', requestedAt: '2026-08-19T18:00:00.000Z' },
+      running: null,
+      lastResult: null,
+      itemsState: 'unknown',
+      agentSeenAt: null,
+    };
+    const deps = makeDeps({
+      getLieferandoState: vi.fn(async () => lief),
+      requestLieferandoToggle: vi.fn(async () => lief),
+    });
+    const res = await handleControlUpdate(cbUpdate(LIEF_OFF), deps);
+    expect(deps.requestLieferandoToggle).toHaveBeenCalledWith('off');
+    expect(deps.applyAction).not.toHaveBeenCalled(); // блокировки цехов не тронуты
+    const panel = (deps.editPanel as any).mock.calls[0][2];
+    expect(panel.text).toContain('Lieferando');
+    expect(panel.text).toContain('ждёт агента');
+    expect(panel.keyboard.inline_keyboard.flat().map((b: any) => b.callback_data)).toContain(
+      LIEF_ON
+    );
+    expect(res).toEqual({ handled: true, reason: 'lieferando' });
+  });
+
+  it('Lieferando: меню только читает состояние, без записи', async () => {
+    const deps = makeDeps({
+      getLieferandoState: vi.fn(async () => ({
+        command: null,
+        running: null,
+        lastResult: null,
+        itemsState: 'on',
+        agentSeenAt: null,
+      })),
+      requestLieferandoToggle: vi.fn(),
+    });
+    const res = await handleControlUpdate(cbUpdate(LIEF_MENU), deps);
+    expect(deps.requestLieferandoToggle).not.toHaveBeenCalled();
+    expect(deps.getLieferandoState).toHaveBeenCalledTimes(1);
+    expect(res).toEqual({ handled: true, reason: 'lieferando' });
+  });
+
+  it('Lieferando без зависимостей (не настроен) → error, ничего не пишем', async () => {
+    const deps = makeDeps(); // getLieferandoState/requestLieferandoToggle отсутствуют
+    const res = await handleControlUpdate(cbUpdate(LIEF_OFF), deps);
+    expect(deps.applyAction).not.toHaveBeenCalled();
+    expect(deps.editPanel).not.toHaveBeenCalled();
+    expect(res).toEqual({ handled: false, reason: 'error' });
   });
 
   it('разблокировка цеха → unblocked', async () => {
