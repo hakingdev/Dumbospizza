@@ -257,6 +257,10 @@ export function renderCardKeyboard(input: CardKeyboardInput): InlineKeyboardMark
     case 'on_the_way':
       rows.push([{ text: '✅ Доставлен', callback_data: `status_completed_${id}` }]);
       rows.push([{ text: '⚠️ Проблема с доставкой', callback_data: `card_pmenu_${id}` }]);
+      // Путь назад обязателен: в «В пути» заказ попадает одним касанием с
+      // терминала («Ist unterwegs»), и ошибочный перевод (#260820002) иначе
+      // не откатить — карточка предлагала только «Доставлен».
+      rows.push([{ text: '↩️ Вернуть в готовку', callback_data: `status_preparing_${id}` }]);
       break;
   }
 

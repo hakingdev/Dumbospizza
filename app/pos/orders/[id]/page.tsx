@@ -30,6 +30,12 @@ import {
   type PosOrderDetail,
 } from '../../../../components/pos/data';
 import { posDisplayStatus, toOrderStatus, type PosBoardStatus } from '../../../../lib/pos/board';
+import {
+  POS_CONFIRM_SHEET,
+  POS_DETAIL_VIEW,
+  posActionIntent,
+  type PosAction,
+} from '../../../../lib/pos/detail-actions';
 
 /**
  * 07 · Bestelldetails, а также 16, 17 (состояния печати), 18–21 (по статусам)
@@ -50,56 +56,10 @@ import { posDisplayStatus, toOrderStatus, type PosBoardStatus } from '../../../.
  * доедет ни до Telegram, ни до гостя.
  */
 
-/** Кнопка панели действий: подпись, вид и то, во что она переводит заказ. */
-interface PosAction {
-  label: string;
-  variant?: 'primary' | 'ghost';
-  /** Куда переводим заказ. Пусто — действие не про статус. */
-  next?: PosBoardStatus;
-  /** Отмена спрашивает подтверждение: она уведомляет гостя и её не отменить. */
-  confirm?: boolean;
-}
-
-const CANCEL: PosAction = { label: 'Stornieren', variant: 'ghost', next: 'cancelled', confirm: true };
-const BACK: PosAction = { label: 'Zurück zur Liste', variant: 'ghost' };
-
-const VIEW: Record<
-  PosBoardStatus,
-  { step?: 1 | 2 | 3 | 4; canExtend: boolean; actions: PosAction[] }
-> = {
-  new: {
-    step: 1,
-    canExtend: false,
-    // Принять заказ = назначить время. Отдельной кнопки «принять без времени»
-    // нет: гость всё равно спросит, когда, а кухня уже забыла.
-    actions: [CANCEL, { label: 'Annehmen' }],
-  },
-  preparing: {
-    step: 2,
-    canExtend: true,
-    // Сразу в «Unterwegs», минуя «Bereit zur Lieferung». Для ресторана это один
-    // шаг: заказ снимают с кухни и отдают курьеру, промежуточного состояния
-    // «стоит готовый на полке» в реальной смене нет — а лишняя кнопка означала
-    // лишнее касание и заказ, забытый в статусе, которого никто не ведёт.
-    actions: [CANCEL, { label: 'Ist unterwegs', next: 'delivering' }],
-  },
-  // Готовый САМОВЫВОЗ: доставку с этим статусом экран показывает как
-  // 'delivering' (см. posDisplayStatus), сюда доходит только заказ, который
-  // ждёт гостя у стойки. Ему нужен один жест — «забрал», а не «уехал».
-  ready: {
-    step: 3,
-    canExtend: false,
-    actions: [CANCEL, { label: 'Abgeholt', next: 'delivered' }],
-  },
-  delivering: {
-    step: 3,
-    canExtend: false,
-    actions: [{ label: 'Zurück', variant: 'ghost' }, { label: 'Zugestellt', next: 'delivered' }],
-  },
-  delivered: { step: 4, canExtend: false, actions: [BACK] },
-  // Отменённый заказ прогресс не показывает: ему некуда двигаться.
-  cancelled: { canExtend: false, actions: [BACK] },
-};
+// Набор кнопок по статусам и разбор нажатий переехали в lib/pos/detail-actions.ts:
+// после заказа #260820002 (касание при выходе отправило заказ в «Unterwegs»)
+// правило «что подтверждается» проверяется тестом, а тест не должен рендерить
+// страницу.
 
 /**
  * kitchenPrintStatus из базы → состояние карточки бона.
@@ -192,7 +152,7 @@ export default function OrderDetailPage() {
   const [busy, setBusy] = useState(false);
 
   const order = state.status === 'ready' ? state.data : null;
-  const view = order ? VIEW[posDisplayStatus(order)] : null;
+  const view = order ? POS_DETAIL_VIEW[posDisplayStatus(order)] : null;
 
   const say = (message: string) => {
     setToast(message);
@@ -220,19 +180,17 @@ export default function OrderDetailPage() {
     run(`/api/orders/${params.id}`, { status: toOrderStatus(next) }, 'Status aktualisiert', 'PUT');
 
   const act = (action: PosAction) => {
-    if (action.confirm) {
-      setConfirming(action);
-      return;
-    }
-    if (action.next) {
-      changeStatus(action.next);
-      return;
-    }
+    const intent = posActionIntent(action);
+    if (intent.kind === 'confirm') setConfirming(action);
+    else if (intent.kind === 'status') changeStatus(intent.next);
     // Кнопки без статуса ведут дальше по потоку: приём — на выбор времени,
     // «Zurück» — обратно в ленту.
-    if (action.label === 'Annehmen') router.push(`/pos/orders/new/time?id=${params.id}`);
+    else if (intent.kind === 'accept-flow') router.push(`/pos/orders/new/time?id=${params.id}`);
     else router.push('/pos/orders');
   };
+
+  // Текст шторки подтверждения — по целевому статусу нажатого действия.
+  const confirmSheet = confirming?.next ? POS_CONFIRM_SHEET[confirming.next] : undefined;
 
   return (
     <>
@@ -358,22 +316,23 @@ export default function OrderDetailPage() {
       )}
 
       {/*
-        Отмены в макете нет, но её последствия необратимы: заказ уходит гостю
-        сообщением, а начисленные баллы откатываются. Нажатие мимо кнопки не
-        должно этого делать.
+        Подтверждений в макете нет, но последствия этих действий необратимы:
+        заказ уходит гостю сообщением (отмена вдобавок откатывает баллы).
+        Нажатие мимо кнопки не должно этого делать — см. lib/pos/detail-actions.ts
+        и заказ #260820002.
       */}
       <PosSheet
-        open={confirming !== null}
+        open={confirming !== null && confirmSheet !== undefined}
         align="center"
-        title="Bestellung stornieren?"
-        subtitle="Der Gast bekommt eine Nachricht. Das lässt sich nicht zurücknehmen."
+        title={confirmSheet?.title ?? ''}
+        subtitle={confirmSheet?.subtitle}
         onClose={() => setConfirming(null)}
         actions={
           <>
             <PosButton label="Zurück" variant="ghost" onClick={() => setConfirming(null)} />
             <PosButton
-              label="Stornieren"
-              variant="danger"
+              label={confirmSheet?.confirmLabel ?? ''}
+              variant={confirmSheet?.danger ? 'danger' : 'primary'}
               disabled={busy}
               onClick={() => confirming?.next && changeStatus(confirming.next)}
             />
