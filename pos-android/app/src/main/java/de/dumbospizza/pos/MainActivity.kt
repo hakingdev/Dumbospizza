@@ -70,7 +70,7 @@ class MainActivity : Activity() {
         log("Dumbo POS — служебный экран")
         log("прибор: ${PosPrefs.deviceId(this)}")
         log("служба: ${if (PosPrefs.serviceEnabled(this)) "включена" else "выключена"}")
-        log("терминал: ${if (PosPrefs.nativeUi(this)) "нативный (превью)" else "WebView"}")
+        log("терминал: ${if (PosPrefs.nativeUi(this)) "нативный" else "WebView (резерв)"}")
         bindPrinter()
     }
 
@@ -116,13 +116,13 @@ class MainActivity : Activity() {
         root.addView(button("Параметры принтера") { showPrinterInfo() })
         root.addView(button("Пробный чек") { printProbeReceipt() })
         root.addView(button("Самотест принтера") { selfTest() })
-        // Тумблер режима терминала. Нативный интерфейс едет на прибор в том же
-        // APK задолго до готовности, поэтому включение живёт здесь, за PIN, а
-        // умолчание всегда WebView. Применяется при возврате в терминал.
+        // Тумблер режима терминала. Основной режим — нативный; WebView оставлен
+        // резервом, чтобы откат не требовал переустановки APK. Живёт за PIN.
+        // Применяется при возврате в терминал.
         uiModeButton = button(uiModeCaption()) {
             PosPrefs.setNativeUi(this, !PosPrefs.nativeUi(this))
             uiModeButton.text = uiModeCaption()
-            log("терминал: ${if (PosPrefs.nativeUi(this)) "НАТИВНЫЙ (превью)" else "WebView"}")
+            log("терминал: ${if (PosPrefs.nativeUi(this)) "НАТИВНЫЙ" else "WebView (резерв)"}")
             log("  применится при возврате в терминал")
         }
         root.addView(uiModeButton)
@@ -147,8 +147,8 @@ class MainActivity : Activity() {
     }
 
     private fun uiModeCaption(): String =
-        if (PosPrefs.nativeUi(this)) "Терминал: НАТИВНЫЙ (превью) → вернуть WebView"
-        else "Терминал: WebView → включить НАТИВНЫЙ (превью)"
+        if (PosPrefs.nativeUi(this)) "Терминал: НАТИВНЫЙ → откат на WebView (резерв)"
+        else "Терминал: WebView (резерв) → вернуть НАТИВНЫЙ"
 
     private fun label(text: String) = TextView(this).apply {
         this.text = text
