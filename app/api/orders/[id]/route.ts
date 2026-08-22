@@ -113,6 +113,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
     // статуса это тот же персонал у стойки — веб-терминал шлёт этот же PUT
     // из-под сессии. authorizePos сам логирует прибор и валидирует ключ.
     const session = await getServerSession(authOptions);
+    let deviceActor: string | null = null;
     if (!session || !isStaff(session)) {
       const device = await authorizePos(request);
       if (!device.ok) {
@@ -121,6 +122,9 @@ export async function PUT(request: NextRequest, { params }: Params) {
           error: 'Unauthorized'
         }, { status: 401 });
       }
+      // В историю статусов пишем прибор: session ниже НЕЛЬЗЯ разыменовывать —
+      // у входа по ключу её нет.
+      deviceActor = `pos:${request.headers.get('x-pos-device') || 'device'}`;
     }
     
     const data = await request.json();
@@ -163,7 +167,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
       order.statusUpdates.push({
         status,
         timestamp: new Date(),
-        updatedBy: (session.user as { id?: string })?.id || session.user?.email || session.user?.name || 'system'
+        updatedBy: deviceActor || (session?.user as { id?: string })?.id || session?.user?.email || session?.user?.name || 'system'
       });
     }
     
