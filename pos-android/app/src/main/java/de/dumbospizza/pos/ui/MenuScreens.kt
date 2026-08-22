@@ -260,11 +260,17 @@ fun PosRadioOption(title: String, sub: String, selected: Boolean, onSelect: () -
 
 /** 09 · Speisekarte · Kategorien. Наверху — состояние кухни, не поиск ради поиска. */
 @Composable
-fun MenuScreen(loader: MenuLoader, onOpenCategory: (String) -> Unit) {
+fun MenuScreen(
+    loader: MenuLoader,
+    onOpenCategory: (String) -> Unit,
+    onKitchenStatus: () -> Unit,
+    onKitchenStop: () -> Unit,
+) {
     LaunchedEffect(loader) { loader.pollCategories() }
     val scope = rememberCoroutineScope()
     val ready = loader.categories is PosLoad.Ready
     val categories = loader.categories.readyOrNull() ?: emptyList()
+    val stoppedTotal = categories.sumOf { it.stoppedCount }
 
     /** Самый долгий из активных стопов — о нём и говорит плашка наверху. */
     val stop = loader.kitchen.filter { it.minutesLeft > 0 }.maxByOrNull { it.minutesLeft }
@@ -295,13 +301,28 @@ fun MenuScreen(loader: MenuLoader, onOpenCategory: (String) -> Unit) {
                             .background(PosColors.tintPreparing)
                             .padding(horizontal = 12.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         Text(
                             "${scopeTitle(stop.scope)} · noch ${stop.minutesLeft} Min",
                             style = PosType.bodyS,
                             color = PosColors.statusPreparing,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Text(
+                            "Ändern",
+                            style = PosType.bodyS,
+                            color = PosColors.accent,
+                            modifier = Modifier.clickable(onClick = onKitchenStatus),
                         )
                     }
+                }
+            }
+
+            item(key = "kitchen-buttons") {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    MenuHeaderButton("Küche stoppen", Modifier.weight(1f), onKitchenStop)
+                    MenuHeaderButton("Stop-Liste $stoppedTotal", Modifier.weight(1f), onKitchenStatus)
                 }
             }
 
@@ -323,6 +344,23 @@ fun MenuScreen(loader: MenuLoader, onOpenCategory: (String) -> Unit) {
                 }
             }
         }
+    }
+}
+
+/** Кнопка над категориями, 50 dp — вход в стоп кухни и статус. */
+@Composable
+private fun MenuHeaderButton(label: String, modifier: Modifier, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(12.dp)
+    Box(
+        modifier = modifier
+            .height(50.dp)
+            .clip(shape)
+            .background(PosColors.bgSurface)
+            .border(1.dp, PosColors.border, shape)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, style = PosType.labelM, color = PosColors.textPrimary, maxLines = 1)
     }
 }
 

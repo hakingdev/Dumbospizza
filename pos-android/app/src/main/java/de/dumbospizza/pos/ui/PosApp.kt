@@ -84,6 +84,7 @@ fun PosApp(
         // экранов меню — лента заказов важнее, её не разбавляем лишним трафиком.
         val appContext = LocalContext.current.applicationContext
         val menuLoader = remember { MenuLoader(appContext) }
+        var menuScreen by rememberSaveable { mutableStateOf(MENU_CATS) }
         var menuCategoryId by rememberSaveable { mutableStateOf<String?>(null) }
 
         // Приём заказа (01 · Neue Bestellung → 02 · Zeit festlegen) лежит ПОВЕРХ
@@ -128,22 +129,47 @@ fun PosApp(
                                     detailOrderId = order.id
                                 }
                             }
-                            PosSection.MENU -> {
-                                val categoryId = menuCategoryId
-                                if (categoryId == null) {
-                                    MenuScreen(menuLoader) { menuCategoryId = it }
-                                } else {
+                            PosSection.MENU -> when (menuScreen) {
+                                MENU_CAT -> menuCategoryId?.let { categoryId ->
                                     MenuCategoryScreen(
                                         menuLoader,
                                         categoryId,
-                                        onBack = { menuCategoryId = null },
+                                        onBack = { menuScreen = MENU_CATS },
                                     )
-                                }
+                                } ?: run { menuScreen = MENU_CATS }
+                                MENU_KITCHEN -> KitchenStatusScreen(
+                                    menuLoader,
+                                    onBack = { menuScreen = MENU_CATS },
+                                )
+                                MENU_STOP -> KitchenStopScreen(
+                                    menuLoader,
+                                    nowMs = nowMs,
+                                    onBack = { menuScreen = MENU_CATS },
+                                    // Стоп встал — уходим на панель состояния:
+                                    // видно, что именно встало и до какого часа.
+                                    onDone = { menuScreen = MENU_KITCHEN },
+                                )
+                                else -> MenuScreen(
+                                    menuLoader,
+                                    onOpenCategory = { id ->
+                                        menuCategoryId = id
+                                        menuScreen = MENU_CAT
+                                    },
+                                    onKitchenStatus = { menuScreen = MENU_KITCHEN },
+                                    onKitchenStop = { menuScreen = MENU_STOP },
+                                )
                             }
                             PosSection.MORE -> PosSectionPlaceholder(PosSection.MORE)
                         }
                     }
-                    PosBottomNav(section) { section = it }
+                    PosBottomNav(section) { picked ->
+                        // Повторный тап по «Speisekarte» возвращает к категориям:
+                        // иного пути наверх с глубины раздела на киоске нет.
+                        if (picked == PosSection.MENU && section == PosSection.MENU) {
+                            menuScreen = MENU_CATS
+                        }
+                        section = picked
+                    }
                 }
 
                 // Деталь рисуется ПОД потоком приёма: пришедший новый заказ
@@ -215,6 +241,11 @@ fun PosApp(
 private const val ACCEPT_NONE = "none"
 private const val ACCEPT_ALERT = "alert"
 private const val ACCEPT_TIME = "time"
+
+private const val MENU_CATS = "cats"
+private const val MENU_CAT = "cat"
+private const val MENU_KITCHEN = "kitchen"
+private const val MENU_STOP = "stop"
 
 /**
  * Тикающие часы прибора с поправкой на сервер (usePosNow). Поправку читаем на

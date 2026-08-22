@@ -113,6 +113,40 @@ class MenuLoader(private val context: Context) {
         busy = false
     }
 
+    /**
+     * Поставить, продлить или снять стоп приёма (`minutes = 0` снимает). Пишет
+     * туда же, куда стоп-бот и админка, — прибор просто ещё одна кнопка к
+     * общему выключателю. null — успех, иначе текст ошибки.
+     */
+    suspend fun setStop(scope: String, minutes: Int): String? {
+        if (busy) return null
+        busy = true
+        val result = withContext(Dispatchers.IO) {
+            runCatching {
+                PosApi.post(
+                    context,
+                    "/api/pos/v1/kitchen",
+                    JSONObject().put("scope", scope).put("minutes", minutes),
+                )
+            }
+        }
+        val error = result.fold(
+            onFailure = { it.message ?: "Keine Verbindung" },
+            onSuccess = { http ->
+                when {
+                    http.code == 401 -> "Zugriff verweigert — Schlüssel prüfen"
+                    http.code !in 200..299 -> runCatching {
+                        JSONObject(http.body).optString("error").ifEmpty { null }
+                    }.getOrNull() ?: "HTTP ${http.code}"
+                    else -> null
+                }
+            },
+        )
+        refreshCategories()
+        busy = false
+        return error
+    }
+
     private suspend fun patchAvailability(
         productId: String,
         available: Boolean? = null,
