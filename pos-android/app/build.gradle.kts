@@ -90,6 +90,13 @@ android {
         // из корневого build.gradle.kts. Обновлять только вместе.
         kotlinCompilerExtensionVersion = "1.5.15"
     }
+
+    lint {
+        // lintVitalRelease валит релизную сборку требованием Play Store
+        // «targetSdk ≥ 33», но targetSdk = 30 выбран намеренно: приложение
+        // раздаётся сайдлоадом (см. defaultConfig выше), Play Store не участвует.
+        disable += "ExpiredTargetSdkVersion"
+    }
 }
 
 dependencies {
