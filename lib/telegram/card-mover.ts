@@ -23,6 +23,7 @@
  */
 import {
   callBotApi,
+  isCopyMissingError,
   isDeleteMissingError,
   isMessageGoneError,
   isNotModifiedError,
@@ -84,6 +85,11 @@ export interface CardTelegramApi {
   editKeyboard(input: { messageId: number; keyboard: InlineKeyboardMarkup }): Promise<void>;
   /** 'missing' — сообщения уже нет; для переезда это успех. */
   remove(messageId: number): Promise<'deleted' | 'missing'>;
+  /**
+   * Копия сообщения в другую тему БЕЗ клавиатуры (copyMessage её не переносит) —
+   * так карточка «уезжает» в архив. 'missing' — оригинала уже нет.
+   */
+  copyTo(input: { messageId: number; threadId: number }): Promise<number | 'missing'>;
   reopenTopic(threadId: number): Promise<void>;
   /** Короткое служебное сообщение в тему (проблема с доставкой). */
   alert(input: { threadId: number; text: string }): Promise<number>;
@@ -160,6 +166,27 @@ export function createCardApi(
         return 'deleted';
       } catch (e) {
         if (isDeleteMissingError(e)) return 'missing';
+        throw e;
+      }
+    },
+
+    async copyTo(input) {
+      try {
+        const msg = await call<{ message_id: number }>(
+          'copyMessage',
+          {
+            chat_id: config.chatId,
+            from_chat_id: config.chatId,
+            message_id: input.messageId,
+            message_thread_id: input.threadId,
+            disable_notification: true,
+          },
+          OUTBOX_PRIORITY.cleanup,
+          'copyMessage'
+        );
+        return msg.message_id;
+      } catch (e) {
+        if (isCopyMissingError(e)) return 'missing';
         throw e;
       }
     },

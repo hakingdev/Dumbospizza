@@ -97,8 +97,10 @@ class MemoryCardStore implements OrderCardStore {
 
 function makeApi(overrides: Partial<CardTelegramApi> = {}) {
   const removed: number[] = [];
-  const api: CardTelegramApi & { removed: number[] } = {
+  const copied: Array<{ messageId: number; threadId: number }> = [];
+  const api: CardTelegramApi & { removed: number[]; copied: typeof copied } = {
     removed,
+    copied,
     async send() {
       throw new Error('send не ожидался');
     },
@@ -108,12 +110,16 @@ function makeApi(overrides: Partial<CardTelegramApi> = {}) {
       removed.push(messageId);
       return 'deleted';
     },
+    async copyTo(input) {
+      copied.push(input);
+      return 5000 + copied.length;
+    },
     async reopenTopic() {},
     async alert() {
       return 1;
     },
     ...overrides,
-  } as CardTelegramApi & { removed: number[] };
+  } as CardTelegramApi & { removed: number[]; copied: typeof copied };
   return api;
 }
 
@@ -257,6 +263,126 @@ describe('cleanupStaleOrderCards', () => {
     const result = await cleanupStaleOrderCards({ config: null, log: silent });
     expect(result.enabled).toBe(false);
     expect(result.scanned).toBe(0);
+  });
+});
+
+describe('cleanupStaleOrderCards: перенос в «Архив»', () => {
+  const ARCHIVE_CONFIG: ForumConfig = { ...CONFIG, archiveTopicId: 77 };
+
+  it('карточка уезжает в архив: копия → удаление оригинала → строка забыта', async () => {
+    const store = new MemoryCardStore()
+      .add({ orderId: 'вчера-1', createdAt: at('2026-08-18T17:00:00Z') })
+      .add({ orderId: 'сегодня-1', createdAt: at('2026-08-18T23:30:00Z') });
+    const api = makeApi();
+
+    const result = await cleanupStaleOrderCards({
+      config: ARCHIVE_CONFIG,
+      store,
+      api,
+      now: () => at('2026-08-19T01:00:00Z'),
+      log: silent,
+    });
+
+    expect(result.archived).toBe(1);
+    expect(result.deleted).toBe(1);
+    expect(api.copied).toEqual([{ messageId: 1000, threadId: 77 }]);
+    expect(api.removed).toEqual([1000]);
+    expect(await store.getByOrderId('вчера-1')).toBeNull();
+    // Текущая смена в архив не едет.
+    expect(await store.getByOrderId('сегодня-1')).not.toBeNull();
+  });
+
+  it('копия не удалась — оригинал не трогаем, строка остаётся', async () => {
+    const store = new MemoryCardStore().add({ orderId: 'упрямая', createdAt: at('2026-08-17T17:00:00Z') });
+    const api = makeApi({
+      async copyTo() {
+        throw new TelegramApiError({ method: 'copyMessage', code: 400, description: 'Bad Request' });
+      },
+    });
+
+    const result = await cleanupStaleOrderCards({
+      config: ARCHIVE_CONFIG,
+      store,
+      api,
+      now: () => at('2026-08-19T01:00:00Z'),
+      log: silent,
+    });
+
+    expect(result.failed).toBe(1);
+    expect(result.archived).toBe(0);
+    expect(api.removed).toHaveLength(0);
+    expect(await store.getByOrderId('упрямая')).not.toBeNull();
+  });
+
+  it('копия есть, удаление оригинала не удалось — строка остаётся до повтора', async () => {
+    const store = new MemoryCardStore().add({ orderId: 'дубль', createdAt: at('2026-08-17T17:00:00Z') });
+    const api = makeApi({
+      async remove() {
+        throw new TelegramApiError({ method: 'deleteMessage', code: 400, description: 'Bad Request' });
+      },
+    });
+
+    const result = await cleanupStaleOrderCards({
+      config: ARCHIVE_CONFIG,
+      store,
+      api,
+      now: () => at('2026-08-19T01:00:00Z'),
+      log: silent,
+    });
+
+    expect(result.archived).toBe(1);
+    expect(result.failed).toBe(1);
+    // Сообщение с кнопками осталось в группе — за ним обязана остаться строка.
+    expect(await store.getByOrderId('дубль')).not.toBeNull();
+  });
+
+  it('оригинала уже нет — копировать и удалять нечего, строку забываем', async () => {
+    const store = new MemoryCardStore().add({ orderId: 'убрали-руками', createdAt: at('2026-08-17T17:00:00Z') });
+    const api = makeApi({ async copyTo() { return 'missing'; } });
+
+    const result = await cleanupStaleOrderCards({
+      config: ARCHIVE_CONFIG,
+      store,
+      api,
+      now: () => at('2026-08-19T01:00:00Z'),
+      log: silent,
+    });
+
+    expect(result.archived).toBe(0);
+    expect(result.missing).toBe(1);
+    expect(api.removed).toHaveLength(0);
+    expect(await store.getByOrderId('убрали-руками')).toBeNull();
+  });
+
+  it('тема архива закрыта — открываем и повторяем копию', async () => {
+    const store = new MemoryCardStore().add({ orderId: 'вчера-1', createdAt: at('2026-08-17T17:00:00Z') });
+    const reopened: number[] = [];
+    let attempts = 0;
+    const api = makeApi({
+      async copyTo() {
+        attempts += 1;
+        if (attempts === 1) {
+          throw new TelegramApiError({ method: 'copyMessage', code: 400, description: 'TOPIC_CLOSED' });
+        }
+        return 5001;
+      },
+      async reopenTopic(threadId) {
+        reopened.push(threadId);
+      },
+    });
+
+    const result = await cleanupStaleOrderCards({
+      config: ARCHIVE_CONFIG,
+      store,
+      api,
+      now: () => at('2026-08-19T01:00:00Z'),
+      log: silent,
+    });
+
+    expect(reopened).toEqual([77]);
+    expect(result.archived).toBe(1);
+    expect(result.deleted).toBe(1);
+    expect(await store.getByOrderId('вчера-1')).toBeNull();
   });
 });
 

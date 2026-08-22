@@ -149,6 +149,9 @@ function makeApi(overrides: Partial<CardTelegramApi> = {}) {
       deleted.push(messageId);
       return 'deleted';
     },
+    async copyTo() {
+      return ++nextMessageId;
+    },
     async reopenTopic(threadId) {
       reopened.push(threadId);
     },

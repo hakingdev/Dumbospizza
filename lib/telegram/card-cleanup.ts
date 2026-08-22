@@ -11,15 +11,23 @@
  * уходящему дню. Одна арифметика на оба потребителя: две копии разошлись бы на
  * переводе часов, и разошлись бы молча.
  *
- * Убираем ВСЁ старое, включая незакрытые карточки: история заказов живёт в
- * админке, а группа — это рабочий стол смены, а не архив. Незакрытые считаем
- * отдельно и пишем в лог: заказ, забытый в «Готовится», — повод разобраться, а
- * не тихо стереть.
+ * Куда девается старое — решает тема «🗂 Архив» (ForumConfig.archiveTopicId):
+ *   - тема задана: карточка ПЕРЕЕЗЖАЕТ в архив — copyMessage в тему архива
+ *     (клавиатуру copyMessage не переносит, и это правильно: архив — записи,
+ *     а не рабочие кнопки), затем удаление оригинала. Копия строго ПЕРВАЯ:
+ *     пока архивная копия не подтверждена, оригинал трогать нельзя;
+ *   - темы нет: старое просто удаляется (историческое поведение) — история
+ *     заказов и так живёт в админке.
+ *
+ * Убираем ВСЁ старое, включая незакрытые карточки: группа — это рабочий стол
+ * смены. Незакрытые считаем отдельно и пишем в лог: заказ, забытый в
+ * «Готовится», — повод разобраться, а не тихо стереть.
  *
  * Строку в order_cards удаляем ТОЛЬКО когда сообщения в Telegram точно нет.
  * Иначе карточка осталась бы висеть с кнопками, за которыми уже нет записи —
  * клик по такой кнопке не находит заказ и выглядит как поломка бота. Не
- * удалилось — оставляем строку, следующий заход попробует снова.
+ * удалилось — оставляем строку, следующий заход попробует снова (в режиме
+ * архива это может дать вторую копию в архиве — терпимо и видно в логе).
  *
  * ВАЖНО (ограничение Telegram): бот не может удалять сообщения старше 48 часов.
  * Если уборка не отработала двое суток, карточки останутся в группе навсегда —
@@ -29,6 +37,7 @@
 import { createCardApi, type CardTelegramApi } from './card-mover';
 import { getOrderCardStore, type OrderCardRow, type OrderCardStore } from './card-store';
 import { getForumConfig, isTerminalCardStatus, type ForumConfig } from './forum';
+import { isTopicClosedError } from './bot-api';
 import { workingDayStart } from '../orders/working-day';
 
 /** После этого возраста Telegram уже отказывается удалять сообщение. */
@@ -41,6 +50,7 @@ const DEFAULT_LIMIT = 300;
  * Сколько времени себе отводим. Очередь исходящих держит ~1 действие в
  * секунду (лимит группы у Telegram), поэтому упереться в потолок функции
  * реально — лучше остановиться самим и честно сказать, сколько осталось.
+ * В режиме архива карточка стоит ДВА действия (копия + удаление).
  */
 const DEFAULT_BUDGET_MS = 240_000;
 
@@ -62,11 +72,13 @@ export interface CleanupResult {
   cutoff: string | null;
   /** Сколько карточек прошлых смен нашлось. */
   scanned: number;
+  /** Скопировано в тему «Архив» (0, если тема архива не настроена). */
+  archived: number;
   /** Сообщений удалено нами. */
   deleted: number;
   /** Сообщений уже не было (удалили руками или Telegram отказал по возрасту). */
   missing: number;
-  /** Не удалось удалить — строка осталась, попробуем в следующий заход. */
+  /** Не удалось убрать — строка осталась, попробуем в следующий заход. */
   failed: number;
   /** Сколько из убранных были НЕ закрыты (застряли в работе). */
   unfinished: number;
@@ -83,6 +95,22 @@ function tooOldToDelete(card: OrderCardRow, now: Date): boolean {
   return now.getTime() - createdAt > TELEGRAM_DELETE_WINDOW_MS;
 }
 
+/** Копия в архив с автолечением закрытой темы (как у отправки карточек). */
+async function copyWithTopicRecovery(
+  api: CardTelegramApi,
+  input: { messageId: number; threadId: number },
+  log: (...args: any[]) => void
+): Promise<number | 'missing'> {
+  try {
+    return await api.copyTo(input);
+  } catch (e) {
+    if (!isTopicClosedError(e)) throw e;
+    log('тема архива закрыта — открываю и повторяю копию', { threadId: input.threadId });
+    await api.reopenTopic(input.threadId);
+    return api.copyTo(input);
+  }
+}
+
 /**
  * Убрать из группы всё, что относится к прошедшим сменам.
  * Идемпотентно: повторный запуск не находит уже убранного.
@@ -97,6 +125,7 @@ export async function cleanupStaleOrderCards(deps: CleanupDeps = {}): Promise<Cl
       enabled: false,
       cutoff: null,
       scanned: 0,
+      archived: 0,
       deleted: 0,
       missing: 0,
       failed: 0,
@@ -110,6 +139,7 @@ export async function cleanupStaleOrderCards(deps: CleanupDeps = {}): Promise<Cl
   const api = deps.api ?? createCardApi(config);
   const limit = deps.limit ?? DEFAULT_LIMIT;
   const budgetMs = deps.budgetMs ?? DEFAULT_BUDGET_MS;
+  const archiveTopicId = config.archiveTopicId ?? null;
 
   const startedAt = now();
   const cutoff = workingDayStart(startedAt);
@@ -119,6 +149,7 @@ export async function cleanupStaleOrderCards(deps: CleanupDeps = {}): Promise<Cl
     enabled: true,
     cutoff: cutoff.toISOString(),
     scanned: cards.length,
+    archived: 0,
     deleted: 0,
     missing: 0,
     failed: 0,
@@ -145,17 +176,47 @@ export async function cleanupStaleOrderCards(deps: CleanupDeps = {}): Promise<Cl
       break;
     }
 
+    // Сначала копия в архив (если он настроен). Оригинал не трогаем, пока
+    // копия не подтверждена: провал копии = карточка остаётся на месте.
+    let originalGone = false;
+    if (archiveTopicId != null) {
+      let copied: number | 'missing';
+      try {
+        copied = await copyWithTopicRecovery(
+          api,
+          { messageId: card.messageId, threadId: archiveTopicId },
+          log
+        );
+      } catch (e) {
+        result.failed += 1;
+        log(
+          'копия в архив не удалась — карточка остаётся до следующего захода',
+          { order: card.orderNumber, messageId: card.messageId },
+          (e as Error)?.message
+        );
+        continue;
+      }
+      if (copied === 'missing') originalGone = true;
+      else result.archived += 1;
+    }
+
     let outcome: 'deleted' | 'missing';
-    try {
-      outcome = await api.remove(card.messageId);
-    } catch (e) {
-      result.failed += 1;
-      log(
-        'не удалось удалить карточку — оставляю строку до следующего захода',
-        { order: card.orderNumber, messageId: card.messageId },
-        (e as Error)?.message
-      );
-      continue;
+    if (originalGone) {
+      outcome = 'missing';
+    } else {
+      try {
+        outcome = await api.remove(card.messageId);
+      } catch (e) {
+        result.failed += 1;
+        log(
+          archiveTopicId != null
+            ? 'копия в архиве есть, но оригинал не удалился — повтор даст дубль в архиве'
+            : 'не удалось удалить карточку — оставляю строку до следующего захода',
+          { order: card.orderNumber, messageId: card.messageId },
+          (e as Error)?.message
+        );
+        continue;
+      }
     }
 
     if (outcome === 'missing') result.missing += 1;
@@ -168,7 +229,7 @@ export async function cleanupStaleOrderCards(deps: CleanupDeps = {}): Promise<Cl
       // Сообщения уже нет, а строка осталась: следующий заход снова попробует
       // удалить несуществующее сообщение (это «missing», не ошибка) и удалит
       // строку. Хуже, чем ничего, не станет.
-      log('карточка удалена, но строка не убралась', { order: card.orderNumber }, (e as Error)?.message);
+      log('карточка убрана, но строка не удалилась', { order: card.orderNumber }, (e as Error)?.message);
     }
   }
 

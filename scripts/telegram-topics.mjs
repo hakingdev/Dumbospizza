@@ -12,6 +12,9 @@
  *   node scripts/telegram-topics.mjs create            — создать темы и напечатать id
  *   node scripts/telegram-topics.mjs create --cancelled — плюс отдельная тема «Отменён»
  *   node scripts/telegram-topics.mjs create --save     — сразу записать id в storeSettings
+ *   node scripts/telegram-topics.mjs create-archive [--save] — ТОЛЬКО тема «🗂 Архив»
+ *       (для групп, где основные темы уже созданы; ночная уборка начнёт
+ *        переносить старые карточки туда вместо удаления)
  *   node scripts/telegram-topics.mjs check             — показать, что сейчас в конфиге
  *
  * ВНИМАНИЕ: Bot API не умеет перечислять существующие темы, поэтому повторный
@@ -34,6 +37,13 @@ const CANCELLED_TOPIC = {
   name: '❌ Отменён',
   env: 'TELEGRAM_TOPIC_CANCELLED',
   setting: 'telegramTopicCancelled',
+};
+
+const ARCHIVE_TOPIC = {
+  key: 'archive',
+  name: '🗂 Архив',
+  env: 'TELEGRAM_TOPIC_ARCHIVE',
+  setting: 'telegramTopicArchive',
 };
 
 function loadEnvFiles() {
@@ -129,8 +139,31 @@ async function create({ token, chatId }, { withCancelled, save }) {
   console.log('\nДальше: npx tsx scripts/migrate-telegram-forum-cards.ts --dry-run');
 }
 
+/** Одна тема «🗂 Архив» поверх уже созданных: боевую группу пересоздавать не надо. */
+async function createArchive({ token, chatId, settings }, { save }) {
+  const existing = settings[ARCHIVE_TOPIC.setting] ?? process.env[ARCHIVE_TOPIC.env];
+  if (existing) {
+    console.log(`Тема архива уже настроена: message_thread_id=${existing} — второй раз не создаю.`);
+    return;
+  }
+
+  const result = await tg(token, 'createForumTopic', { chat_id: chatId, name: ARCHIVE_TOPIC.name });
+  const id = result.message_thread_id;
+  console.log(`✓ ${ARCHIVE_TOPIC.name} → message_thread_id=${id}`);
+  console.log('\n--- .env / Vercel ---');
+  console.log(`${ARCHIVE_TOPIC.env}=${id}`);
+
+  if (save) {
+    await saveSettings({ [ARCHIVE_TOPIC.setting]: id });
+  } else {
+    console.log('\n(добавь строку в окружение или перезапусти с --save для записи в storeSettings)');
+  }
+
+  console.log('\nСо следующей ночной уборки старые карточки поедут в архив вместо удаления.');
+}
+
 function check({ settings }) {
-  const rows = [...TOPICS, CANCELLED_TOPIC].map((t) => ({
+  const rows = [...TOPICS, CANCELLED_TOPIC, ARCHIVE_TOPIC].map((t) => ({
     тема: t.name,
     storeSettings: settings[t.setting] ?? '—',
     env: process.env[t.env] ?? '—',
@@ -155,11 +188,15 @@ async function main() {
     });
     return;
   }
+  if (cmd === 'create-archive') {
+    await createArchive(config, { save: args.includes('--save') });
+    return;
+  }
   if (cmd === 'check') {
     check(config);
     return;
   }
-  console.log('Команды: create [--cancelled] [--save] | check');
+  console.log('Команды: create [--cancelled] [--save] | create-archive [--save] | check');
 }
 
 main().catch((e) => {

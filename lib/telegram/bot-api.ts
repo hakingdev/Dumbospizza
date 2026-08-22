@@ -70,6 +70,12 @@ export function isMessageGoneError(error: unknown): boolean {
   return d.includes('message to edit not found') || d.includes('message_id_invalid');
 }
 
+/** Копировать нечего: оригинал удалён руками раньше, чем до него дошла уборка. */
+export function isCopyMissingError(error: unknown): boolean {
+  const d = (error as TelegramApiError)?.description?.toLowerCase() || '';
+  return d.includes('message to copy not found') || d.includes('message_id_invalid');
+}
+
 export type BotApiFetch = typeof fetch;
 
 /**

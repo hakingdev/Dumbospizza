@@ -97,6 +97,12 @@ export interface ForumConfig {
   botToken: string;
   /** message_thread_id темы по состоянию карточки. */
   topics: Record<CardStatus, number>;
+  /**
+   * Тема «🗂 Архив»: ночная уборка переносит туда карточки прошедших смен,
+   * чтобы «Доставлен» к утру был пуст. Не задана — уборка просто удаляет
+   * старые карточки (историческое поведение).
+   */
+  archiveTopicId?: number | null;
   /** Статусы, переезд в которые идёт СО звуком (курьеру нужен сигнал). */
   soundStatuses: CardStatus[];
   /** Окно отката ошибочного нажатия у терминальных статусов, мс. */
@@ -190,6 +196,7 @@ export async function getForumConfig(): Promise<ForumConfig | null> {
     chatId,
     botToken,
     topics,
+    archiveTopicId: toTopicId(s.telegramTopicArchive ?? process.env.TELEGRAM_TOPIC_ARCHIVE),
     soundStatuses,
     undoWindowMs:
       Number.isFinite(undoRaw) && undoRaw >= 0 ? undoRaw * 60_000 : DEFAULT_UNDO_WINDOW_MS,
