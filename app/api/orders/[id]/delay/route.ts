@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { connectToDatabase } from '../../../../../lib/models';
 import { isStaff, authOptions } from '../../../../../lib/auth';
+import { authorizePos } from '../../../../../lib/pos/auth';
 import { applyOrderDelay, isValidDelayMinutes } from '../../../../../lib/orders/delay';
 
 export const dynamic = 'force-dynamic';
@@ -16,9 +17,14 @@ export const dynamic = 'force-dynamic';
  * (нет телефона на заказе / Twilio не настроен / уведомления выключены).
  */
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
+  // Персонал по сессии ИЛИ прибор по ключу X-Pos-Key: продление шлёт и
+  // нативный терминал (карточка «Zeit verlängern» на экране заказа).
   const session = await getServerSession(authOptions);
   if (!session || !isStaff(session)) {
-    return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    const device = await authorizePos(request);
+    if (!device.ok) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
   }
 
   try {

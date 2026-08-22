@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { connectToDatabase } from '../../../../../lib/models';
 import { isStaff, authOptions } from '../../../../../lib/auth';
+import { authorizePos } from '../../../../../lib/pos/auth';
 import { requestKitchenReprint } from '../../../../../lib/orders/print-queue';
 
 /**
@@ -17,16 +18,23 @@ export async function POST(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  // Персонал по сессии ИЛИ прибор по ключу X-Pos-Key: повтор бона просит и
+  // нативный терминал. В журнал печати пишем, кто именно попросил.
   const session = await getServerSession(authOptions);
+  let requestedBy = (session?.user as any)?.email || (session?.user as any)?.name || '';
   if (!session || !isStaff(session)) {
-    return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    const device = await authorizePos(request);
+    if (!device.ok) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+    requestedBy = `pos:${request.headers.get('x-pos-device') || 'device'}`;
   }
 
   try {
     await connectToDatabase();
 
     const order = await requestKitchenReprint(params.id, {
-      requestedBy: (session.user as any)?.email || (session.user as any)?.name || 'staff',
+      requestedBy: requestedBy || 'staff',
     });
 
     if (!order) {
