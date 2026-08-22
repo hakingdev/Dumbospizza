@@ -31,11 +31,7 @@ import kotlinx.coroutines.withContext
  * панели, служебный угол) остаётся общим для обоих режимов.
  */
 @Composable
-fun PosApp(
-    loader: BoardLoader,
-    onPlayAlert: () -> Boolean,
-    onStopAlert: () -> Unit,
-) {
+fun PosApp(loader: BoardLoader, bridge: PosBridge) {
     PosTheme {
         // Опрос ленты живёт на корне, а не в экране: переход на другую вкладку
         // навигации не должен останавливать поллинг и сбрасывать данные.
@@ -67,13 +63,13 @@ fun PosApp(
         LaunchedEffect(ringing) {
             if (ringing) {
                 while (isActive) {
-                    withContext(Dispatchers.IO) { onPlayAlert() }
+                    withContext(Dispatchers.IO) { bridge.playAlert() }
                     delay(ALERT_REPEAT_MS)
                 }
             } else {
                 // Рингтон бывает длиннее паузы между повторами — обрываем его
                 // сразу: и когда непринятых не осталось, и когда заглушили.
-                onStopAlert()
+                bridge.stopAlert()
             }
         }
 
@@ -84,6 +80,7 @@ fun PosApp(
         // экранов меню — лента заказов важнее, её не разбавляем лишним трафиком.
         val appContext = LocalContext.current.applicationContext
         val menuLoader = remember { MenuLoader(appContext) }
+        val settingsLoader = remember { SettingsLoader(appContext) }
         var menuScreen by rememberSaveable { mutableStateOf(MENU_CATS) }
         var menuCategoryId by rememberSaveable { mutableStateOf<String?>(null) }
 
@@ -159,7 +156,18 @@ fun PosApp(
                                     onKitchenStop = { menuScreen = MENU_STOP },
                                 )
                             }
-                            PosSection.MORE -> PosSectionPlaceholder(PosSection.MORE)
+                            PosSection.MORE -> MoreScreen(
+                                settings = settingsLoader,
+                                bridge = bridge,
+                                onKitchenStatus = {
+                                    section = PosSection.MENU
+                                    menuScreen = MENU_KITCHEN
+                                },
+                                onKitchenStop = {
+                                    section = PosSection.MENU
+                                    menuScreen = MENU_STOP
+                                },
+                            )
                         }
                     }
                     PosBottomNav(section) { picked ->
@@ -200,7 +208,7 @@ fun PosApp(
                                         val event = awaitPointerEvent(PointerEventPass.Initial)
                                         if (event.type == PointerEventType.Press && !alertSilenced) {
                                             alertSilenced = true
-                                            onStopAlert()
+                                            bridge.stopAlert()
                                         }
                                     }
                                 }

@@ -44,9 +44,12 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.activity.ComponentActivity
+import androidx.compose.runtime.State
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.platform.ComposeView
 import de.dumbospizza.pos.ui.BoardLoader
 import de.dumbospizza.pos.ui.PosApp
+import de.dumbospizza.pos.ui.PosBridge
 import org.json.JSONObject
 
 /**
@@ -99,6 +102,36 @@ class KioskActivity : ComponentActivity() {
 
     /** Данные нативного терминала. null в веб-режиме. */
     private var boardLoader: BoardLoader? = null
+
+    /** Растёт после каждого выбора звука — вкладка «Mehr» перечитывает имя. */
+    private val alertSoundVersion = mutableIntStateOf(0)
+
+    /**
+     * Прибор для нативного терминала — тот же набор, что веб-мост
+     * TerminalBridge, только прямыми вызовами без JavaScript.
+     */
+    private val posBridge = object : PosBridge {
+        override fun playAlert(): Boolean = playAlertFromUi()
+
+        override fun stopAlert() = stopAlertFromUi()
+
+        override fun openWifiPicker() {
+            runOnUiThread { showWifiPicker() }
+        }
+
+        override fun pickAlertSound() {
+            runOnUiThread { openAlertSoundPicker() }
+        }
+
+        override fun alertSoundName(): String = currentAlertName()
+
+        override fun openServiceScreen() {
+            runOnUiThread { openService() }
+        }
+
+        override val alertSoundVersion: State<Int>
+            get() = this@KioskActivity.alertSoundVersion
+    }
 
     /**
      * Последняя загрузка терминала провалилась.
@@ -200,13 +233,7 @@ class KioskActivity : ComponentActivity() {
             val loader = boardLoader ?: BoardLoader(applicationContext).also { boardLoader = it }
             root.addView(
                 ComposeView(this).apply {
-                    setContent {
-                        PosApp(
-                            loader = loader,
-                            onPlayAlert = { playAlertFromUi() },
-                            onStopAlert = { stopAlertFromUi() },
-                        )
-                    }
+                    setContent { PosApp(loader = loader, bridge = posBridge) }
                 },
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
@@ -723,8 +750,10 @@ class KioskActivity : ComponentActivity() {
         PosPrefs.setAlertSound(this, picked?.toString().orEmpty(), title)
 
         // Страница про выбор сама не узнает: пока был открыт пикер, она стояла
-        // на паузе и никаких событий не получала.
+        // на паузе и никаких событий не получала. Нативной вкладке о том же
+        // говорит счётчик версий.
         notifyAlertSound(currentAlertName())
+        alertSoundVersion.intValue++
     }
 
     /** Что показать во вкладке «Mehr». Пусто — играть нечего, звука на приборе нет. */
