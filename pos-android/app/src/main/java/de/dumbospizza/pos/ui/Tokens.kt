@@ -54,6 +54,10 @@ object PosType {
         fontSize = 12.sp, lineHeight = 16.sp,
         fontWeight = FontWeight.W500, letterSpacing = 0.3.sp,
     )
+    val label2xs = TextStyle(
+        fontSize = 10.sp, lineHeight = 13.sp,
+        fontWeight = FontWeight.W500, letterSpacing = 0.2.sp,
+    )
     val labelM = TextStyle(
         fontSize = 14.sp, lineHeight = 18.sp,
         fontWeight = FontWeight.W500, letterSpacing = 0.1.sp,

@@ -85,6 +85,36 @@ class OrderLoader(private val context: Context) {
         return error
     }
 
+    /**
+     * POST в подмаршрут заказа (`/delay`, `/reprint`) — те же существующие
+     * маршруты персонала, что зовёт веб-терминал: свои копии означали бы, что
+     * действие с прибора не доедет ни до Telegram, ни до гостя.
+     * null — успех, иначе текст ошибки.
+     */
+    suspend fun request(pathSuffix: String, body: JSONObject): String? {
+        val id = orderId ?: return "Keine Bestellung"
+        if (busy) return null
+        busy = true
+        val result = withContext(Dispatchers.IO) {
+            runCatching {
+                PosApi.post(context, "/api/orders/" + Uri.encode(id) + pathSuffix, body)
+            }
+        }
+        val error = result.fold(
+            onFailure = { it.message ?: "Keine Verbindung" },
+            onSuccess = { http ->
+                when {
+                    http.code == 401 -> "Zugriff verweigert — Schlüssel prüfen"
+                    http.code !in 200..299 -> parseError(http.body) ?: "HTTP ${http.code}"
+                    else -> null
+                }
+            },
+        )
+        if (error == null) refresh()
+        busy = false
+        return error
+    }
+
     private fun parseError(body: String): String? = runCatching {
         JSONObject(body).optString("error").ifEmpty { null }
     }.getOrNull()

@@ -726,6 +726,8 @@ fun PosSheet(
     title: String,
     subtitle: String? = null,
     onClose: () -> Unit,
+    /** true — как кадр 08: короткий заголовок и крупная величина по центру. */
+    centered: Boolean = false,
     actions: @Composable RowScope.() -> Unit,
     content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -761,6 +763,8 @@ fun PosSheet(
                     )
                     .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalAlignment =
+                    if (centered) Alignment.CenterHorizontally else Alignment.Start,
             ) {
                 Box(
                     Modifier
@@ -769,15 +773,27 @@ fun PosSheet(
                         .clip(RoundedCornerShape(2.dp))
                         .background(PosColors.borderStrong)
                 )
-                Text(title, style = PosType.titleL, color = PosColors.textPrimary)
+                Text(
+                    title,
+                    style = PosType.titleL,
+                    color = PosColors.textPrimary,
+                    textAlign = if (centered) TextAlign.Center else null,
+                )
                 if (subtitle != null) {
-                    Text(subtitle, style = PosType.bodyM, color = PosColors.textSecondary)
+                    Text(
+                        subtitle,
+                        style = PosType.bodyM,
+                        color = PosColors.textSecondary,
+                        textAlign = if (centered) TextAlign.Center else null,
+                    )
                 }
                 Column(
                     modifier = Modifier
                         .weight(1f, fill = false)
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalAlignment =
+                        if (centered) Alignment.CenterHorizontally else Alignment.Start,
                 ) {
                     content()
                 }

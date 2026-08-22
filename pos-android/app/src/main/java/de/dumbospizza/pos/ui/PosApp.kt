@@ -92,6 +92,12 @@ fun PosApp(
         var acceptStage by rememberSaveable { mutableStateOf(ACCEPT_NONE) }
         var acceptOrderId by rememberSaveable { mutableStateOf<String?>(null) }
 
+        // Экран заказа (07 · Bestelldetails) — свой загрузчик: пока открыта
+        // деталь, тревога может открыться поверх неё со СВОИМ заказом, и один
+        // общий опрос дёргался бы между двумя id.
+        val detailLoader = remember { OrderLoader(appContext) }
+        var detailOrderId by rememberSaveable { mutableStateOf<String?>(null) }
+
         // Тревога разворачивается САМА и с любого раздела — новый заказ важнее
         // меню и настроек. Не прерывается только уже идущий выбор времени.
         // Закрывается тоже сама, когда непринятых не осталось — принял этот
@@ -114,10 +120,12 @@ fun PosApp(
                         when (section) {
                             PosSection.ORDERS -> OrdersScreen(loader, nowMs) { order ->
                                 // Непринятый заказ ведёт в тревогу (там всегда
-                                // самый старый из новых); деталь остальных —
-                                // следующий этап.
+                                // самый старый из новых), остальные — на экран
+                                // заказа.
                                 if (order.displayStatus == PosStatus.NEW) {
                                     acceptStage = ACCEPT_ALERT
+                                } else {
+                                    detailOrderId = order.id
                                 }
                             }
                             PosSection.MENU -> {
@@ -136,6 +144,21 @@ fun PosApp(
                         }
                     }
                     PosBottomNav(section) { section = it }
+                }
+
+                // Деталь рисуется ПОД потоком приёма: пришедший новый заказ
+                // разворачивает тревогу поверх открытого экрана заказа.
+                detailOrderId?.let { id ->
+                    OrderDetailScreen(
+                        loader = detailLoader,
+                        orderId = id,
+                        nowMs = nowMs,
+                        onBack = { detailOrderId = null },
+                        onAcceptFlow = { acceptId ->
+                            acceptOrderId = acceptId
+                            acceptStage = ACCEPT_TIME
+                        },
+                    )
                 }
 
                 if (acceptStage != ACCEPT_NONE) {

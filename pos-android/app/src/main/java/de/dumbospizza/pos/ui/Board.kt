@@ -183,6 +183,10 @@ data class OrderDetail(
     val paymentMethod: String,
     val items: List<OrderItem>,
     val receiptLines: List<String>,
+    /** kitchenPrintStatus из базы: pending | printing | completed | failed. */
+    val printStatus: String,
+    /** Номер последнего задания печати; повтор встанет следующим. */
+    val printSeq: Int,
 )
 
 /** GET /api/pos/v1/orders/[id] → модель. null — сервер прислал не заказ. */
@@ -205,6 +209,8 @@ fun parseOrderDetail(root: JSONObject): OrderDetail {
             )
         },
         receiptLines = (0 until linesArr.length()).map { linesArr.getString(it) },
+        printStatus = o.optJSONObject("print")?.optString("status") ?: "pending",
+        printSeq = o.optJSONObject("print")?.optInt("seq") ?: 0,
     )
 }
 
