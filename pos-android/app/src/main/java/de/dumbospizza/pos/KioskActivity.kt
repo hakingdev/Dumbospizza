@@ -10,6 +10,7 @@ import android.content.IntentFilter
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.media.AudioAttributes
+import android.media.AudioManager
 import android.media.Ringtone
 import android.media.RingtoneManager
 import android.net.ConnectivityManager
@@ -162,6 +163,11 @@ class KioskActivity : ComponentActivity() {
         // месте видно именно его, и по умолчанию он чёрный — на кухне это
         // выглядело как полосы сверху и снизу.
         window.setBackgroundDrawable(ColorDrawable(BACKGROUND))
+        // Физические кнопки громкости крутят именно тот поток, которым звенит
+        // сигнал заказа (USAGE_ALARM в prepareAlert) — иначе они по умолчанию
+        // меняют мультимедиа, и повар «убавляет звук», не меняя ничего.
+        // Совсем в ноль будильник система не даёт — терминал не онемеет.
+        volumeControlStream = AudioManager.STREAM_ALARM
         nativeUi = PosPrefs.nativeUi(this)
         if (nativeUi) boardLoader = BoardLoader(applicationContext)
         applyDeviceOwnerPolicy()
@@ -929,6 +935,18 @@ class KioskActivity : ComponentActivity() {
         ).distinct().toTypedArray()
         runCatching { dpm.setLockTaskPackages(admin, allowed) }
             .onFailure { Log.w(TAG, "setLockTaskPackages: ${it.message}") }
+
+        // Свайп сверху временно показывает системную строку. Без этого флага
+        // device owner прячет её содержимое, и вместо батареи, Wi-Fi и часов
+        // повар видит пустую чёрную полосу — выглядит как поломка.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            runCatching {
+                dpm.setLockTaskFeatures(
+                    admin,
+                    DevicePolicyManager.LOCK_TASK_FEATURE_SYSTEM_INFO,
+                )
+            }.onFailure { Log.w(TAG, "setLockTaskFeatures: ${it.message}") }
+        }
 
         // Домашним экраном назначаем себя навсегда: иначе после каждой
         // перезагрузки система спрашивает, каким лаунчером открыть, и прибор

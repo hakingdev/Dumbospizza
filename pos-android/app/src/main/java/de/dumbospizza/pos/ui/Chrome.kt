@@ -1,5 +1,14 @@
 package de.dumbospizza.pos.ui
 
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
+import android.os.BatteryManager
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -28,6 +37,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.State
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,6 +47,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -51,12 +64,78 @@ import kotlin.math.roundToInt
  */
 
 /**
+ * Состояние прибора для строки часов: есть ли Wi-Fi-сеть и заряд батареи.
+ * null у батареи — сведения ещё не пришли (первый кадр до sticky-браодкаста).
+ */
+data class DeviceStatus(
+    val wifi: Boolean,
+    val battery: Int?,
+    val charging: Boolean,
+)
+
+/**
+ * Подписка на батарею и Wi-Fi для строки часов.
+ *
+ * Живёт в Compose, а не в KioskActivity: это сведения ДЛЯ интерфейса, и жизнь
+ * подписок совпадает с жизнью полосы, а не активности. ACTION_BATTERY_CHANGED —
+ * sticky, поэтому первый onReceive приходит сразу при регистрации, ждать
+ * следующего изменения заряда не нужно. Wi-Fi — колбэк на TRANSPORT_WIFI:
+ * «включён, но без сети» для кухни то же самое, что выключен, — чеки не идут.
+ */
+@Composable
+fun rememberDeviceStatus(): State<DeviceStatus> {
+    val context = LocalContext.current.applicationContext
+    val status = remember { mutableStateOf(DeviceStatus(wifi = false, battery = null, charging = false)) }
+    DisposableEffect(Unit) {
+        val battery = object : BroadcastReceiver() {
+            override fun onReceive(c: Context?, i: Intent?) {
+                if (i == null) return
+                val level = i.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+                val scale = i.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
+                val state = i.getIntExtra(BatteryManager.EXTRA_STATUS, -1)
+                status.value = status.value.copy(
+                    battery = if (level >= 0 && scale > 0) level * 100 / scale else null,
+                    charging = state == BatteryManager.BATTERY_STATUS_CHARGING ||
+                        state == BatteryManager.BATTERY_STATUS_FULL,
+                )
+            }
+        }
+        context.registerReceiver(battery, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val wifi = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                status.value = status.value.copy(wifi = true)
+            }
+
+            override fun onLost(network: Network) {
+                status.value = status.value.copy(wifi = false)
+            }
+        }
+        val request = NetworkRequest.Builder()
+            .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+            .build()
+        runCatching { cm.registerNetworkCallback(request, wifi) }
+
+        onDispose {
+            runCatching { context.unregisterReceiver(battery) }
+            runCatching { cm.unregisterNetworkCallback(wifi) }
+        }
+    }
+    return status
+}
+
+/**
  * Строка с часами, 26 dp. В вебе её место занимала имитация системной строки;
  * киоск прячет настоящую, поэтому часы рисуем сами. Левый верхний угол — та же
  * невидимая площадка служебного экрана, что и в веб-режиме (KioskActivity).
+ *
+ * Справа — Wi-Fi и батарея: свайп за системной строкой на кухне никто делать
+ * не будет, а «есть ли сеть и заряд» надо видеть постоянно. Пропавший Wi-Fi
+ * кричит красным: без сети терминал выглядит исправным, но нем и слеп.
  */
 @Composable
-fun PosClockBar(time: String) {
+fun PosClockBar(time: String, status: DeviceStatus? = null) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -66,6 +145,21 @@ fun PosClockBar(time: String) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(time, style = PosType.labelXs.num(), color = PosColors.textSecondary)
+        if (status != null) {
+            Spacer(Modifier.weight(1f))
+            Text(
+                if (status.wifi) "WLAN" else "KEIN WLAN",
+                style = PosType.labelXs,
+                color = if (status.wifi) PosColors.success else PosColors.danger,
+            )
+            status.battery?.let { pct ->
+                Text(
+                    " · $pct %" + if (status.charging) " · lädt" else "",
+                    style = PosType.labelXs.num(),
+                    color = PosColors.textSecondary,
+                )
+            }
+        }
     }
 }
 

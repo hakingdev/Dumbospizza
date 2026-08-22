@@ -110,8 +110,9 @@ fun PosApp(loader: BoardLoader, bridge: PosBridge) {
             }
         }
 
+        val deviceStatus = rememberDeviceStatus()
         Column(Modifier.fillMaxSize().background(PosColors.bgBase)) {
-            PosClockBar(posClock(nowMs))
+            PosClockBar(posClock(nowMs), deviceStatus.value)
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 Column(Modifier.fillMaxSize()) {
                     Box(Modifier.weight(1f).fillMaxWidth()) {
