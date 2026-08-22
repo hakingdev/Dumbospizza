@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '../../../../../lib/models';
-import { authorizePos } from '../../../../../lib/pos/auth';
+import { authorizePos, posActorLabel } from '../../../../../lib/pos/auth';
 import {
   getPosPrintSettings,
   setPosPrintSettings,
@@ -57,12 +57,14 @@ export async function GET(request: NextRequest) {
  * PATCH — частичное обновление. Значения нормализуются в lib/pos/settings.ts:
  * мусор в ширине строки разъедет весь чек, и границы там жёсткие.
  *
- * Правит только персонал: прибор не должен переписывать собственные настройки —
- * иначе сбой на одном устройстве менял бы печать для всех.
+ * Правит персонал И прибор: по решению владельца настройки печати меняет тот,
+ * кто стоит у принтера, — то есть вкладка «Mehr» нативного терминала под ключом
+ * прибора. Список EDITABLE остаётся страховкой: заголовок чека, подвал и цеха
+ * с прибора не переписать.
  */
 export async function PATCH(request: NextRequest) {
   const auth = await authorizePos(request);
-  if (!auth.ok || auth.caller.kind !== 'staff') {
+  if (!auth.ok) {
     return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -78,7 +80,7 @@ export async function PATCH(request: NextRequest) {
 
     await connectToDatabase();
     const settings = await setPosPrintSettings(patch);
-    console.log(`[pos] settings changed by=${auth.caller.name}: ${Object.keys(patch).join(', ')}`);
+    console.log(`[pos] settings changed by=${posActorLabel(auth.caller)}: ${Object.keys(patch).join(', ')}`);
     return NextResponse.json({ success: true, settings });
   } catch (error: any) {
     console.error('[pos] settings write error:', error);

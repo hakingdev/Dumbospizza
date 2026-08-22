@@ -8,10 +8,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -27,20 +29,22 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import de.dumbospizza.pos.PosPrefs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 
 /**
  * «Mehr» — настройки прибора, порт app/pos/more/page.tsx.
  *
- * Содержимое выбрано по тому, за чем сюда реально придут: сеть, звук сигнала и
- * стоп кухни. Веб-версия правит и настройки печати — под входом персонала;
- * прибор со своим ключом их только ЧИТАЕТ (политика сервера), поэтому блок
- * «DRUCK» здесь справочный.
+ * Содержимое выбрано по тому, за чем сюда реально придут: сеть, звук сигнала,
+ * стоп кухни и настройки печати. Блок «DRUCK» правится прямо с прибора (PATCH
+ * ключом прибора — открыт по решению владельца); «GERÄT» остаётся справочным:
+ * ширина чека измерена печатью линейки, промах разъезжает весь бон.
  */
 
 /** Сколько звучит проверка. Полминуты рингтона на кухне никому не нужны. */
@@ -149,21 +153,41 @@ fun MoreScreen(
             view?.settings?.let { s ->
                 item(key = "print") {
                     MoreCard("DRUCK") {
-                        PosRow("Automatisch drucken", if (s.enabled) "An" else "Aus")
+                        val busy = settings.saving
+                        SettingToggle(
+                            "Automatisch drucken",
+                            "Neue Bestellungen gehen sofort auf den Bondrucker",
+                            on = s.enabled,
+                            enabled = !busy,
+                        ) { scope.launch { settings.save(JSONObject().put("enabled", it)) } }
                         CardLine()
-                        PosRow("Kopien", "${s.copies}")
+                        SettingStep(
+                            "Kopien",
+                            "Wie oft jeder Bon gedruckt wird",
+                            value = s.copies, min = 1, max = 3,
+                            enabled = !busy,
+                        ) { scope.launch { settings.save(JSONObject().put("copies", it)) } }
                         CardLine()
-                        PosRow("Vorschub", "${s.feedLines} Zeilen")
+                        SettingStep(
+                            "Vorschub",
+                            "Leerzeilen am Ende — das Gerät hat kein Messer",
+                            value = s.feedLines, min = 0, max = 12,
+                            enabled = !busy,
+                        ) { scope.launch { settings.save(JSONObject().put("feedLines", it)) } }
                         CardLine()
-                        PosRow("Fett drucken", if (s.boldBody) "An" else "Aus")
+                        SettingToggle(
+                            "Fett drucken",
+                            "Nur nötig, wenn der Druck zu blass ist",
+                            on = s.boldBody,
+                            enabled = !busy,
+                        ) { scope.launch { settings.save(JSONObject().put("boldBody", it)) } }
                         CardLine()
-                        PosRow("Große Überschriften", if (s.bigAccents) "An" else "Aus")
-                        Text(
-                            "Änderbar in der Admin — oder im Web-Modus des Terminals " +
-                                "mit Personal-Login.",
-                            style = PosType.bodyS,
-                            color = PosColors.textMuted,
-                        )
+                        SettingToggle(
+                            "Große Überschriften",
+                            "Kategorien, Bestellart und HINWEIS doppelt hoch",
+                            on = s.bigAccents,
+                            enabled = !busy,
+                        ) { scope.launch { settings.save(JSONObject().put("bigAccents", it)) } }
                     }
                 }
 
@@ -185,6 +209,64 @@ fun MoreScreen(
                 }
             }
         }
+    }
+}
+
+/**
+ * Тумблер настройки с подписью-пояснением — как SettingRow веб-вкладки.
+ * Пояснение обязательно: «Vorschub» без слов «Leerzeilen am Ende» на кухне
+ * не значит ничего.
+ */
+@Composable
+private fun SettingToggle(
+    title: String,
+    sub: String,
+    on: Boolean,
+    enabled: Boolean,
+    onChange: (Boolean) -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(title, style = PosType.labelL, color = PosColors.textPrimary)
+            Text(sub, style = PosType.bodyS, color = PosColors.textMuted)
+        }
+        PosSwitch(on, enabled, onChange)
+    }
+}
+
+/** Число со стрелками ± в границах сервера — как SettingStep веб-вкладки. */
+@Composable
+private fun SettingStep(
+    title: String,
+    sub: String,
+    value: Int,
+    min: Int,
+    max: Int,
+    enabled: Boolean,
+    onChange: (Int) -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(title, style = PosType.labelL, color = PosColors.textPrimary)
+            Text(sub, style = PosType.bodyS, color = PosColors.textMuted)
+        }
+        PosStepButton("−", enabled = enabled && value > min) { onChange(value - 1) }
+        Text(
+            "$value",
+            style = PosType.titleL.num(),
+            color = PosColors.textPrimary,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.width(36.dp),
+        )
+        PosStepButton("+", enabled = enabled && value < max) { onChange(value + 1) }
     }
 }
 

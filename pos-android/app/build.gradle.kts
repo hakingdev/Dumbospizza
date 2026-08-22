@@ -37,8 +37,8 @@ android {
         // приложение раздаётся сайдлоадом, требований Play Store нет, а поднимать
         // target выше железа значит без нужды ловить ограничения новых API.
         targetSdk = 30
-        versionCode = 5
-        versionName = "0.4.1-native"
+        versionCode = 6
+        versionName = "0.4.2-native"
     }
 
     signingConfigs {
