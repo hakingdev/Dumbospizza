@@ -45,6 +45,13 @@ data class CategoryItems(
 /** Активный стоп из `/api/pos/v1/kitchen` — плашка над списком категорий. */
 data class KitchenScope(val scope: String, val minutesLeft: Int)
 
+/** Позиция стоп-листа: погашенный товар и категория, в которой он живёт. */
+data class StopListEntry(
+    val categoryId: String,
+    val categoryName: String,
+    val item: MenuItem,
+)
+
 // --- Разбор ответов сервера ---------------------------------------------------
 
 fun parseMenuCategories(root: JSONObject): List<MenuCategory> {

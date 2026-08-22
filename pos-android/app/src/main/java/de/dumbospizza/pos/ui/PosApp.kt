@@ -134,6 +134,10 @@ fun PosApp(loader: BoardLoader, bridge: PosBridge) {
                                         onBack = { menuScreen = MENU_CATS },
                                     )
                                 } ?: run { menuScreen = MENU_CATS }
+                                MENU_STOPLIST -> StopListScreen(
+                                    menuLoader,
+                                    onBack = { menuScreen = MENU_CATS },
+                                )
                                 MENU_KITCHEN -> KitchenStatusScreen(
                                     menuLoader,
                                     onBack = { menuScreen = MENU_CATS },
@@ -154,6 +158,7 @@ fun PosApp(loader: BoardLoader, bridge: PosBridge) {
                                     },
                                     onKitchenStatus = { menuScreen = MENU_KITCHEN },
                                     onKitchenStop = { menuScreen = MENU_STOP },
+                                    onStopList = { menuScreen = MENU_STOPLIST },
                                 )
                             }
                             PosSection.MORE -> MoreScreen(
@@ -254,6 +259,7 @@ private const val MENU_CATS = "cats"
 private const val MENU_CAT = "cat"
 private const val MENU_KITCHEN = "kitchen"
 private const val MENU_STOP = "stop"
+private const val MENU_STOPLIST = "stoplist"
 
 /**
  * Тикающие часы прибора с поправкой на сервер (usePosNow). Поправку читаем на

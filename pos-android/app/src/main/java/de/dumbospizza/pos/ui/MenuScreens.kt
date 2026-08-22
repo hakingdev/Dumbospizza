@@ -265,6 +265,7 @@ fun MenuScreen(
     onOpenCategory: (String) -> Unit,
     onKitchenStatus: () -> Unit,
     onKitchenStop: () -> Unit,
+    onStopList: () -> Unit,
 ) {
     LaunchedEffect(loader) { loader.pollCategories() }
     val scope = rememberCoroutineScope()
@@ -322,7 +323,9 @@ fun MenuScreen(
             item(key = "kitchen-buttons") {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     MenuHeaderButton("Küche stoppen", Modifier.weight(1f), onKitchenStop)
-                    MenuHeaderButton("Stop-Liste $stoppedTotal", Modifier.weight(1f), onKitchenStatus)
+                    // Стоп-лист — это ПОЗИЦИИ, а не стоп цехов: цеховый стоп
+                    // живёт за «Küche stoppen» и за «Ändern» на плашке.
+                    MenuHeaderButton("Stop-Liste $stoppedTotal", Modifier.weight(1f), onStopList)
                 }
             }
 
@@ -341,6 +344,70 @@ fun MenuScreen(
                             .fillMaxWidth()
                             .padding(top = 24.dp),
                     )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Стоп-лист: все погашенные позиции меню одним списком, группами по
+ * категориям. «Stop-Liste N» ведёт сюда — N это ровно эти позиции. Вернуть в
+ * продажу — одно касание; выключать отсюда нечего, всё уже выключено.
+ */
+@Composable
+fun StopListScreen(loader: MenuLoader, onBack: () -> Unit) {
+    LaunchedEffect(loader) { loader.pollStopList() }
+    val scope = rememberCoroutineScope()
+    val entries = loader.stopList.readyOrNull()
+
+    Column(Modifier.fillMaxSize()) {
+        PosAppBar(title = "Stop-Liste", onBack = onBack)
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            if (entries == null) {
+                item(key = "state") {
+                    PosScreenState(loader.stopList) { scope.launch { loader.refreshStopList() } }
+                }
+            } else {
+                entries.groupBy { it.categoryName }.forEach { (categoryName, group) ->
+                    item(key = "cat-$categoryName") {
+                        Text(
+                            categoryName.uppercase(),
+                            style = PosType.overline,
+                            color = PosColors.textMuted,
+                        )
+                    }
+                    items(group, key = { it.item.id }) { entry ->
+                        PosMenuItemRow(entry.item, enabled = !loader.busy) { next ->
+                            // Отсюда только ВОЗВРАЩАЮТ в продажу — включение
+                            // безопасно и идёт одним касанием, как и в категории.
+                            if (next) {
+                                scope.launch {
+                                    loader.apply(entry.item.id, available = true)
+                                    loader.refreshStopList()
+                                }
+                            }
+                        }
+                    }
+                }
+                if (entries.isEmpty()) {
+                    item(key = "empty") {
+                        Text(
+                            "Die Stop-Liste ist leer — alles ist bestellbar.",
+                            style = PosType.bodyM,
+                            color = PosColors.textMuted,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 24.dp),
+                        )
+                    }
                 }
             }
         }

@@ -39,6 +39,64 @@ class MenuLoader(private val context: Context) {
     var busy: Boolean by mutableStateOf(false)
         private set
 
+    /** Погашенные позиции всех категорий — экран «Stop-Liste». */
+    var stopList: PosLoad<List<StopListEntry>> by mutableStateOf(PosLoad.Loading)
+        private set
+
+    suspend fun pollStopList(): Nothing {
+        while (true) {
+            refreshStopList()
+            delay(POLL_MS)
+        }
+    }
+
+    /**
+     * Стоп-лист собирается из тех же запросов, что экраны меню: категории, а
+     * затем позиции категорий со стопами. Массового маршрута нет намеренно —
+     * категорий со стопами обычно одна-две, и пара обращений на редкий экран
+     * дешевле лишнего эндпойнта.
+     */
+    suspend fun refreshStopList() {
+        val cats = fetchPos(context, "/api/pos/v1/menu", ::parseMenuCategories)
+        if (cats is PosLoad.Unauthorized) {
+            stopList = cats
+            return
+        }
+        val list = cats.readyOrNull()
+        if (list == null) {
+            if (stopList !is PosLoad.Ready) {
+                stopList = PosLoad.Error((cats as? PosLoad.Error)?.message ?: "Fehler")
+            }
+            return
+        }
+        // Заодно освежаем счётчик на кнопке «Stop-Liste N».
+        categories = PosLoad.Ready(list)
+
+        val entries = mutableListOf<StopListEntry>()
+        var failed = false
+        for (category in list.filter { it.stoppedCount > 0 }) {
+            val items = fetchPos(
+                context,
+                "/api/pos/v1/menu?category=" + Uri.encode(category.id),
+                ::parseCategoryItems,
+            ).readyOrNull()
+            if (items == null) {
+                failed = true
+                continue
+            }
+            items.items.filter { !it.available }.forEach { item ->
+                entries.add(StopListEntry(category.id, items.name, item))
+            }
+        }
+        // Недочитанная категория не притворяется пустой: лучше ошибка, чем
+        // список, из которого «пропали» стоящие позиции.
+        if (failed && stopList !is PosLoad.Ready) {
+            stopList = PosLoad.Error("Keine Verbindung")
+        } else if (!failed) {
+            stopList = PosLoad.Ready(entries)
+        }
+    }
+
     suspend fun pollCategories(): Nothing {
         while (true) {
             refreshCategories()
