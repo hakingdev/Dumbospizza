@@ -28,9 +28,15 @@ import { geocodeAddress } from '../delivery/geocode';
 import { resolveRoadDistanceKm } from '../delivery/road-distance';
 import { normalizeDetourFactor } from '../delivery/detour';
 import { classifyStation } from '../kitchen/workshops';
-import type { EtaLoadLevel, KitchenStaffing, KitchenStation, OrderEtaAnalysis } from './types';
+import type {
+  EtaLoadLevel,
+  KitchenStaffing,
+  KitchenStation,
+  OrderEtaAnalysis,
+  OrderGeoAnalysis,
+} from './types';
 
-export type { KitchenStaffing, OrderEtaAnalysis } from './types';
+export type { KitchenStaffing, OrderEtaAnalysis, OrderGeoAnalysis } from './types';
 
 // ---------------------------------------------------------------------------
 // Персонал на смене (меняется селекторами в панели AI-плана кухни)
@@ -619,13 +625,47 @@ export function normalizeEtaVerdict(
 }
 
 // ---------------------------------------------------------------------------
-// Точка входа из finalizeOrderPlacement
+// Точки входа
 // ---------------------------------------------------------------------------
+
+/**
+ * Гео-обогащение при поступлении заказа: расстояние/координаты в etaAnalysis,
+ * БЕЗ оценки времени и без etaMinutes/etaSetAt. Никогда не бросает.
+ *
+ * Автоматическая оценка времени (estimateAndApplyOrderEta ниже) при приёме
+ * заказа ВЫКЛЮЧЕНА по решению ресторана: время готовности называет кухня с
+ * прибора (экран «Zeit festlegen»), а не ИИ. Геоданные же нужны всегда —
+ * ими план кухни (kitchen-plan) собирает рейсы курьера.
+ */
+export async function applyOrderGeo(order: any): Promise<OrderGeoAnalysis | null> {
+  try {
+    const storeSettings = await getSetting<Record<string, any>>('storeSettings', {});
+    const geo = await resolveOrderGeo(order, storeSettings || {});
+    if (geo.distanceKm == null && !geo.coordinates) return null;
+
+    const analysis: OrderGeoAnalysis = {
+      source: 'geo',
+      distanceKm: geo.distanceKm,
+      driveMinutes: geo.distanceKm != null ? driveMinutesFromKm(geo.distanceKm) : undefined,
+      coordinates: geo.coordinates,
+    };
+    order.etaAnalysis = analysis;
+    await order.save();
+    return analysis;
+  } catch (e) {
+    console.error('[eta] geo enrichment failed:', e);
+    return null;
+  }
+}
 
 /**
  * Считает ETA (AI → эвристика), записывает на заказ (etaMinutes/etaSetAt/
  * etaAnalysis) и сохраняет. Никогда не бросает — сбой оценки не должен
  * ломать размещение заказа. Возвращает null только при полном сбое.
+ *
+ * СЕЙЧАС НЕ ВЫЗЫВАЕТСЯ автоматически: время ставит кухня с прибора вручную.
+ * Оставлена намеренно — план ресторана вернуть авторасчёт как AI-подсказку
+ * на приборе (кнопка на экране выбора времени), когда до этого дойдёт.
  */
 export async function estimateAndApplyOrderEta(order: any): Promise<OrderEtaAnalysis | null> {
   try {

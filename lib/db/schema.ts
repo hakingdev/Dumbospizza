@@ -213,10 +213,13 @@ export const orders = pgTable(
     // числу не должен слать клиенту второе WhatsApp-сообщение.
     etaMinutes: integer('eta_minutes'),
     etaSetAt: timestamp('eta_set_at', { withTimezone: true, mode: 'date' }),
-    // AI-оценка времени (lib/eta/order-eta.ts): разбивка готовка/доставка,
-    // расстояние, уровень загрузки и советы персоналу. Также источник
-    // distanceKm/coordinates для маршрутизации следующих заказов.
-    etaAnalysis: jsonb('eta_analysis').$type<import('../eta/types').OrderEtaAnalysis | null>(),
+    // Гео-обогащение заказа (source: 'geo' — расстояние/координаты для рейсов
+    // в плане кухни) или полная AI-оценка времени (lib/eta/order-eta.ts) на
+    // старых заказах. Авто-оценка времени при поступлении выключена: время
+    // ставит кухня с прибора, здесь остаются только геоданные.
+    etaAnalysis: jsonb('eta_analysis').$type<
+      import('../eta/types').OrderEtaAnalysis | import('../eta/types').OrderGeoAnalysis | null
+    >(),
     telegramMessageId: bigint('telegram_message_id', { mode: 'number' }),
     mewsOrderId: text('mews_order_id'),
     // Канал заказа: 'website' — собственный сайт, 'lieferando' — чек Lieferando,

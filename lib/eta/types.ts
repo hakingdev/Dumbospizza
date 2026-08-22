@@ -78,6 +78,21 @@ export interface KitchenPlan {
   generatedAt: string;
 }
 
+/**
+ * Гео-обогащение заказа БЕЗ оценки времени. Пишется в orders.eta_analysis при
+ * поступлении заказа: автоматическая AI-оценка времени выключена (время
+ * называет кухня с прибора при приёме), но плану кухни (kitchen-plan) и
+ * карточке курьера по-прежнему нужны расстояние и координаты для рейсов.
+ */
+export interface OrderGeoAnalysis {
+  source: 'geo';
+  /** Дорожное расстояние до адреса, км. */
+  distanceKm?: number;
+  /** Оценка времени в пути в одну сторону, мин. */
+  driveMinutes?: number;
+  coordinates?: { lat: number; lng: number };
+}
+
 export interface OrderEtaAnalysis {
   /** Обещанное клиенту время от текущего момента, мин (готовка + доставка). */
   etaMinutes: number;

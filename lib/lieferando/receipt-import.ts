@@ -4,8 +4,10 @@
  * Пайплайн (вызывается из Telegram-бота-диспетчера, lib/telegram-plan.ts):
  *   фото чека → parseLieferandoReceipt() — Claude Vision со structured output →
  *   importLieferandoReceipt() — создаёт обычный заказ в БД с source='lieferando'
- *   и номером "L-<код чека>", затем считает ETA/гео (estimateAndApplyOrderEta),
+ *   и номером "L-<код чека>", затем геокодирует адрес (applyOrderGeo),
  *   чтобы AI-план кухни мог маршрутизировать его наравне с заказами сайта.
+ *   Время готовности НЕ считается: его ставит кухня с прибора при приёме
+ *   (AI-оценка при поступлении заказа выключена, см. lib/eta/order-eta.ts).
  *
  * Такой заказ НЕ уходит на печать (kitchenPrintStatus='completed' — бумажный чек
  * уже вышел из принтера Lieferando) и не шлёт гостю WhatsApp при создании
@@ -18,7 +20,7 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import { Order } from '../models/order.model';
-import { estimateAndApplyOrderEta } from '../eta/order-eta';
+import { applyOrderGeo } from '../eta/order-eta';
 
 export type ReceiptImageMediaType =
   | 'image/jpeg'
@@ -327,13 +329,14 @@ export async function importLieferandoReceipt(parsed: LieferandoReceipt): Promis
 
     const order = await Order.create(payload);
 
-    // ETA + геокодирование адреса: даёт distanceKm/coordinates для рейсов в плане.
-    // Никогда не бросает; для самовывоза считает только готовку.
-    const analysis = await estimateAndApplyOrderEta(order);
+    // Геокодирование адреса: даёт distanceKm/coordinates для рейсов в плане.
+    // Никогда не бросает; для самовывоза геоданных нет. Время готовности НЕ
+    // считаем — его называет кухня с прибора при приёме заказа.
+    const geo = await applyOrderGeo(order);
 
     console.log(
       `[lieferando] imported order=${payload.orderNumber} items=${payload.items.length} ` +
-        `total=${payload.total} eta=${analysis?.etaMinutes ?? '—'}min`
+        `total=${payload.total} distance=${geo?.distanceKm ?? '—'}km`
     );
 
     return {
@@ -349,7 +352,9 @@ export async function importLieferandoReceipt(parsed: LieferandoReceipt): Promis
           : undefined,
         itemsCount: payload.items.reduce((n, it) => n + it.quantity, 0),
         total: payload.total,
-        etaMinutes: analysis?.etaMinutes ?? null,
+        // Времени при импорте больше нет (ставится с прибора) — поле осталось
+        // в контракте ради ответа бота, который скрывает строку при null.
+        etaMinutes: null,
         hasPhone: Boolean(payload.phoneNumber),
       },
     };

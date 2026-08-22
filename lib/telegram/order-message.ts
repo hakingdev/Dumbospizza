@@ -7,7 +7,7 @@
  * забывалась бы в одном из двух мест. lib/telegram.ts реэкспортирует всё
  * отсюда — существующие импорты не менялись.
  */
-import type { OrderEtaAnalysis } from '../eta/types';
+import type { OrderEtaAnalysis, OrderGeoAnalysis } from '../eta/types';
 import { stripPromoLabels } from '../orders/gift-label';
 
 export interface OrderNotification {
@@ -43,8 +43,19 @@ export interface OrderNotification {
    * двигает именно эту пару полей.
    */
   etaSetAt?: Date | string | null;
-  /** AI-оценка: разбивка готовка/доставка, расстояние, загрузка, советы. */
-  etaAnalysis?: OrderEtaAnalysis;
+  /**
+   * Полная AI-оценка (разбивка готовка/доставка, советы) ИЛИ гео-обогащение
+   * без времени (source: 'geo') — то, что пишется на заказ сейчас: авто-оценка
+   * времени при поступлении выключена, время ставит кухня с прибора.
+   */
+  etaAnalysis?: OrderEtaAnalysis | OrderGeoAnalysis;
+}
+
+/** Полная оценка со временем (AI/эвристика) — в отличие от гео-обогащения. */
+function isTimedEtaAnalysis(
+  analysis: OrderEtaAnalysis | OrderGeoAnalysis
+): analysis is OrderEtaAnalysis {
+  return analysis.source !== 'geo';
 }
 
 /** «15:03» по времени заведения. Пусто — обещания нет или оно неполное. */
@@ -149,10 +160,13 @@ export function buildOrderBodyText(
   //
   // В пути минуты готовки и доставки уже ничего не решают — остаются
   // километры и подсказка по маршруту: это то, что нужно курьеру за рулём.
+  //
+  // Гео-обогащение (source: 'geo', сейчас единственное, что пишется на новые
+  // заказы) времени не содержит — от него в любом виде остаётся строка с км.
   let etaDetails = '';
   const analysis = etaView === 'none' ? undefined : order.etaAnalysis;
   if (analysis) {
-    if (etaView === 'kitchen') {
+    if (etaView === 'kitchen' && isTimedEtaAnalysis(analysis)) {
       const parts = [`готовка ~${analysis.prepMinutes} мин`];
       if (order.deliveryType === 'delivery' && analysis.deliveryMinutes > 0) {
         const km = analysis.distanceKm != null ? `, ${analysis.distanceKm} км` : '';
@@ -163,7 +177,9 @@ export function buildOrderBodyText(
     } else if (order.deliveryType === 'delivery' && analysis.distanceKm != null) {
       etaDetails = `\n📏 ${analysis.distanceKm} км до адреса`;
     }
-    if (analysis.routeHint) etaDetails += `\n🗺 ${escapeHtml(analysis.routeHint)}`;
+    if (isTimedEtaAnalysis(analysis) && analysis.routeHint) {
+      etaDetails += `\n🗺 ${escapeHtml(analysis.routeHint)}`;
+    }
   }
 
   return `

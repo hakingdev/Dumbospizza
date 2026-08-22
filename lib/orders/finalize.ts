@@ -4,10 +4,10 @@ import { redeemPointsForOrder } from '../loyalty/service';
 import { getLoyaltyRules } from '../loyalty/config';
 import { recordPromotionOrderAnalytics } from '../promotions/order-integration';
 import { sendServerPurchaseConversionEvents } from '../conversions/server-purchase-events';
-import { sendOrderNotification, sendPlainTelegramMessage, escapeHtml } from '../telegram';
+import { sendOrderNotification } from '../telegram';
 import { printOrderReceipts } from '../printing';
 import { sendOrderPlacedNotification } from '../whatsapp';
-import { estimateAndApplyOrderEta, type OrderEtaAnalysis } from '../eta/order-eta';
+import { applyOrderGeo } from '../eta/order-eta';
 import type { IOrder } from '../models/order.model';
 
 /** Сборка payload уведомления (Telegram / печать) из документа заказа. */
@@ -124,14 +124,21 @@ export async function finalizeOrderPlacement(order: any, request: NextRequest): 
     }
   }
 
-  // AI-оценка времени (изготовление + доставка) с учётом очереди — ДО сборки
-  // уведомления, чтобы Telegram-карточка сразу содержала объявленное время.
-  // Внутри свой try/catch + эвристический fallback: сбой оценки заказ не валит.
-  let etaAnalysis: OrderEtaAnalysis | null = null;
+  // Гео-обогащение (расстояние/координаты в etaAnalysis) — ДО сборки
+  // уведомления, чтобы карточка курьера сразу показывала километры.
+  //
+  // Времени готовности здесь НЕТ вообще. AI-оценка при поступлении заказа
+  // выключена по решению ресторана: раньше estimateAndApplyOrderEta записывал
+  // etaMinutes сразу при оформлении, и заказ приезжал на прибор с временем,
+  // которого кухня не называла (а карточка в Telegram врала «Клиенту
+  // сообщено»). Теперь обещание одно и ставится вручную тем, кто принял заказ:
+  // PUT /api/orders/[id] с etaMinutes (экран «Zeit festlegen» на приборе) или
+  // кнопка «⏱ Время готовности» в Telegram — оба шлют гостю WhatsApp.
+  // Авторасчёт, если вернётся, будет AI-подсказкой на самом приборе.
   try {
-    etaAnalysis = await estimateAndApplyOrderEta(order);
+    await applyOrderGeo(order);
   } catch (error) {
-    console.error('Error estimating order ETA:', error);
+    console.error('Error resolving order geo:', error);
   }
 
   const notification = buildOrderNotification(order);
@@ -139,24 +146,6 @@ export async function finalizeOrderPlacement(order: any, request: NextRequest): 
   // ВАЖНО (Vercel serverless): уведомления нужно ДОЖДАТЬСЯ до ответа,
   // иначе функция замораживается и Telegram/WhatsApp/конверсии не отправляются.
   await Promise.all([
-    // Время готовности гостю здесь НЕ обещаем.
-    //
-    // Раньше сразу после оформления уходило время, посчитанное ИИ, — то есть
-    // обещание, которого кухня не давала и о заказе ещё не знала. Дальше кухня
-    // называла своё, и гость получал второе сообщение с другим временем.
-    // Теперь обещание одно, и его отправляет тот, кто принял заказ:
-    // PUT /api/orders/[id] с etaMinutes (кнопка приёма на приборе) и кнопка
-    // «⏱ Время готовности» в Telegram. Оценка ИИ остаётся в карточке для кухни.
-    // Пиковая загрузка — отдельное громкое сообщение в Telegram с рекомендацией.
-    etaAnalysis?.loadLevel === 'peak' && etaAnalysis.advisory
-      ? sendPlainTelegramMessage(
-          `🔴 <b>Пиковая загрузка кухни</b>\n${escapeHtml(etaAnalysis.advisory)}`
-        ).catch(
-          (err) => {
-            console.error('Error sending peak-load advisory to Telegram:', err);
-          }
-        )
-      : Promise.resolve(),
     sendServerPurchaseConversionEvents(order.toObject() as IOrder, request).catch((err) => {
       console.error('Server conversion events (Meta / TikTok):', err);
     }),

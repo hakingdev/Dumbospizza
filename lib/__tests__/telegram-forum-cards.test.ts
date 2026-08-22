@@ -757,6 +757,37 @@ describe('renderCardText', () => {
     expect(delivered).not.toContain('км до адреса');
   });
 
+  /**
+   * Авто-оценка времени при поступлении заказа выключена: новый заказ несёт
+   * только гео-обогащение (source: 'geo'). Карточка не должна ни выдумывать
+   * разбивку готовки, ни утверждать «Клиенту сообщено» — времени ещё нет,
+   * его назовёт кухня с прибора. Километры курьеру остаются.
+   */
+  it('гео-обогащение без времени: только километры, без оценки и обещания', () => {
+    const geoOnly = {
+      ...ORDER.notification,
+      etaAnalysis: {
+        source: 'geo' as const,
+        distanceKm: 7.3,
+        driveMinutes: 9,
+        coordinates: { lat: 50.2, lng: 10.07 },
+      },
+    };
+    const base = {
+      order: geoOnly,
+      createdAt: ORDER.createdAt,
+      statusHistory: [{ status: 'cooking', timestamp: '2026-06-20T16:40:00Z' }],
+    };
+
+    for (const status of ['cooking', 'ready', 'on_the_way'] as const) {
+      const text = renderCardText({ ...base, status });
+      expect(text).not.toContain('Клиенту сообщено');
+      expect(text).not.toContain('готовка ~');
+      expect(text).not.toContain('🤖');
+      expect(text).toContain('7.3 км до адреса');
+    }
+  });
+
   it('подсказка по маршруту остаётся у курьера в пути', () => {
     const text = renderCardText({
       order: {

@@ -105,11 +105,17 @@ export interface IOrder {
   notes?: string;
   /** Желаемое время доставки в формате HH:mm (например "16:45") */
   desiredDeliveryTime?: string;
-  /** Время готовности в минутах, объявленное клиенту (AI или из Telegram). */
+  /** Время готовности в минутах, объявленное клиенту (прибор или Telegram). */
   etaMinutes?: number;
   etaSetAt?: Date;
-  /** AI-оценка времени заказа (разбивка, расстояние, загрузка кухни). */
-  etaAnalysis?: import('../eta/types').OrderEtaAnalysis | null;
+  /**
+   * Гео-обогащение (source: 'geo' — расстояние/координаты для рейсов) или
+   * полная AI-оценка времени на старых заказах (авто-оценка выключена).
+   */
+  etaAnalysis?:
+    | import('../eta/types').OrderEtaAnalysis
+    | import('../eta/types').OrderGeoAnalysis
+    | null;
   telegramMessageId?: number;
   mewsOrderId?: string;
   /** Канал заказа: сайт или чек Lieferando, распознанный ботом-диспетчером. */
