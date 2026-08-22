@@ -1,6 +1,5 @@
 package de.dumbospizza.pos
 
-import android.app.Activity
 import android.app.ActivityManager
 import android.app.AlertDialog
 import android.app.admin.DevicePolicyManager
@@ -44,6 +43,10 @@ import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.activity.ComponentActivity
+import androidx.compose.ui.platform.ComposeView
+import de.dumbospizza.pos.ui.BoardLoader
+import de.dumbospizza.pos.ui.PosApp
 import org.json.JSONObject
 
 /**
@@ -53,6 +56,13 @@ import org.json.JSONObject
  * вёрстки не должна означать пересборку APK и поход на кухню. Приложение здесь
  * ровно оболочка — полный экран, никакого адресного поля и никакого выхода
  * наружу по ссылке.
+ *
+ * С версии 0.3 у прибора есть ВТОРОЙ режим — нативный терминал (пакет ui/,
+ * Compose). Включается тумблером на служебном экране и по умолчанию выключен:
+ * он едет на прибор в том же APK задолго до готовности, и обновление печати не
+ * должно втихую менять кухне терминал. Киоск, lock task, служебный угол и
+ * сигнал о заказе общие для обоих режимов — различие только в том, чем
+ * заполнен экран: WebView или Compose.
  *
  * Активность объявлена ДОМАШНИМ экраном (`category.HOME`). Это и есть «чтобы
  * только он был»: кнопка «домой» возвращает в терминал, а после перезагрузки
@@ -73,11 +83,22 @@ import org.json.JSONObject
  * одного мало: со служебного экрана останавливается печать, а угол рано или
  * поздно нащупают.
  */
-class KioskActivity : Activity() {
+class KioskActivity : ComponentActivity() {
 
-    private lateinit var web: WebView
-    private lateinit var offline: View
-    private lateinit var offlineReason: TextView
+    /** Вьюхи веб-режима. В нативном режиме WebView не создаётся вовсе. */
+    private var web: WebView? = null
+    private var offline: View? = null
+    private var offlineReason: TextView? = null
+
+    /**
+     * Каким режимом собран ЭТОТ запуск активности. Читается один раз в
+     * onCreate: переключение на служебном экране вступает в силу через
+     * recreate() в onResume, а не перестановкой вьюх на живом экране.
+     */
+    private var nativeUi = false
+
+    /** Данные нативного терминала. null в веб-режиме. */
+    private var boardLoader: BoardLoader? = null
 
     /**
      * Последняя загрузка терминала провалилась.
@@ -108,15 +129,28 @@ class KioskActivity : Activity() {
         // месте видно именно его, и по умолчанию он чёрный — на кухне это
         // выглядело как полосы сверху и снизу.
         window.setBackgroundDrawable(ColorDrawable(BACKGROUND))
+        nativeUi = PosPrefs.nativeUi(this)
+        if (nativeUi) boardLoader = BoardLoader(applicationContext)
         applyDeviceOwnerPolicy()
         setContentView(buildUi())
         watchSystemBars()
-        watchNetwork()
-        loadTerminal()
+        if (!nativeUi) {
+            // Наблюдатель сети чинит упавший WebView; нативная лента сама
+            // повторяет запрос каждые 5 секунд, ей отдельный сторож не нужен.
+            watchNetwork()
+            loadTerminal()
+        }
     }
 
     override fun onResume() {
         super.onResume()
+        // Режим переключили на служебном экране — активность пересобирается.
+        // recreate, а не перестановка вьюх: возврат в терминал и так означает
+        // «начни с ленты», а два живых терминала в одной активности не нужны.
+        if (PosPrefs.nativeUi(this) != nativeUi) {
+            recreate()
+            return
+        }
         hideSystemBars()
         enterLockTask()
     }
@@ -144,14 +178,15 @@ class KioskActivity : Activity() {
      * система не пересоздаёт её, а зовёт сюда — и терминал обязан вернуться на
      * ленту заказов. Иначе «домой» с экрана деталей не делала бы ничего.
      */
-    override fun onNewIntent(intent: Intent?) {
+    override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         loadTerminal()
     }
 
     /** Назад листает историю терминала и НИКОГДА не закрывает киоск. */
     override fun onBackPressed() {
-        if (web.canGoBack()) web.goBack()
+        val view = web ?: return // нативный режим: у ленты истории нет
+        if (view.canGoBack()) view.goBack()
     }
 
     // --- UI ------------------------------------------------------------------
@@ -159,7 +194,28 @@ class KioskActivity : Activity() {
     private fun buildUi(): ViewGroup {
         val root = FrameLayout(this).apply { setBackgroundColor(BACKGROUND) }
 
-        web = WebView(this).apply {
+        if (nativeUi) {
+            // Нативный терминал. Свой экран отказа ему не нужен: состояние сети
+            // рисует сама лента, а Wi-Fi чинится со служебного экрана.
+            val loader = boardLoader ?: BoardLoader(applicationContext).also { boardLoader = it }
+            root.addView(
+                ComposeView(this).apply {
+                    setContent {
+                        PosApp(
+                            loader = loader,
+                            onPlayAlert = { playAlertFromUi() },
+                            onStopAlert = { stopAlertFromUi() },
+                        )
+                    }
+                },
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+            root.addView(buildServiceCorner())
+            return root
+        }
+
+        val view = WebView(this).apply {
             setBackgroundColor(BACKGROUND)
             overScrollMode = View.OVER_SCROLL_NEVER
             // Выделение текста и его контекстное меню на кухне бесполезны, а
@@ -174,11 +230,13 @@ class KioskActivity : Activity() {
             // доступно любой открытой в киоске странице.
             addJavascriptInterface(TerminalBridge(), "DumboPos")
         }
-        root.addView(web, FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+        web = view
+        root.addView(view, FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
 
-        offline = buildOfflineView()
-        offline.visibility = View.GONE
-        root.addView(offline, FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+        val offlineView = buildOfflineView()
+        offline = offlineView
+        offlineView.visibility = View.GONE
+        root.addView(offlineView, FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
 
         root.addView(buildServiceCorner())
         return root
@@ -238,14 +296,15 @@ class KioskActivity : Activity() {
         // сеть без интернета, неотвечающий DNS, сбитые часы прибора (тогда
         // сертификат «ещё не действителен»). Различает их только код ошибки, и
         // без него причину приходится угадывать по телефону с кухней.
-        offlineReason = TextView(this@KioskActivity).apply {
+        val reason = TextView(this@KioskActivity).apply {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
             setTextColor(TEXT_MUTED)
             gravity = Gravity.CENTER
             setPadding(0, 0, 0, dp(20))
             visibility = View.GONE
         }
-        addView(offlineReason)
+        offlineReason = reason
+        addView(reason)
         addView(Button(this@KioskActivity).apply {
             text = "Erneut versuchen"
             setOnClickListener { loadTerminal() }
@@ -285,8 +344,9 @@ class KioskActivity : Activity() {
     // --- Загрузка ------------------------------------------------------------
 
     private fun loadTerminal() {
+        val view = web ?: return // нативный режим: терминал живёт не в WebView
         loadFailed = false
-        offline.visibility = View.GONE
+        offline?.visibility = View.GONE
         // Документ запрашиваем с обязательной перепроверкой на сервере.
         //
         // Раньше здесь стоял clearCache(), и он не работал: метод асинхронный,
@@ -297,7 +357,7 @@ class KioskActivity : Activity() {
         // Заголовок действует только на сам документ. Ассеты Next именованы по
         // содержимому, поэтому свежая страница подтянет свежие — чистить весь
         // кэш и заново качать всё по кухонному Wi-Fi незачем.
-        web.loadUrl(startUrl, mapOf("Cache-Control" to "no-cache"))
+        view.loadUrl(startUrl, mapOf("Cache-Control" to "no-cache"))
     }
 
     /**
@@ -348,9 +408,9 @@ class KioskActivity : Activity() {
     /** Свой экран отказа поверх WebView. Причина — мелкой строкой под текстом. */
     private fun showOffline(reason: String?) {
         loadFailed = true
-        offlineReason.text = reason.orEmpty()
-        offlineReason.visibility = if (reason.isNullOrBlank()) View.GONE else View.VISIBLE
-        offline.visibility = View.VISIBLE
+        offlineReason?.text = reason.orEmpty()
+        offlineReason?.visibility = if (reason.isNullOrBlank()) View.GONE else View.VISIBLE
+        offline?.visibility = View.VISIBLE
     }
 
     private inner class TerminalClient : WebViewClient() {
@@ -404,7 +464,7 @@ class KioskActivity : Activity() {
             // Только на удавшейся загрузке. Упавшая приходит сюда следом за
             // onReceivedError, и снимать экран по ней — значит показать кухне
             // страницу ошибки WebView вместо своей.
-            if (!loadFailed) offline.visibility = View.GONE
+            if (!loadFailed) offline?.visibility = View.GONE
         }
     }
 
@@ -678,7 +738,7 @@ class KioskActivity : Activity() {
     private fun notifyAlertSound(name: String) {
         val detail = JSONObject().put("name", name).toString()
         runCatching {
-            web.evaluateJavascript(
+            web?.evaluateJavascript(
                 "window.dispatchEvent(new CustomEvent('dumbo-alert-sound',{detail:$detail}))",
                 null
             )
@@ -741,9 +801,43 @@ class KioskActivity : Activity() {
         return list.distinct()
     }
 
+    /**
+     * Сигнал для нативного терминала — те же будильники, что у веб-моста
+     * (TerminalBridge.playAlert), только без JavaScript между ними. Зовётся с
+     * фонового диспетчера Compose: prepareAlert лезет в медиатеку, это диск.
+     * false — на приборе нет ни одного пригодного звука, играть нечем.
+     */
+    fun playAlertFromUi(): Boolean {
+        val ringtone = prepareAlert() ?: return false
+        runOnUiThread {
+            runCatching {
+                // Сигнал повторяется каждые 10 секунд, а рингтон бывает длиннее.
+                // Без stop() второй запуск накладывается на первый.
+                if (ringtone.isPlaying) ringtone.stop()
+                ringtone.play()
+            }.onFailure { Log.w(TAG, "сигнал не проигрался: ${it.message}") }
+        }
+        return true
+    }
+
+    fun stopAlertFromUi() {
+        runOnUiThread { runCatching { alert?.stop() } }
+    }
+
     // --- Киоск ---------------------------------------------------------------
 
     private fun enterLockTask() {
+        // Отладочная сборка без device owner (эмулятор) киоск НЕ закрепляет:
+        // диалог «App is pinned» мешает на каждом запуске, а залипшее после
+        // жёсткого выключения эмулятора PINNED-состояние молча блокирует запуск
+        // активности (am start → код 101). Боевому прибору всё как было: он
+        // либо device owner (тихий lock task), либо release со штатным
+        // закреплением экрана.
+        val debuggable =
+            (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+        if (debuggable && !dpm.isDeviceOwnerApp(packageName)) return
+
         val manager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
         val already = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             manager.lockTaskModeState != ActivityManager.LOCK_TASK_MODE_NONE

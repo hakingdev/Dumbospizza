@@ -37,8 +37,8 @@ android {
         // приложение раздаётся сайдлоадом, требований Play Store нет, а поднимать
         // target выше железа значит без нужды ловить ограничения новых API.
         targetSdk = 30
-        versionCode = 2
-        versionName = "0.2.0-wlan"
+        versionCode = 3
+        versionName = "0.3.0-native"
     }
 
     signingConfigs {
@@ -80,6 +80,16 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+
+    buildFeatures {
+        compose = true
+    }
+
+    composeOptions {
+        // Версия компилятора привязана к Kotlin: 1.5.15 — пара к Kotlin 1.9.25
+        // из корневого build.gradle.kts. Обновлять только вместе.
+        kotlinCompilerExtensionVersion = "1.5.15"
+    }
 }
 
 dependencies {
@@ -88,4 +98,20 @@ dependencies {
     // методов, поэтому файл, восстановленный по памяти, скомпилируется и молча
     // будет звать не те методы.
     implementation("com.sunmi:printerlibrary:1.0.24")
+
+    // Нативный терминал (пакет ui/). Служба печати по-прежнему живёт без
+    // зависимостей — Compose нужен только интерфейсу, и его отказ не может
+    // отобрать у кухни чеки. BOM держит версии androidx согласованными;
+    // 2024.06 — последняя линейка, проверенная с Kotlin 1.9.2x.
+    val composeBom = platform("androidx.compose:compose-bom:2024.06.00")
+    implementation(composeBom)
+    implementation("androidx.compose.foundation:foundation")
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.material3:material3")
+    implementation("androidx.activity:activity-compose:1.9.2")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    // Только ради PATCH /api/pos/v1/menu: HttpURLConnection проверяет метод по
+    // белому списку времён HTTP/1.0 и PATCH не пропускает вовсе. Печать
+    // остаётся на платформенном стеке — OkHttp нужен интерфейсу.
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 }

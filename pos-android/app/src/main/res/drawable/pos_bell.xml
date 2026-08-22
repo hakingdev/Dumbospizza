@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Контуры 1:1 из public/pos/icons/bell.svg (Figma). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:pathData="M18 9C18 7.4087 17.3679 5.88258 16.2426 4.75736C15.1174 3.63214 13.5913 3 12 3C10.4087 3 8.88258 3.63214 7.75736 4.75736C6.63214 5.88258 6 7.4087 6 9C6 14 4 15 4 15H20C20 15 18 14 18 9Z"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.8"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M10.5 19C10.6877 19.2128 10.9185 19.3833 11.1771 19.5C11.4357 19.6167 11.7162 19.6771 12 19.6771C12.2838 19.6771 12.5643 19.6167 12.8229 19.5C13.0815 19.3833 13.3123 19.2128 13.5 19"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round" />
+</vector>

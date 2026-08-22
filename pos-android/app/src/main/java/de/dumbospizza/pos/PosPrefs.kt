@@ -25,6 +25,7 @@ object PosPrefs {
     private const val KEY_PIN = "servicePin"
     private const val KEY_ALERT_URI = "alertSoundUri"
     private const val KEY_ALERT_NAME = "alertSoundName"
+    private const val KEY_UI = "uiMode"
 
     /** ВАЖНО: www, не apex. dumbospizza.de отдаёт 308-редирект, а он способен
      *  продублировать печать при повторе запроса. Та же грабля описана в
@@ -77,6 +78,19 @@ object PosPrefs {
             .putString(KEY_ALERT_URI, uri.trim())
             .putString(KEY_ALERT_NAME, name.trim())
             .apply()
+
+    /**
+     * Каким интерфейсом рисовать терминал: false — WebView на /pos (как раньше),
+     * true — нативные экраны (пакет ui/). Переключается со служебного экрана.
+     *
+     * По умолчанию WebView НАМЕРЕННО: нативный режим едет на прибор в том же
+     * APK задолго до готовности, и обновление печати не должно втихую менять
+     * кухне терминал. Значение храним строкой — на случай третьего режима.
+     */
+    fun nativeUi(c: Context): Boolean = prefs(c).getString(KEY_UI, "web") == "native"
+
+    fun setNativeUi(c: Context, value: Boolean) =
+        prefs(c).edit().putString(KEY_UI, if (value) "native" else "web").apply()
 
     fun serviceEnabled(c: Context): Boolean = prefs(c).getBoolean(KEY_RUNNING, false)
     fun setServiceEnabled(c: Context, value: Boolean) =

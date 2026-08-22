@@ -1,6 +1,8 @@
 package de.dumbospizza.pos
 
 import android.content.Context
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
@@ -77,6 +79,74 @@ object PosApi {
     private fun readBody(conn: HttpURLConnection): String {
         val stream = if (conn.responseCode in 200..299) conn.inputStream else conn.errorStream
         return stream?.bufferedReader()?.use(BufferedReader::readText) ?: ""
+    }
+
+    /** Ответ произвольного вызова POS-API: код и тело как есть, разбор у вызывающего. */
+    data class Http(val code: Int, val body: String)
+
+    /**
+     * GET для нативного терминала (пакет ui/). Тот же ключ прибора, что у печати:
+     * терминалу не нужен вход персонала — ключ уже настроен на служебном экране.
+     */
+    fun get(context: Context, path: String): Http {
+        val conn = open(context, path, "GET")
+        try {
+            return Http(conn.responseCode, readBody(conn))
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    fun post(context: Context, path: String, body: JSONObject): Http {
+        val conn = open(context, path, "POST")
+        conn.doOutput = true
+        conn.setRequestProperty("Content-Type", "application/json")
+        try {
+            conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+            return Http(conn.responseCode, readBody(conn))
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    /** PUT — смена статуса заказа нативным терминалом (PUT /api/orders/[id]). */
+    fun put(context: Context, path: String, body: JSONObject): Http {
+        val conn = open(context, path, "PUT")
+        conn.doOutput = true
+        conn.setRequestProperty("Content-Type", "application/json")
+        try {
+            conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+            return Http(conn.responseCode, readBody(conn))
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    /**
+     * PATCH — через OkHttp, а не HttpURLConnection: тот сверяет метод с белым
+     * списком времён HTTP/1.0 и на PATCH бросает ProtocolException. Меняет
+     * маршрут меню, поэтому живёт рядом с остальным клиентом, с теми же
+     * заголовками и таймаутами.
+     */
+    private val okClient by lazy {
+        okhttp3.OkHttpClient.Builder()
+            .connectTimeout(TIMEOUT_MS.toLong(), java.util.concurrent.TimeUnit.MILLISECONDS)
+            .readTimeout(TIMEOUT_MS.toLong(), java.util.concurrent.TimeUnit.MILLISECONDS)
+            .build()
+    }
+
+    fun patch(context: Context, path: String, body: JSONObject): Http {
+        val media = "application/json; charset=utf-8".toMediaType()
+        val request = okhttp3.Request.Builder()
+            .url(PosPrefs.apiBase(context).trimEnd('/') + path)
+            .header("X-Pos-Key", PosPrefs.secret(context))
+            .header("X-Pos-Device", PosPrefs.deviceId(context))
+            .header("Accept", "application/json")
+            .patch(body.toString().toRequestBody(media))
+            .build()
+        okClient.newCall(request).execute().use { response ->
+            return Http(response.code, response.body?.string() ?: "")
+        }
     }
 
     fun fetchConfig(context: Context): Config {

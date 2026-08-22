@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Самокат подвала карточки (Figma Order Card 63:100, 18×18). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="18dp"
+    android:height="18dp"
+    android:viewportWidth="18"
+    android:viewportHeight="18">
+    <path
+        android:pathData="M4.2 15.075C5.31838 15.075 6.225 14.1684 6.225 13.05C6.225 11.9316 5.31838 11.025 4.2 11.025C3.08162 11.025 2.175 11.9316 2.175 13.05C2.175 14.1684 3.08162 15.075 4.2 15.075Z"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.7" />
+    <path
+        android:pathData="M13.65 15.075C14.7684 15.075 15.675 14.1684 15.675 13.05C15.675 11.9316 14.7684 11.025 13.65 11.025C12.5316 11.025 11.625 11.9316 11.625 13.05C11.625 14.1684 12.5316 15.075 13.65 15.075Z"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.7" />
+    <path
+        android:pathData="M6.225 13.05H11.625L9.9 5.7M9.9 5.7H7.95M9.9 5.7H12.825L14.625 11.1"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.7"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

@@ -47,6 +47,7 @@ class MainActivity : Activity() {
     private lateinit var apiField: EditText
     private lateinit var secretField: EditText
     private lateinit var pinField: EditText
+    private lateinit var uiModeButton: Button
 
     private val printerCallback = object : InnerPrinterCallback() {
         override fun onConnected(service: SunmiPrinterService) {
@@ -69,6 +70,7 @@ class MainActivity : Activity() {
         log("Dumbo POS — служебный экран")
         log("прибор: ${PosPrefs.deviceId(this)}")
         log("служба: ${if (PosPrefs.serviceEnabled(this)) "включена" else "выключена"}")
+        log("терминал: ${if (PosPrefs.nativeUi(this)) "нативный (превью)" else "WebView"}")
         bindPrinter()
     }
 
@@ -114,6 +116,16 @@ class MainActivity : Activity() {
         root.addView(button("Параметры принтера") { showPrinterInfo() })
         root.addView(button("Пробный чек") { printProbeReceipt() })
         root.addView(button("Самотест принтера") { selfTest() })
+        // Тумблер режима терминала. Нативный интерфейс едет на прибор в том же
+        // APK задолго до готовности, поэтому включение живёт здесь, за PIN, а
+        // умолчание всегда WebView. Применяется при возврате в терминал.
+        uiModeButton = button(uiModeCaption()) {
+            PosPrefs.setNativeUi(this, !PosPrefs.nativeUi(this))
+            uiModeButton.text = uiModeCaption()
+            log("терминал: ${if (PosPrefs.nativeUi(this)) "НАТИВНЫЙ (превью)" else "WebView"}")
+            log("  применится при возврате в терминал")
+        }
+        root.addView(uiModeButton)
         root.addView(button("Wi-Fi и сеть") { openWifiSettings() })
         // Возврат в киоск — тот же, что по кнопке «Назад», но названный словами:
         // системных кнопок на закреплённом экране может не быть вовсе.
@@ -133,6 +145,10 @@ class MainActivity : Activity() {
         )
         return root
     }
+
+    private fun uiModeCaption(): String =
+        if (PosPrefs.nativeUi(this)) "Терминал: НАТИВНЫЙ (превью) → вернуть WebView"
+        else "Терминал: WebView → включить НАТИВНЫЙ (превью)"
 
     private fun label(text: String) = TextView(this).apply {
         this.text = text
