@@ -535,6 +535,37 @@ export default function CheckoutPage() {
     return () => clearTimeout(timer)
   }, [contactDetails, deliveryType, zoneCheck, runZoneAnalysis])
 
+  // Автоподстановка города по PLZ (5 цифр → /api/delivery/plz-city). Поле «Ort»
+  // остаётся редактируемым: подставляем только при смене PLZ, ручную правку
+  // после этого не трогаем. requestId отсекает устаревшие ответы.
+  const plzLookupIdRef = useRef(0)
+  const lastPlzLookedUpRef = useRef('')
+  useEffect(() => {
+    const plz = contactDetails.postalCode.trim()
+    if (!/^\d{5}$/.test(plz) || plz === lastPlzLookedUpRef.current) return
+    const requestId = ++plzLookupIdRef.current
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/delivery/plz-city?plz=${plz}`)
+        const data = await res.json()
+        if (plzLookupIdRef.current !== requestId) return
+        lastPlzLookedUpRef.current = plz
+        if (data.success && data.city && data.city !== contactDetails.city) {
+          setContactDetails(prev => ({ ...prev, city: data.city }))
+          if (deliveryType === 'delivery') setDeliveryAddress({ city: data.city })
+          // Город сменился программно → предыдущая проверка зоны недействительна.
+          setZoneCheck(null)
+          setDeliveryZone('')
+          setErrors(prev => { const n = { ...prev }; delete n.city; return n })
+        }
+      } catch (_err) {
+        // Сервис недоступен — город остаётся как есть, гость правит вручную.
+      }
+    }, 350)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contactDetails.postalCode, deliveryType])
+
   // Правило перехода на шаге доставки (pickup — без проверки зоны).
   const deliveryGate = evaluateDeliveryGate({
     deliveryType: deliveryType as 'delivery' | 'pickup',
