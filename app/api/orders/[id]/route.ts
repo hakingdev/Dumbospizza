@@ -5,6 +5,7 @@ import { User } from '../../../../lib/models/user.model';
 import { isStaff, authOptions } from '../../../../lib/auth';
 import { getServerSession } from 'next-auth';
 import { getCustomerSession } from '../../../../lib/customer-auth';
+import { authorizePos } from '../../../../lib/pos/auth';
 import { verifyOrderAccessToken } from '../../../../lib/orders/access-token';
 import { rateLimit, getClientIp, logSecurityEvent } from '../../../../lib/security/rate-limit';
 import { sendOrderEtaNotification, sendOrderStatusNotification } from '../../../../lib/whatsapp';
@@ -104,14 +105,22 @@ export async function GET(request: NextRequest, { params }: Params) {
 export async function PUT(request: NextRequest, { params }: Params) {
   try {
     await connectToDatabase();
-    
-    // Verify staff authentication
+
+    // Verify staff authentication.
+    //
+    // Прибор (нативный терминал в pos-android) ходит ключом X-Pos-Key, а не
+    // сессией персонала: у Compose-экранов нет браузерных кук. Для смены
+    // статуса это тот же персонал у стойки — веб-терминал шлёт этот же PUT
+    // из-под сессии. authorizePos сам логирует прибор и валидирует ключ.
     const session = await getServerSession(authOptions);
     if (!session || !isStaff(session)) {
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Unauthorized' 
-      }, { status: 401 });
+      const device = await authorizePos(request);
+      if (!device.ok) {
+        return NextResponse.json({
+          success: false,
+          error: 'Unauthorized'
+        }, { status: 401 });
+      }
     }
     
     const data = await request.json();
