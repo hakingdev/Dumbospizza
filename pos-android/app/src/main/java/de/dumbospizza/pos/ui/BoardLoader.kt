@@ -62,21 +62,26 @@ class BoardLoader(private val context: Context) {
      * Пишет в те же настройки, что стоп-бот и админка, — прибор просто ещё
      * одна кнопка к общему выключателю.
      */
+    // busy снимается в finally: отменённая на середине корутина иначе
+    // оставляла флаг взведённым навсегда — подробности у OrderLoader.act.
     suspend fun setStop(scope: String, minutes: Int) {
         if (busy) return
         busy = true
-        withContext(Dispatchers.IO) {
-            runCatching {
-                PosApi.post(
-                    context,
-                    "/api/pos/v1/kitchen",
-                    JSONObject().put("scope", scope).put("minutes", minutes),
-                )
+        try {
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    PosApi.post(
+                        context,
+                        "/api/pos/v1/kitchen",
+                        JSONObject().put("scope", scope).put("minutes", minutes),
+                    )
+                }
             }
+            // Ответ баннеру не нужен — правду покажет свежая лента.
+            refresh()
+        } finally {
+            busy = false
         }
-        // Ответ баннеру не нужен — правду покажет свежая лента.
-        refresh()
-        busy = false
     }
 
     /**
@@ -86,30 +91,33 @@ class BoardLoader(private val context: Context) {
     suspend fun actOnOrder(orderId: String, next: PosStatus): String? {
         if (busy) return null
         busy = true
-        val result = withContext(Dispatchers.IO) {
-            runCatching {
-                PosApi.put(
-                    context,
-                    "/api/orders/" + Uri.encode(orderId),
-                    JSONObject().put("status", next.orderWire),
-                )
-            }
-        }
-        val error = result.fold(
-            onFailure = { it.message ?: "Keine Verbindung" },
-            onSuccess = { http ->
-                when {
-                    http.code == 401 -> "Zugriff verweigert — Schlüssel prüfen"
-                    http.code !in 200..299 -> runCatching {
-                        JSONObject(http.body).optString("error").ifEmpty { null }
-                    }.getOrNull() ?: "HTTP ${http.code}"
-                    else -> null
+        try {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    PosApi.put(
+                        context,
+                        "/api/orders/" + Uri.encode(orderId),
+                        JSONObject().put("status", next.orderWire),
+                    )
                 }
-            },
-        )
-        refresh()
-        busy = false
-        return error
+            }
+            val error = result.fold(
+                onFailure = { it.message ?: "Keine Verbindung" },
+                onSuccess = { http ->
+                    when {
+                        http.code == 401 -> "Zugriff verweigert — Schlüssel prüfen"
+                        http.code !in 200..299 -> runCatching {
+                            JSONObject(http.body).optString("error").ifEmpty { null }
+                        }.getOrNull() ?: "HTTP ${http.code}"
+                        else -> null
+                    }
+                },
+            )
+            refresh()
+            return error
+        } finally {
+            busy = false
+        }
     }
 
     companion object {

@@ -147,10 +147,15 @@ class MenuLoader(private val context: Context) {
     ) {
         if (busy) return
         busy = true
-        patchAvailability(productId, available, sizeId, active)
-        refreshItems()
-        refreshCategories()
-        busy = false
+        // finally — иначе отменённая корутина оставляла флаг взведённым
+        // навсегда (см. OrderLoader.act).
+        try {
+            patchAvailability(productId, available, sizeId, active)
+            refreshItems()
+            refreshCategories()
+        } finally {
+            busy = false
+        }
     }
 
     /**
@@ -161,14 +166,17 @@ class MenuLoader(private val context: Context) {
     suspend fun applyWholeCategory(all: List<MenuItem>, next: Boolean) {
         if (busy) return
         busy = true
-        coroutineScope {
-            all.map { item ->
-                async { patchAvailability(item.id, available = next) }
-            }.awaitAll()
+        try {
+            coroutineScope {
+                all.map { item ->
+                    async { patchAvailability(item.id, available = next) }
+                }.awaitAll()
+            }
+            refreshItems()
+            refreshCategories()
+        } finally {
+            busy = false
         }
-        refreshItems()
-        refreshCategories()
-        busy = false
     }
 
     /**
@@ -179,30 +187,33 @@ class MenuLoader(private val context: Context) {
     suspend fun setStop(scope: String, minutes: Int): String? {
         if (busy) return null
         busy = true
-        val result = withContext(Dispatchers.IO) {
-            runCatching {
-                PosApi.post(
-                    context,
-                    "/api/pos/v1/kitchen",
-                    JSONObject().put("scope", scope).put("minutes", minutes),
-                )
-            }
-        }
-        val error = result.fold(
-            onFailure = { it.message ?: "Keine Verbindung" },
-            onSuccess = { http ->
-                when {
-                    http.code == 401 -> "Zugriff verweigert — Schlüssel prüfen"
-                    http.code !in 200..299 -> runCatching {
-                        JSONObject(http.body).optString("error").ifEmpty { null }
-                    }.getOrNull() ?: "HTTP ${http.code}"
-                    else -> null
+        try {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    PosApi.post(
+                        context,
+                        "/api/pos/v1/kitchen",
+                        JSONObject().put("scope", scope).put("minutes", minutes),
+                    )
                 }
-            },
-        )
-        refreshCategories()
-        busy = false
-        return error
+            }
+            val error = result.fold(
+                onFailure = { it.message ?: "Keine Verbindung" },
+                onSuccess = { http ->
+                    when {
+                        http.code == 401 -> "Zugriff verweigert — Schlüssel prüfen"
+                        http.code !in 200..299 -> runCatching {
+                            JSONObject(http.body).optString("error").ifEmpty { null }
+                        }.getOrNull() ?: "HTTP ${http.code}"
+                        else -> null
+                    }
+                },
+            )
+            refreshCategories()
+            return error
+        } finally {
+            busy = false
+        }
     }
 
     private suspend fun patchAvailability(

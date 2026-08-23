@@ -59,30 +59,39 @@ class OrderLoader(private val context: Context) {
      * обещание. Одним PUT, а не двумя запросами: иначе между ними существует
      * заказ, принятый без времени. null — успех, иначе текст ошибки для экрана.
      */
+    // busy ВЕЗДЕ снимается в finally, и это не перестраховка: отмена корутины
+    // (экран закрыли, пока запрос летел) выбрасывается из withContext МИМО
+    // runCatching, и «busy = false» после него не выполнялась. Загрузчики
+    // живут в PosApp всё время работы прибора, поэтому взведённый флаг гасил
+    // кнопки у ВСЕХ заказов до перезапуска приложения — кухня видела «всё
+    // серое, ничего не нажимается» (инцидент 2026-08-23).
     suspend fun act(next: PosStatus, etaMinutes: Int? = null): String? {
         val id = orderId ?: return "Keine Bestellung"
         if (busy) return null
         busy = true
-        val result = withContext(Dispatchers.IO) {
-            runCatching {
-                val body = JSONObject().put("status", next.orderWire)
-                etaMinutes?.let { body.put("etaMinutes", it) }
-                PosApi.put(context, "/api/orders/" + Uri.encode(id), body)
-            }
-        }
-        val error = result.fold(
-            onFailure = { it.message ?: "Keine Verbindung" },
-            onSuccess = { http ->
-                when {
-                    http.code == 401 -> "Zugriff verweigert — Schlüssel prüfen"
-                    http.code !in 200..299 -> parseError(http.body) ?: "HTTP ${http.code}"
-                    else -> null
+        try {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val body = JSONObject().put("status", next.orderWire)
+                    etaMinutes?.let { body.put("etaMinutes", it) }
+                    PosApi.put(context, "/api/orders/" + Uri.encode(id), body)
                 }
-            },
-        )
-        if (error == null) refresh()
-        busy = false
-        return error
+            }
+            val error = result.fold(
+                onFailure = { it.message ?: "Keine Verbindung" },
+                onSuccess = { http ->
+                    when {
+                        http.code == 401 -> "Zugriff verweigert — Schlüssel prüfen"
+                        http.code !in 200..299 -> parseError(http.body) ?: "HTTP ${http.code}"
+                        else -> null
+                    }
+                },
+            )
+            if (error == null) refresh()
+            return error
+        } finally {
+            busy = false
+        }
     }
 
     /**
@@ -95,24 +104,27 @@ class OrderLoader(private val context: Context) {
         val id = orderId ?: return "Keine Bestellung"
         if (busy) return null
         busy = true
-        val result = withContext(Dispatchers.IO) {
-            runCatching {
-                PosApi.post(context, "/api/orders/" + Uri.encode(id) + pathSuffix, body)
-            }
-        }
-        val error = result.fold(
-            onFailure = { it.message ?: "Keine Verbindung" },
-            onSuccess = { http ->
-                when {
-                    http.code == 401 -> "Zugriff verweigert — Schlüssel prüfen"
-                    http.code !in 200..299 -> parseError(http.body) ?: "HTTP ${http.code}"
-                    else -> null
+        try {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    PosApi.post(context, "/api/orders/" + Uri.encode(id) + pathSuffix, body)
                 }
-            },
-        )
-        if (error == null) refresh()
-        busy = false
-        return error
+            }
+            val error = result.fold(
+                onFailure = { it.message ?: "Keine Verbindung" },
+                onSuccess = { http ->
+                    when {
+                        http.code == 401 -> "Zugriff verweigert — Schlüssel prüfen"
+                        http.code !in 200..299 -> parseError(http.body) ?: "HTTP ${http.code}"
+                        else -> null
+                    }
+                },
+            )
+            if (error == null) refresh()
+            return error
+        } finally {
+            busy = false
+        }
     }
 
     private fun parseError(body: String): String? = runCatching {
