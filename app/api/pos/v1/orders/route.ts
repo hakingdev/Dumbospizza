@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '../../../../../lib/models';
 import { Order } from '../../../../../lib/models/order.model';
 import { visibleOrderStatusFilter } from '../../../../../lib/orders/payment-draft';
+import {
+  KITCHEN_PRINT_ACCEPT_GRACE_MS,
+  kitchenPrintAcceptGate,
+} from '../../../../../lib/orders/kitchen-print-gate';
 import { authorizePosDevice } from '../../../../../lib/pos/auth';
 import { getPosPrintSettings } from '../../../../../lib/pos/settings';
 import { buildPrintJob } from '../../../../../lib/pos/print-job';
@@ -71,8 +75,27 @@ export async function GET(request: NextRequest) {
     // отсекает visibleOrderStatusFilter.
     const base = {
       status: visibleOrderStatusFilter(null),
-      updatedAt: { $gt: since },
-      $or: [{ paymentMethod: { $ne: 'online' } }, { paymentStatus: 'completed' }],
+      $and: [
+        {
+          $or: [
+            { updatedAt: { $gt: since } },
+            // Возврат в окно заказов, которые придержал гейт принятия: их
+            // updatedAt не двигался, и курсор прибора уже уехал вперёд.
+            // Лишней бумаги это не даёт — прибор дедупит по orderId:printSeq.
+            {
+              status: 'new',
+              createdAt: {
+                $gt: new Date(floor),
+                $lte: new Date(nowMs - KITCHEN_PRINT_ACCEPT_GRACE_MS),
+              },
+            },
+          ],
+        },
+        { $or: [{ paymentMethod: { $ne: 'online' } }, { paymentStatus: 'completed' }] },
+        // Бон ждёт принятия: на бумаге должен стоять час, который кухня
+        // выставила при приёме (см. lib/orders/kitchen-print-gate.ts).
+        kitchenPrintAcceptGate(nowMs),
+      ],
     };
 
     /**

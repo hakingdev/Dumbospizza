@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '../../../lib/models';
+import { kitchenPrintAcceptGate } from '../../../lib/orders/kitchen-print-gate';
 import { Order } from '../../../lib/models/order.model';
 import { Product } from '../../../lib/models/product.model';
 import { Category } from '../../../lib/models/category.model';
@@ -750,7 +751,13 @@ export async function GET(request: NextRequest) {
       // Атомарная выдача очереди печати (pending→printing + reclaim зависших):
       // kitchenPrintStatus добавляет print-queue, сюда идёт гейт по оплате
       // и статусу (драфты pending_payment агенту не выдаются никогда).
-      const baseQuery: any = { $or: query.$or, status: query.status };
+      // Плюс гейт принятия: бон печатается после того, как кухня выставила
+      // время, — на бумаге должен стоять обещанный час, а не час приёма
+      // (см. lib/orders/kitchen-print-gate.ts).
+      const baseQuery: any = {
+        status: query.status,
+        $and: [{ $or: query.$or }, kitchenPrintAcceptGate(Date.now())],
+      };
       const orders = await claimPendingPrintOrders(baseQuery, limit, {
         agentId: request.headers.get('X-Print-Agent-Id') || undefined,
       });
