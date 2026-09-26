@@ -268,6 +268,19 @@ function formatTime(d: Date, timeZone = TZ): string {
   }).format(d);
 }
 
+/** С секундами — для heartbeat агента: «Обновить» должен менять текст экрана,
+ *  иначе editMessageText падает «message is not modified» и нажатие выглядит
+ *  как «ничего не произошло». */
+function formatTimeSec(d: Date, timeZone = TZ): string {
+  if (isNaN(d.getTime())) return '—';
+  return new Intl.DateTimeFormat('ru-RU', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    timeZone,
+  }).format(d);
+}
+
 /** «🔴 стоп до 19:40» / «🟢 работает» для строки статуса. */
 function statusLabel(until: string, now: Date, timeZone: string): string {
   return isBlockActive(until, now)
@@ -426,7 +439,7 @@ export function buildLieferandoText(
   lines.push(
     offline
       ? `⚠️ Агент не на связи${seen ? ` (последний раз: ${formatTime(seen, timeZone)})` : ' (ещё ни разу не поллил)'} — проверьте кассовый ПК.`
-      : `Агент на связи (${formatTime(seen!, timeZone)}).`
+      : `Агент на связи (${formatTimeSec(seen!, timeZone)}).`
   );
 
   lines.push('', 'ℹ️ Выключение действует до конца дня — утром Lieferando включит позиции сам.');
@@ -456,6 +469,16 @@ export function buildPanel(
     text: buildScopeText(view.scope, state, now, timeZone),
     keyboard: buildScopeKeyboard(view.scope),
   };
+}
+
+/** Тост «жив ли агент» — видимый ответ на КАЖДОЕ нажатие экрана Lieferando,
+ *  даже когда текст панели не изменился и edit молча не прошёл. */
+function liefAgentToast(lief: LieferandoState, now: Date = new Date()): string {
+  const seen = lief.agentSeenAt ? new Date(lief.agentSeenAt) : null;
+  const offline = !seen || now.getTime() - seen.getTime() > AGENT_OFFLINE_MS;
+  return offline
+    ? '🔴 Агент офлайн — проверьте кассовый ПК'
+    : `🟢 Агент на связи (${formatTimeSec(seen!)})`;
 }
 
 /** Короткий toast для answerCallbackQuery. */
@@ -551,7 +574,7 @@ export async function handleControlUpdate(
       await ack(
         action.type === 'lief_toggle'
           ? `📤 Команда агенту: ${action.action === 'off' ? 'выключить' : 'включить'} MakiLove`
-          : ''
+          : liefAgentToast(lief)
       );
       const messageId = cbq?.message?.message_id;
       if (messageId != null) {
