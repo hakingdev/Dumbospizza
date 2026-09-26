@@ -101,7 +101,7 @@ async function checkForUpdates() {
       if (hash12(buf) !== manifest.files[f].hash) {
         throw new Error(`${f}: хэш не совпал с манифестом (обрыв скачивания?)`);
       }
-      const tmp = path.join(AGENT_DIR, `${f}.new`);
+      const tmp = path.join(AGENT_DIR, `${f}.new.mjs`);
       fs.writeFileSync(tmp, buf);
       const check = spawnSync(process.execPath, ['--check', tmp], { encoding: 'utf8' });
       if (check.status !== 0) {
