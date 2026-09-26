@@ -69,12 +69,17 @@ export async function POST(request: NextRequest) {
     await reportLieferandoResult(result);
 
     // Отчёт в группу — best-effort: провал Telegram не должен ронять отчёт.
+    // count 0 при ok = всё уже было в нужном состоянии — «скрыто 0 позиций» пугает.
     const text = result.ok
       ? result.action === 'off'
-        ? `🛵 Lieferando: MakiLove <b>ВЫКЛЮЧЕН</b> — скрыто позиций: ${result.count}.` +
+        ? (result.count
+            ? `🛵 Lieferando: MakiLove <b>ВЫКЛЮЧЕН</b> — скрыто позиций: ${result.count}.`
+            : '🛵 Lieferando: MakiLove <b>ВЫКЛЮЧЕН</b> — все позиции уже были скрыты.') +
           (result.failed ? `\n⚠️ Не удалось: ${result.failed}.` : '') +
           '\nℹ️ Утром Lieferando включит их сам.'
-        : `🛵 Lieferando: MakiLove <b>включён</b> — позиций: ${result.count}.` +
+        : (result.count
+            ? `🛵 Lieferando: MakiLove <b>включён</b> — позиций: ${result.count}.`
+            : '🛵 Lieferando: MakiLove <b>включён</b> — скрытых скриптом позиций не было.') +
           (result.failed ? `\n⚠️ Не удалось: ${result.failed}.` : '')
       : `🛵❌ Lieferando: команда «${result.action === 'off' ? 'выключить' : 'включить'}» НЕ выполнена.\n${result.message || 'Причина неизвестна.'}`;
     await sendControlMessage(text);
