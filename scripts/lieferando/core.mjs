@@ -296,71 +296,52 @@ export async function runOff({ headless = false, log = console.log } = {}) {
   }
 }
 
-/** Включить обратно ровно то, что выключал runOff (из state/disabled.json). */
+/**
+ * Включить ВСЕ позиции MakiLove.
+ * Раньше включали «только то, что выключал скрипт» (state/disabled.json), но
+ * список теряется при падениях прогона (26.09: off скрыл всё и упал до записи
+ * state — «Включить всё» осталось ни с чем). Hub и сам каждое утро включает
+ * все позиции обратно, так что «вернуть всё» — безопасная и ожидаемая
+ * семантика кнопки.
+ */
 export async function runOn({ headless = false, log = console.log } = {}) {
-  const state = loadState();
-  if (!state.disabled?.length) {
-    return {
-      ok: true,
-      count: 0,
-      failed: 0,
-      message: 'включать нечего: скрипт ничего не выключал',
-    };
-  }
   const { context, page } = await openBrowser({ headless });
   try {
     await openMenu(page);
-
-    // группируем по категориям, чтобы не прыгать по сайдбару лишний раз
-    const byCat = new Map();
-    for (const e of state.disabled) {
-      if (!byCat.has(e.category)) byCat.set(e.category, []);
-      byCat.get(e.category).push(e.name);
-    }
-
-    let ok = 0;
-    const leftover = [];
-    for (const [cat, names] of byCat) {
-      let items;
-      try {
-        await openCategory(page, cat);
-        items = await collectPaneItems(page);
-      } catch (e) {
-        log(`  ✖ категория «${cat}» не открылась: ${String(e?.message || e).split('\n')[0]}`);
-        for (const name of names) leftover.push({ category: cat, name });
-        continue;
-      }
-      const byName = new Map(items.map((i) => [norm(i.name), i]));
-      log(`\n${cat} — включаю ${names.length}:`);
-      for (const name of names) {
-        const item = byName.get(norm(name));
-        if (!item) {
-          log(`  ✖ не нашёл на странице: ${name}`);
-          leftover.push({ category: cat, name });
-          continue;
+    let enabled = 0;
+    let already = 0;
+    let failed = 0;
+    const failedCats = await forEachTarget(
+      page,
+      async (cat, items) => {
+        const inactive = items.filter((i) => !i.checked);
+        already += items.length - inactive.length;
+        if (!inactive.length) return;
+        log(`\n${cat} — включаю ${inactive.length}:`);
+        for (const item of inactive) {
+          const ok = await setItem(page, item, true, log).catch(() => false);
+          if (ok) {
+            enabled++;
+            log(`  ✔ ${item.name}`);
+          } else {
+            failed++;
+            log(`  ✖ НЕ ВКЛЮЧИЛОСЬ: ${item.name}`);
+          }
         }
-        if (item.checked) {
-          log(`  – уже включено: ${name}`);
-          ok++;
-          continue;
-        }
-        const good = await setItem(page, item, true, log).catch(() => false);
-        if (good) {
-          log(`  ✔ ${name}`);
-          ok++;
-        } else {
-          log(`  ✖ НЕ ВКЛЮЧИЛОСЬ: ${name}`);
-          leftover.push({ category: cat, name });
-        }
-      }
-    }
-    saveState({ disabled: leftover });
-    log(`\nВключено: ${ok}/${state.disabled.length}.`);
+      },
+      log
+    );
+    // всё включено — старый список выключенного больше не актуален
+    saveState({ disabled: [] });
+    log(`\nВключено: ${enabled}, уже были включены: ${already}${failed ? `, ошибок: ${failed}` : ''}.`);
+    const problems = [];
+    if (failed) problems.push(`не включилось позиций: ${failed}`);
+    if (failedCats.length) problems.push(`не открылись категории: ${failedCats.join(', ')}`);
     return {
-      ok: leftover.length === 0,
-      count: ok,
-      failed: leftover.length,
-      message: leftover.length ? `не включилось позиций: ${leftover.length}` : '',
+      ok: problems.length === 0,
+      count: enabled,
+      failed: failed + failedCats.length,
+      message: problems.join('; '),
     };
   } finally {
     await context.close();
