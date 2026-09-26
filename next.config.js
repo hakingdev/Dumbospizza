@@ -22,6 +22,11 @@ const nextConfig = {
   experimental: {
     // Оптимизации для Docker
     outputFileTracingRoot: __dirname,
+    // Файлы агента Lieferando для эндпоинта самообновления —
+    // иначе readFileSync в serverless-функции их не увидит.
+    outputFileTracingIncludes: {
+      '/api/lieferando/agent/files': ['./scripts/lieferando/*.mjs'],
+    },
   },
   // Встроенная конфигурация webpack для hot-reload в Docker
   webpack: (config, { dev, isServer }) => {

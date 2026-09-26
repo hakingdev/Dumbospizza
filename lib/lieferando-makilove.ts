@@ -59,6 +59,8 @@ export interface LieferandoState {
   lastResult: LieferandoResult | null;
   itemsState: 'on' | 'off' | 'unknown';
   agentSeenAt: string | null;
+  /** версия файлов агента (хэш манифеста самообновления) — видно в панели */
+  agentVersion: string | null;
 }
 
 export const EMPTY_LIEFERANDO_STATE: LieferandoState = {
@@ -67,6 +69,7 @@ export const EMPTY_LIEFERANDO_STATE: LieferandoState = {
   lastResult: null,
   itemsState: 'unknown',
   agentSeenAt: null,
+  agentVersion: null,
 };
 
 const isAction = (v: unknown): v is LieferandoAction => v === 'off' || v === 'on';
@@ -92,6 +95,7 @@ export function readLieferandoState(raw: unknown): LieferandoState {
     lastResult: res,
     itemsState: s.itemsState === 'on' || s.itemsState === 'off' ? s.itemsState : 'unknown',
     agentSeenAt: typeof s.agentSeenAt === 'string' ? s.agentSeenAt : null,
+    agentVersion: typeof s.agentVersion === 'string' ? s.agentVersion : null,
   };
 }
 
@@ -123,13 +127,18 @@ export async function requestLieferandoToggle(
  */
 export async function claimLieferandoCommand(
   agentId: string,
-  now: Date = new Date()
+  now: Date = new Date(),
+  agentVersion?: string | null
 ): Promise<{ command: LieferandoCommand | null; state: LieferandoState }> {
   const state = await getLieferandoState();
   const nowIso = now.toISOString();
 
   let claimed: LieferandoCommand | null = null;
-  let next: LieferandoState = { ...state, agentSeenAt: nowIso };
+  let next: LieferandoState = {
+    ...state,
+    agentSeenAt: nowIso,
+    agentVersion: agentVersion || state.agentVersion,
+  };
 
   if (state.command) {
     claimed = state.command;

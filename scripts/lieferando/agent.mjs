@@ -16,9 +16,11 @@
  * Первичная настройка на ПК: npm install; npx playwright install chromium;
  * node toggle.mjs login (вход в Partner Hub один раз).
  */
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { runOff, runOn } from './core.mjs';
 
@@ -48,11 +50,83 @@ if (!SECRET) {
 const ts = () => new Date().toLocaleTimeString('ru-RU');
 const log = (...a) => console.log(`[${ts()}]`, ...a);
 
+// --- самообновление ------------------------------------------------------------
+// Раз в час (и при старте) сверяем свои файлы с /api/lieferando/agent/files.
+// Изменившиеся скачиваем, проверяем хэш и node --check, подменяем и выходим —
+// start-agent.bat перезапустит агента уже на новом коде. Запуск голым
+// `node agent.mjs` тоже работает, но после обновления агент завершится
+// и его надо будет запустить заново (поэтому — bat!).
+const AGENT_DIR = path.dirname(fileURLToPath(import.meta.url));
+const AGENT_FILES = ['agent.mjs', 'core.mjs', 'toggle.mjs'];
+const UPDATE_CHECK_MS = 60 * 60 * 1000;
+const SELF_UPDATE = process.env.LIEFERANDO_NO_SELF_UPDATE !== '1';
+
+// та же схема, что на сервере: sha256 от байтов, первые 12 hex
+const hash12 = (data) => crypto.createHash('sha256').update(data).digest('hex').slice(0, 12);
+
+function localFileHash(name) {
+  try {
+    return hash12(fs.readFileSync(path.join(AGENT_DIR, name)));
+  } catch {
+    return null;
+  }
+}
+
+function localVersion() {
+  const files = {};
+  for (const f of AGENT_FILES) files[f] = { hash: localFileHash(f) };
+  return hash12(AGENT_FILES.map((f) => `${f}:${files[f].hash}`).join('\n'));
+}
+
+/** true = обновились, нужен перезапуск. Бросает при сетевых/проверочных сбоях. */
+async function checkForUpdates() {
+  const res = await fetch(`${API_BASE_URL}/api/lieferando/agent/files`, { headers: HEADERS });
+  if (!res.ok) throw new Error(`GET files ${res.status}`);
+  const manifest = await res.json();
+  const changed = AGENT_FILES.filter(
+    (f) => manifest.files?.[f]?.hash && manifest.files[f].hash !== localFileHash(f)
+  );
+  if (!changed.length) return false;
+
+  log(`Доступно обновление (${changed.join(', ')}, версия ${manifest.version}) — скачиваю…`);
+  const staged = [];
+  try {
+    for (const f of changed) {
+      const r = await fetch(
+        `${API_BASE_URL}/api/lieferando/agent/files?file=${encodeURIComponent(f)}`,
+        { headers: HEADERS }
+      );
+      if (!r.ok) throw new Error(`GET ${f}: ${r.status}`);
+      const buf = Buffer.from(await r.text(), 'utf8');
+      if (hash12(buf) !== manifest.files[f].hash) {
+        throw new Error(`${f}: хэш не совпал с манифестом (обрыв скачивания?)`);
+      }
+      const tmp = path.join(AGENT_DIR, `${f}.new`);
+      fs.writeFileSync(tmp, buf);
+      const check = spawnSync(process.execPath, ['--check', tmp], { encoding: 'utf8' });
+      if (check.status !== 0) {
+        fs.rmSync(tmp, { force: true });
+        throw new Error(`${f}: не прошёл node --check: ${(check.stderr || '').slice(0, 200)}`);
+      }
+      staged.push([tmp, path.join(AGENT_DIR, f)]);
+    }
+  } catch (e) {
+    for (const [tmp] of staged) fs.rmSync(tmp, { force: true });
+    throw e;
+  }
+  // все файлы скачаны и проверены — подменяем разом
+  for (const [tmp, dest] of staged) fs.renameSync(tmp, dest);
+  log(`Обновление применено (версия ${manifest.version}) — перезапуск агента.`);
+  return true;
+}
+
 const HEADERS = {
   'X-Lieferando-Agent-Key': SECRET,
   'X-Lieferando-Agent-Id': AGENT_ID,
+  'X-Agent-Version': '',
   'Content-Type': 'application/json',
 };
+HEADERS['X-Agent-Version'] = localVersion();
 
 async function poll() {
   const res = await fetch(`${API_BASE_URL}/api/lieferando/agent`, { headers: HEADERS });
@@ -96,9 +170,20 @@ async function execute(command) {
   }
 }
 
-log(`Агент Lieferando запущен: ${API_BASE_URL}, id=${AGENT_ID}, poll=${POLL_MS}ms, headless=${HEADLESS}`);
+log(
+  `Агент Lieferando запущен: ${API_BASE_URL}, id=${AGENT_ID}, v=${HEADERS['X-Agent-Version']}, poll=${POLL_MS}ms, headless=${HEADLESS}, автообновление=${SELF_UPDATE ? 'вкл' : 'ВЫКЛ'}`
+);
 // Простой последовательный цикл: пока команда выполняется — не поллим.
+let nextUpdateCheckAt = 0; // первый раз — сразу при старте
 for (;;) {
+  if (SELF_UPDATE && Date.now() >= nextUpdateCheckAt) {
+    nextUpdateCheckAt = Date.now() + UPDATE_CHECK_MS;
+    try {
+      if (await checkForUpdates()) process.exit(0); // start-agent.bat перезапустит
+    } catch (e) {
+      log('Проверка обновлений не удалась:', e.message); // не мешаем основной работе
+    }
+  }
   try {
     const command = await poll();
     if (command) await execute(command);

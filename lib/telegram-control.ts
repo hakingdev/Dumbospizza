@@ -439,7 +439,7 @@ export function buildLieferandoText(
   lines.push(
     offline
       ? `⚠️ Агент не на связи${seen ? ` (последний раз: ${formatTime(seen, timeZone)})` : ' (ещё ни разу не поллил)'} — проверьте кассовый ПК.`
-      : `Агент на связи (${formatTimeSec(seen!, timeZone)}).`
+      : `Агент на связи (${formatTimeSec(seen!, timeZone)}${lief.agentVersion ? `, v ${lief.agentVersion}` : ''}).`
   );
 
   lines.push('', 'ℹ️ Выключение действует до конца дня — утром Lieferando включит позиции сам.');

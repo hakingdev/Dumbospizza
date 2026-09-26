@@ -37,7 +37,8 @@ export async function GET(request: NextRequest) {
   try {
     await connectToDatabase();
     const agentId = request.headers.get('X-Lieferando-Agent-Id') || 'agent';
-    const { command } = await claimLieferandoCommand(agentId);
+    const agentVersion = request.headers.get('X-Agent-Version');
+    const { command } = await claimLieferandoCommand(agentId, new Date(), agentVersion);
     return NextResponse.json({ success: true, command });
   } catch (error) {
     console.error('[lieferando-agent] GET failed:', error);
