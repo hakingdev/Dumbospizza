@@ -79,6 +79,7 @@ export async function openMenu(page) {
       'Категории не загрузились — скорее всего, сессия истекла. На этом ПК: node toggle.mjs login'
     );
   }
+  await dismissCookieBanner(page);
 }
 
 async function categoryNames(page) {
@@ -148,6 +149,25 @@ async function confirmModalIfAny(page, log) {
   await modal.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
 }
 
+/** Куки-баннер Hub (pie-cookie-banner) перекрывает низ сайдбара и молча
+ *  съедает клики (locator resolved → intercepts pointer events). Закрываем
+ *  самым приватным вариантом — «только необходимые cookies»; выбор
+ *  сохраняется в профиле, так что действие фактически одноразовое.
+ *  Playwright пробивает shadow DOM компонента обычным локатором. */
+async function dismissCookieBanner(page, log = console.log) {
+  const banner = page.locator('pie-cookie-banner');
+  if (!(await banner.count().catch(() => 0))) return false;
+  try {
+    await page.locator('[data-test-id="actions-necessary-only"]').first().click({ timeout: 5000 });
+    await banner.waitFor({ state: 'detached', timeout: 5000 }).catch(() => {});
+    log('Куки-баннер закрыт («только необходимые»).');
+    return true;
+  } catch (e) {
+    log(`⚠️ Куки-баннер виден, но закрыть не удалось: ${String(e?.message || e).split('\n')[0]}`);
+    return false;
+  }
+}
+
 /** Ждёт, пока чекбокс примет ожидаемое состояние (подтверждение от сервера). */
 async function waitChecked(input, expected, timeout = 8000) {
   const deadline = Date.now() + timeout;
@@ -171,15 +191,36 @@ async function setItem(page, item, makeAvailable, log) {
  * Обходит все категории и вызывает handler(category, items) для позиций,
  * подпадающих под MATCH (вся категория либо отдельная позиция по имени).
  */
-async function forEachTarget(page, handler) {
+async function forEachTarget(page, handler, log = console.log) {
   const cats = await categoryNames(page);
+  // Чужие категории смотрим только при FULL_SCAN=1: все позиции MakiLove живут
+  // в категориях «Makilove …», а лишние заходы удваивают время прогона и
+  // поверхность отказов (26.09 весь off упал на «Alkoholische Getränke»).
+  const fullScan = process.env.FULL_SCAN === '1';
+  const failedCats = [];
   for (const cat of cats) {
     const wholeCategory = matches(cat);
-    await openCategory(page, cat);
-    let items = await collectPaneItems(page);
-    if (!wholeCategory) items = items.filter((i) => matches(i.name));
-    if (items.length) await handler(cat.trim(), items);
+    if (!wholeCategory && !fullScan) continue;
+    // Вторая попытка — на случай, если клик съел всплывший куки-баннер.
+    let attempts = 0;
+    while (attempts < 2) {
+      attempts++;
+      try {
+        await openCategory(page, cat);
+        let items = await collectPaneItems(page);
+        if (!wholeCategory) items = items.filter((i) => matches(i.name));
+        if (items.length) await handler(cat.trim(), items);
+        break;
+      } catch (e) {
+        if (attempts < 2 && (await dismissCookieBanner(page, log))) continue;
+        // Одна сломавшаяся категория не должна ронять весь прогон.
+        failedCats.push(cat.trim());
+        log(`  ✖ категория «${cat.trim()}» пропущена: ${String(e?.message || e).split('\n')[0]}`);
+        break;
+      }
+    }
   }
+  return failedCats;
 }
 
 // --- высокоуровневые операции (обе обёртки зовут только их) --------------------
@@ -190,13 +231,18 @@ export async function runList({ headless = false, log = console.log } = {}) {
   try {
     await openMenu(page);
     let total = 0;
-    await forEachTarget(page, async (cat, items) => {
-      log(`\n${cat}`);
-      for (const i of items) {
-        log(`  [${i.checked ? 'вкл ' : 'ВЫКЛ'}] ${i.name}`);
-        total++;
-      }
-    });
+    const failedCats = await forEachTarget(
+      page,
+      async (cat, items) => {
+        log(`\n${cat}`);
+        for (const i of items) {
+          log(`  [${i.checked ? 'вкл ' : 'ВЫКЛ'}] ${i.name}`);
+          total++;
+        }
+      },
+      log
+    );
+    if (failedCats.length) log(`\n⚠️ Не открылись категории: ${failedCats.join(', ')}`);
     log(`\nИтого позиций MakiLove: ${total}`);
     return { ok: true, count: total, failed: 0, message: '' };
   } finally {
@@ -211,28 +257,39 @@ export async function runOff({ headless = false, log = console.log } = {}) {
     await openMenu(page);
     const disabled = [];
     let failed = 0;
-    await forEachTarget(page, async (cat, items) => {
-      const active = items.filter((i) => i.checked);
-      if (!active.length) return;
-      log(`\n${cat} — выключаю ${active.length}:`);
-      for (const item of active) {
-        const ok = await setItem(page, item, false, log).catch(() => false);
-        if (ok) {
-          disabled.push({ category: cat, name: item.name });
-          log(`  ✔ ${item.name}`);
-        } else {
-          failed++;
-          log(`  ✖ НЕ ВЫКЛЮЧИЛОСЬ: ${item.name}`);
+    // state пишем после КАЖДОЙ позиции: аборт прогона не должен терять список
+    // уже выключенного, иначе «Включить обратно» не найдёт что включать.
+    const save = () => saveState({ disabled, at: new Date().toISOString() });
+    const failedCats = await forEachTarget(
+      page,
+      async (cat, items) => {
+        const active = items.filter((i) => i.checked);
+        if (!active.length) return;
+        log(`\n${cat} — выключаю ${active.length}:`);
+        for (const item of active) {
+          const ok = await setItem(page, item, false, log).catch(() => false);
+          if (ok) {
+            disabled.push({ category: cat, name: item.name });
+            save();
+            log(`  ✔ ${item.name}`);
+          } else {
+            failed++;
+            log(`  ✖ НЕ ВЫКЛЮЧИЛОСЬ: ${item.name}`);
+          }
         }
-      }
-    });
-    saveState({ disabled, at: new Date().toISOString() });
+      },
+      log
+    );
+    save();
     log(`\nВыключено: ${disabled.length}${failed ? `, ошибок: ${failed}` : ''}.`);
+    const problems = [];
+    if (failed) problems.push(`не выключилось позиций: ${failed}`);
+    if (failedCats.length) problems.push(`не открылись категории: ${failedCats.join(', ')}`);
     return {
-      ok: failed === 0,
+      ok: problems.length === 0,
       count: disabled.length,
-      failed,
-      message: failed ? `не выключилось позиций: ${failed}` : '',
+      failed: failed + failedCats.length,
+      message: problems.join('; '),
     };
   } finally {
     await context.close();
@@ -264,8 +321,15 @@ export async function runOn({ headless = false, log = console.log } = {}) {
     let ok = 0;
     const leftover = [];
     for (const [cat, names] of byCat) {
-      await openCategory(page, cat);
-      const items = await collectPaneItems(page);
+      let items;
+      try {
+        await openCategory(page, cat);
+        items = await collectPaneItems(page);
+      } catch (e) {
+        log(`  ✖ категория «${cat}» не открылась: ${String(e?.message || e).split('\n')[0]}`);
+        for (const name of names) leftover.push({ category: cat, name });
+        continue;
+      }
       const byName = new Map(items.map((i) => [norm(i.name), i]));
       log(`\n${cat} — включаю ${names.length}:`);
       for (const name of names) {
