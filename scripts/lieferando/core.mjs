@@ -69,6 +69,7 @@ export async function openBrowser({ headless = false } = {}) {
 }
 
 export async function openMenu(page) {
+  debugShots = 0; // лимит скриншотов — на один прогон, а не на жизнь процесса
   await page.goto(MENU_URL, { waitUntil: 'domcontentloaded' });
   const ok = await page
     .waitForSelector(SEL.categoryBtn, { timeout: 30000 })
@@ -80,6 +81,62 @@ export async function openMenu(page) {
     );
   }
   await dismissCookieBanner(page);
+  await clearOverlays(page);
+}
+
+/** Суть ошибки Playwright одной строкой: что именно мешало клику. */
+function failReason(e) {
+  const lines = String(e?.message || e).split('\n').map((l) => l.trim());
+  const why = lines.find((l) =>
+    /intercepts pointer events|not visible|not attached|outside of the viewport|hidden|detached|disabled/i.test(l)
+  );
+  return why ? `${lines[0]} — ${why}` : lines[0];
+}
+
+let debugShots = 0;
+/** Скриншот при сбое (не больше 3 за прогон) — лежит в debug/ рядом со скриптом. */
+async function debugScreenshot(page, tag, log) {
+  if (debugShots >= 3) return;
+  debugShots++;
+  try {
+    const dir = path.join(__dirname, 'debug');
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, `${tag}-${Date.now()}.png`.replace(/[^\w.\-]+/g, '_'));
+    await page.screenshot({ path: file, fullPage: false });
+    log(`    скриншот: ${file}`);
+  } catch {
+    /* скриншот — только для диагностики */
+  }
+}
+
+/**
+ * Hub любит показывать поверх страницы модалки (объявления, новые условия,
+ * опросы) и боковые панели — они перехватывают клики по всей странице.
+ * Закрываем всё, что видим; true = что-то закрыли (имеет смысл повторить клик).
+ */
+async function clearOverlays(page, log = console.log) {
+  let closed = false;
+  if (await dismissCookieBanner(page, log)) closed = true;
+
+  const modal = page.locator(SEL.modal).first();
+  if (await modal.isVisible().catch(() => false)) {
+    const text = ((await modal.textContent().catch(() => '')) || '').trim().slice(0, 150);
+    log(`    модалка поверх страницы: «${text}» — закрываю`);
+    const closeBtn = modal.locator('[data-testid="pt-modal-close-btn"]').first();
+    if (await closeBtn.count()) await closeBtn.click({ timeout: 3000 }).catch(() => {});
+    else await page.keyboard.press('Escape').catch(() => {});
+    await modal.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
+    closed = true;
+  }
+
+  const sheet = page.locator('[data-testid="side-sheet"]').first();
+  if (await sheet.isVisible().catch(() => false)) {
+    log('    боковая панель поверх страницы — закрываю (Escape)');
+    await page.keyboard.press('Escape').catch(() => {});
+    await sheet.waitFor({ state: 'hidden', timeout: 3000 }).catch(() => {});
+    closed = true;
+  }
+  return closed;
 }
 
 async function categoryNames(page) {
@@ -94,12 +151,19 @@ const exactText = (s) => new RegExp(`^\\s*${escapeRe(s.trim())}\\s*$`);
 /** Кликает категорию в сайдбаре и ждёт, пока справа отрисуется именно она.
  *  Без page.waitForFunction: CSP Hub блокирует инжектированные скрипты,
  *  поэтому ждём поллингом через локаторы. */
-async function openCategory(page, name) {
-  await page
-    .locator(SEL.categoryBtn)
-    .filter({ hasText: exactText(name) })
-    .first()
-    .click();
+async function openCategory(page, name, log = console.log) {
+  const btn = page.locator(SEL.categoryBtn).filter({ hasText: exactText(name) }).first();
+  try {
+    await btn.click({ timeout: 10000 });
+  } catch (e) {
+    // Обычный клик не прошёл (что-то поверх страницы / элемент скрыт).
+    // Убираем оверлеи и шлём click прямо элементу — обработчик Vue сработает
+    // независимо от того, что лежит сверху.
+    log(`    клик по категории не прошёл: ${failReason(e)} — пробую в обход`);
+    await debugScreenshot(page, `cat-${name}`, log);
+    await clearOverlays(page, log);
+    await btn.dispatchEvent('click');
+  }
   const deadline = Date.now() + 15000;
   while (Date.now() < deadline) {
     const txt = await page
@@ -201,21 +265,21 @@ async function forEachTarget(page, handler, log = console.log) {
   for (const cat of cats) {
     const wholeCategory = matches(cat);
     if (!wholeCategory && !fullScan) continue;
-    // Вторая попытка — на случай, если клик съел всплывший куки-баннер.
+    // Вторая попытка — на случай, если клик съел всплывший оверлей.
     let attempts = 0;
     while (attempts < 2) {
       attempts++;
       try {
-        await openCategory(page, cat);
+        await openCategory(page, cat, log);
         let items = await collectPaneItems(page);
         if (!wholeCategory) items = items.filter((i) => matches(i.name));
         if (items.length) await handler(cat.trim(), items);
         break;
       } catch (e) {
-        if (attempts < 2 && (await dismissCookieBanner(page, log))) continue;
+        if (attempts < 2 && (await clearOverlays(page, log))) continue;
         // Одна сломавшаяся категория не должна ронять весь прогон.
         failedCats.push(cat.trim());
-        log(`  ✖ категория «${cat.trim()}» пропущена: ${String(e?.message || e).split('\n')[0]}`);
+        log(`  ✖ категория «${cat.trim()}» пропущена: ${failReason(e)}`);
         break;
       }
     }

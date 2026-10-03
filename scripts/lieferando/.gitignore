@@ -3,3 +3,4 @@ profile/
 state/
 .env
 *.new*
+debug/
