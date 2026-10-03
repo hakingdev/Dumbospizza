@@ -80,9 +80,17 @@ export async function openMenu(page) {
       'Категории не загрузились — скорее всего, сессия истекла. На этом ПК: node toggle.mjs login'
     );
   }
+  directClicks = false;
   await dismissCookieBanner(page);
   await clearOverlays(page);
+  await page.waitForTimeout(2000); // промо-попапы Hub всплывают с задержкой
+  await clearOverlays(page);
 }
+
+/** После первого перехвата клика оверлеем — дальше кликаем событием сразу,
+ *  не ожидая таймаут на каждом элементе (52 переключателя × 8 с — это вечность). */
+let directClicks = false;
+const interceptedByOverlay = (e) => /intercepts pointer events/i.test(String(e?.message || e));
 
 /** Суть ошибки Playwright одной строкой: что именно мешало клику. */
 function failReason(e) {
@@ -132,21 +140,25 @@ async function clearOverlays(page, log = console.log) {
   // pie-modal — промо-попапы и объявления Hub (03.10: «halloween_260928_popup»),
   // лежат поверх всей страницы и перехватывают все клики. Их может быть
   // несколько подряд — закрываем, пока видим.
+  // Хост <pie-modal> для Playwright «невидим» (диалог живёт в его shadow DOM),
+  // поэтому смотрим на сам диалог/крестик — локаторы shadow DOM пробивают.
   for (let i = 0; i < 3; i++) {
-    const promo = page.locator('pie-modal').first();
-    if (!(await promo.isVisible().catch(() => false))) break;
-    const cls = (await promo.getAttribute('class').catch(() => '')) || '';
+    const dialog = page.locator('pie-modal [data-test-id="pie-modal"]').first();
+    const closeBtn = page.locator('pie-modal [data-test-id="modal-close-button"]').first();
+    const dialogVisible = await dialog.isVisible().catch(() => false);
+    const closeVisible = await closeBtn.isVisible().catch(() => false);
+    if (!dialogVisible && !closeVisible) break;
+    const cls = (await page.locator('pie-modal').first().getAttribute('class').catch(() => '')) || '';
     log(`    промо-модалка Hub поверх страницы (${cls.trim().slice(0, 60)}) — закрываю`);
-    const closeBtn = page.locator('[data-test-id="modal-close-button"]').first();
-    if (await closeBtn.count()) await closeBtn.click({ timeout: 3000 }).catch(() => {});
+    if (closeVisible) await closeBtn.click({ timeout: 3000 }).catch(() => {});
     else await page.keyboard.press('Escape').catch(() => {});
-    const gone = await promo
+    const gone = await dialog
       .waitFor({ state: 'hidden', timeout: 4000 })
       .then(() => true)
       .catch(() => false);
     if (!gone) {
       await page.keyboard.press('Escape').catch(() => {});
-      await promo.waitFor({ state: 'hidden', timeout: 3000 }).catch(() => {});
+      await dialog.waitFor({ state: 'hidden', timeout: 3000 }).catch(() => {});
     }
     closed = true;
   }
@@ -176,8 +188,10 @@ const exactText = (s) => new RegExp(`^\\s*${escapeRe(s.trim())}\\s*$`);
 async function openCategory(page, name, log = console.log) {
   const btn = page.locator(SEL.categoryBtn).filter({ hasText: exactText(name) }).first();
   try {
-    await btn.click({ timeout: 10000 });
+    if (directClicks) await btn.dispatchEvent('click');
+    else await btn.click({ timeout: 10000 });
   } catch (e) {
+    if (interceptedByOverlay(e)) directClicks = true;
     // Обычный клик не прошёл (что-то поверх страницы / элемент скрыт).
     // Убираем оверлеи и шлём click прямо элементу — обработчик Vue сработает
     // независимо от того, что лежит сверху.
@@ -267,8 +281,10 @@ async function waitChecked(input, expected, timeout = 8000) {
 async function setItem(page, item, makeAvailable, log) {
   await item.label.scrollIntoViewIfNeeded();
   try {
-    await item.label.click({ timeout: 8000 });
+    if (directClicks) await item.input.dispatchEvent('click');
+    else await item.label.click({ timeout: 8000 });
   } catch (e) {
+    if (interceptedByOverlay(e)) directClicks = true;
     // Переключатель перекрыт (модалка/панель) — закрываем оверлеи и шлём
     // click прямо чекбоксу: браузер переключит его и дёрнет change для Vue.
     log(`    клик по переключателю не прошёл: ${failReason(e)} — пробую в обход`);
