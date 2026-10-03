@@ -129,6 +129,28 @@ async function clearOverlays(page, log = console.log) {
     closed = true;
   }
 
+  // pie-modal — промо-попапы и объявления Hub (03.10: «halloween_260928_popup»),
+  // лежат поверх всей страницы и перехватывают все клики. Их может быть
+  // несколько подряд — закрываем, пока видим.
+  for (let i = 0; i < 3; i++) {
+    const promo = page.locator('pie-modal').first();
+    if (!(await promo.isVisible().catch(() => false))) break;
+    const cls = (await promo.getAttribute('class').catch(() => '')) || '';
+    log(`    промо-модалка Hub поверх страницы (${cls.trim().slice(0, 60)}) — закрываю`);
+    const closeBtn = page.locator('[data-test-id="modal-close-button"]').first();
+    if (await closeBtn.count()) await closeBtn.click({ timeout: 3000 }).catch(() => {});
+    else await page.keyboard.press('Escape').catch(() => {});
+    const gone = await promo
+      .waitFor({ state: 'hidden', timeout: 4000 })
+      .then(() => true)
+      .catch(() => false);
+    if (!gone) {
+      await page.keyboard.press('Escape').catch(() => {});
+      await promo.waitFor({ state: 'hidden', timeout: 3000 }).catch(() => {});
+    }
+    closed = true;
+  }
+
   const sheet = page.locator('[data-testid="side-sheet"]').first();
   if (await sheet.isVisible().catch(() => false)) {
     log('    боковая панель поверх страницы — закрываю (Escape)');
@@ -244,7 +266,15 @@ async function waitChecked(input, expected, timeout = 8000) {
 
 async function setItem(page, item, makeAvailable, log) {
   await item.label.scrollIntoViewIfNeeded();
-  await item.label.click();
+  try {
+    await item.label.click({ timeout: 8000 });
+  } catch (e) {
+    // Переключатель перекрыт (модалка/панель) — закрываем оверлеи и шлём
+    // click прямо чекбоксу: браузер переключит его и дёрнет change для Vue.
+    log(`    клик по переключателю не прошёл: ${failReason(e)} — пробую в обход`);
+    await clearOverlays(page, log);
+    await item.input.dispatchEvent('click');
+  }
   await confirmModalIfAny(page, log);
   const ok = await waitChecked(item.input, makeAvailable);
   await page.waitForTimeout(600); // не молотим Hub очередями
