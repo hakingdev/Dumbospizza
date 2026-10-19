@@ -16,7 +16,8 @@ import { useLanguage } from '../../lib/contexts/LanguageContext'
 import { loadTranslation } from '../../lib/i18n'
 import PreOrderModal from '../../components/PreOrderModal'
 import { SafeImage } from '../../components/SafeImage'
-import { formatOrderHoursTemplate, resolveOrderAcceptanceHours } from '../../lib/order-acceptance-hours'
+import { formatOrderHoursTemplate } from '../../lib/order-acceptance-hours'
+import { resolveWeeklySchedule, uniformDailyRange, weeklyHoursLines } from '../../lib/opening-schedule'
 import { storageGet, storageSet } from '../../lib/safe-storage'
 import { cachedJson } from '../../lib/client-cache'
 import { getProductDisplayPrice } from '../../lib/product-pricing'
@@ -87,7 +88,8 @@ export default function Home() {
   const [showPreOrderModal, setShowPreOrderModal] = useState(false)
   const [valentineProducts, setValentineProducts] = useState<any[]>([])
   const [valentineLoading, setValentineLoading] = useState(true)
-  const [orderHours, setOrderHours] = useState(() => resolveOrderAcceptanceHours(null))
+  const [schedule, setSchedule] = useState(() => resolveWeeklySchedule(null))
+  const uniformHours = uniformDailyRange(schedule)
   const valentineBadgeItems = useMemo(() => toBadgeItems(valentineProducts), [valentineProducts])
 
   useEffect(() => {
@@ -135,7 +137,7 @@ export default function Home() {
         const response = await fetch('/api/settings/store', { cache: 'no-store' })
         const data = await response.json()
         if (data.success && data.settings) {
-          setOrderHours(resolveOrderAcceptanceHours(data.settings))
+          setSchedule(resolveWeeklySchedule(data.settings))
         }
       } catch (error) {
         console.error('Error loading store settings:', error)
@@ -311,8 +313,19 @@ export default function Home() {
               <div className="inline-flex items-center justify-center w-16 h-16 bg-orange-100 rounded-full mb-4">
                 <Clock className="h-8 w-8 text-orange-600" />
               </div>
-              <h3 className="text-lg font-bold mb-2">{formatOrderHoursTemplate(t('home.benefits.hours_title', 'Täglich geöffnet'), orderHours)}</h3>
-              <p className="text-gray-600 text-sm">{formatOrderHoursTemplate(t('home.benefits.hours_text', 'Täglich von {start} bis {end}'), orderHours)}</p>
+              {uniformHours ? (
+                <>
+                  <h3 className="text-lg font-bold mb-2">{formatOrderHoursTemplate(t('home.benefits.hours_title', 'Täglich geöffnet'), uniformHours)}</h3>
+                  <p className="text-gray-600 text-sm">{formatOrderHoursTemplate(t('home.benefits.hours_text', 'Täglich von {start} bis {end}'), uniformHours)}</p>
+                </>
+              ) : (
+                <>
+                  <h3 className="text-lg font-bold mb-2">{t('home.benefits.hours_title_weekly', 'Öffnungszeiten')}</h3>
+                  {weeklyHoursLines(schedule, { t, locale: language }).map((line) => (
+                    <p key={line} className="text-gray-600 text-sm">{line}</p>
+                  ))}
+                </>
+              )}
             </div>
             
             <div className="text-center p-6 rounded-2xl bg-gradient-to-br from-blue-50 to-white border border-blue-100">

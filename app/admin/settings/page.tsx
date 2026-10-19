@@ -1,9 +1,15 @@
 "use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Save, Store, CreditCard, Search, Globe, Mail, MapPin, Plug, MessageCircle } from 'lucide-react';
 import StatusModal from '../../../components/admin/StatusModal';
 import { normalizeStoredOrdersTime } from '../../../lib/order-acceptance-hours';
+import {
+  resolveWeeklySchedule,
+  scheduleBounds,
+  validateWeeklySchedule,
+} from '../../../lib/opening-schedule';
+import { WeeklyScheduleEditor } from '../../../components/admin-v2/weekly-schedule-editor';
 import { DEFAULT_WORKSHOP_BLOCK_MESSAGE } from '../../../lib/kitchen/workshops';
 
 export default function SettingsPage() {
@@ -35,9 +41,11 @@ export default function SettingsPage() {
     deliverySlotEnd: '21:30',
     deliverySlotStepMinutes: 5,
 
-    // Order acceptance settings (HH:mm, как слоты доставки)
+    // Order acceptance settings (HH:mm, как слоты доставки).
+    // Действует недельный график; start/end — его границы, фолбэк без графика.
     ordersStartHour: '17:00',
     ordersEndHour: '21:30',
+    ordersWeeklySchedule: resolveWeeklySchedule(null),
     ordersTimeZone: 'Europe/Berlin',
     ordersClosedReason: 'Заказы принимаются с 17:00.',
     ordersClosedMessageBeforeOpen: 'Мы откроем в {time}',
@@ -118,6 +126,7 @@ export default function SettingsPage() {
             ...s,
             ordersStartHour: normalizeStoredOrdersTime(s.ordersStartHour, 16),
             ordersEndHour: normalizeStoredOrdersTime(s.ordersEndHour, 22),
+            ordersWeeklySchedule: resolveWeeklySchedule(s),
           }));
         }
       } catch (error: any) {
@@ -149,7 +158,23 @@ export default function SettingsPage() {
     }
   };
 
-  const saveStoreSettings = async (nextSettings: typeof settings) => {
+  const scheduleErrors = useMemo(
+    () => validateWeeklySchedule(settings.ordersWeeklySchedule).errors,
+    [settings.ordersWeeklySchedule]
+  );
+
+  const saveStoreSettings = async (draft: typeof settings) => {
+    const { schedule } = validateWeeklySchedule(draft.ordersWeeklySchedule);
+    if (!schedule) {
+      setSettingsError('В графике приёма заказов есть ошибки — исправьте отмеченные интервалы');
+      return;
+    }
+    const bounds = scheduleBounds(schedule);
+    const nextSettings = {
+      ...draft,
+      ordersWeeklySchedule: schedule,
+      ...(bounds ? { ordersStartHour: bounds.start, ordersEndHour: bounds.end } : {}),
+    };
     try {
       setSettingsSaving(true);
       setSettingsError(null);
@@ -390,25 +415,16 @@ export default function SettingsPage() {
             </div>
 
             <div className="space-y-4">
+              <div>
+                <p className="text-sm font-medium mb-2">График приёма заказов по дням</p>
+                <WeeklyScheduleEditor
+                  value={settings.ordersWeeklySchedule}
+                  onChange={(ordersWeeklySchedule) => setSettings({ ...settings, ordersWeeklySchedule })}
+                  errors={scheduleErrors}
+                />
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium mb-2">Заказы принимаются с (HH:mm)</label>
-                  <input
-                    type="time"
-                    value={String(settings.ordersStartHour)}
-                    onChange={(e) => setSettings({ ...settings, ordersStartHour: e.target.value })}
-                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-2">Заказы принимаются до (HH:mm)</label>
-                  <input
-                    type="time"
-                    value={String(settings.ordersEndHour)}
-                    onChange={(e) => setSettings({ ...settings, ordersEndHour: e.target.value })}
-                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500"
-                  />
-                </div>
                 <div>
                   <label className="block text-sm font-medium mb-2">Временная зона</label>
                   <input
@@ -465,6 +481,9 @@ export default function SettingsPage() {
                   onChange={(e) => setSettings({ ...settings, ordersClosedMessageBeforeOpen: e.target.value })}
                   className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500"
                 />
+                <p className="text-xs text-gray-500 mt-1">
+                  До первой смены дня и в перерыве между сменами. <code>{'{time}'}</code> — во сколько откроемся.
+                </p>
               </div>
               <div>
                 <label className="block text-sm font-medium mb-2">Сообщение после закрытия</label>
@@ -474,6 +493,11 @@ export default function SettingsPage() {
                   onChange={(e) => setSettings({ ...settings, ordersClosedMessageAfterClose: e.target.value })}
                   className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500"
                 />
+                <p className="text-xs text-gray-500 mt-1">
+                  Когда смены дня закончились или сегодня выходной. Подстановки:{' '}
+                  <code>{'{day}'}</code> — «morgen» или день недели, <code>{'{time}'}</code> — время
+                  открытия. Например: «Wir haben geschlossen. Wieder für Sie da: {'{day}'} ab {'{time}'} Uhr.»
+                </p>
               </div>
 
               <div>

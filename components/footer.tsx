@@ -9,7 +9,8 @@ import { getCookie } from 'cookies-next'
 import { cookieName } from '../lib/i18n-config'
 import { DEFAULT_STORE_PHONE, phoneToTelHref } from '../lib/store-phone'
 import { trackGoogleAdsPhoneCall } from '../lib/analytics/google-ads'
-import { formatOrderHoursTemplate, resolveOrderAcceptanceHours } from '../lib/order-acceptance-hours'
+import { formatOrderHoursTemplate } from '../lib/order-acceptance-hours'
+import { resolveWeeklySchedule, uniformDailyRange, weeklyHoursLines } from '../lib/opening-schedule'
 import { openConsentSettings } from '../lib/consent'
 import { cachedJson } from '../lib/client-cache'
 
@@ -31,7 +32,7 @@ export function Footer() {
   const resolvedLanguage = cookieLang || language
   const fallback = (ru: string, de: string) => de
   const [storeInfo, setStoreInfo] = useState(DEFAULT_STORE_INFO);
-  const [orderHours, setOrderHours] = useState(() => resolveOrderAcceptanceHours(null));
+  const [schedule, setSchedule] = useState(() => resolveWeeklySchedule(null));
   const [categories, setCategories] = useState<any[]>([]);
 
   useEffect(() => {
@@ -55,7 +56,7 @@ export function Footer() {
           const facebook = data.settings.facebook || '';
           const instagram = data.settings.instagram || '';
           setStoreInfo({ address, phone, email, facebook, instagram });
-          setOrderHours(resolveOrderAcceptanceHours(data.settings));
+          setSchedule(resolveWeeklySchedule(data.settings));
         }
       } catch (error) {
         console.error('Error loading store settings:', error);
@@ -80,6 +81,8 @@ export function Footer() {
 
     loadCategories();
   }, []);
+
+  const uniformHours = uniformDailyRange(schedule);
 
   return (
     <footer className="bg-gray-900 text-gray-300">
@@ -212,9 +215,18 @@ export function Footer() {
                 <Mail className="h-5 w-5 mr-2 flex-shrink-0" />
                 <a href={`mailto:${storeInfo.email}`} className="min-w-0 break-all hover:text-white" translate="no">{storeInfo.email}</a>
               </li>
-              <li className="flex min-w-0 items-center">
+              <li className="flex min-w-0 items-start">
                 <Clock className="h-5 w-5 mr-2 flex-shrink-0" />
-                <span className="min-w-0 break-words">{formatOrderHoursTemplate(t('header.hours', fallback('с {start} до {end} каждый день', 'täglich {start} - {end}')), orderHours)}</span>
+                {uniformHours ? (
+                  <span className="min-w-0 break-words">{formatOrderHoursTemplate(t('header.hours', fallback('с {start} до {end} каждый день', 'täglich {start} - {end}')), uniformHours)}</span>
+                ) : (
+                  // Часы разные по дням — неделя строками («Mo–Fr 10:00–14:00, 17:00–21:00»).
+                  <span className="flex min-w-0 flex-col break-words">
+                    {weeklyHoursLines(schedule, { t, locale: resolvedLanguage }).map((line) => (
+                      <span key={line}>{line}</span>
+                    ))}
+                  </span>
+                )}
               </li>
             </ul>
           </div>

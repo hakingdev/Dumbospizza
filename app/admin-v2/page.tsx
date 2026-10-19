@@ -33,18 +33,9 @@ import {
   btnPrimary,
 } from '../../components/admin-v2/ui';
 import { ADMIN_V2_BASE } from '../../components/admin-v2/nav';
+import { formatRanges, getOrderHoursState, resolveWeeklySchedule } from '../../lib/opening-schedule';
 
 /** «17» / «17:00» → «17:00»; мусор → null. */
-function normalizeHour(value: unknown): string | null {
-  const str = String(value ?? '').trim();
-  if (/^\d{1,2}$/.test(str)) return `${str.padStart(2, '0')}:00`;
-  if (/^\d{1,2}:\d{2}$/.test(str)) {
-    const [h, m] = str.split(':');
-    return `${h.padStart(2, '0')}:${m}`;
-  }
-  return null;
-}
-
 function minutesSince(iso: string): number {
   return Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
 }
@@ -241,11 +232,17 @@ export default function AdminV2HomePage() {
     [feed.orders]
   );
 
-  /* Дефолт часов — только для ЗАГРУЖЕННЫХ настроек без полей; без данных — прочерк. */
-  const startHour = settings ? normalizeHour(settings.ordersStartHour) || '11:00' : null;
-  const endHour = settings ? normalizeHour(settings.ordersEndHour) || '21:30' : null;
-  const shiftLabel =
-    startHour && endHour ? `${startHour}–${endHour}` : settingsFailed ? 'нет данных' : '…';
+  /* Смены сегодня по недельному графику; без загруженных настроек — прочерк. */
+  const todayRanges = settings
+    ? getOrderHoursState(resolveWeeklySchedule(settings), settings.ordersTimeZone, new Date()).todayRanges
+    : null;
+  const shiftLabel = todayRanges
+    ? todayRanges.length
+      ? formatRanges(todayRanges)
+      : 'выходной'
+    : settingsFailed
+      ? 'нет данных'
+      : '…';
 
   const blockedUntil = settings?.ordersBlockedUntil ? new Date(settings.ordersBlockedUntil) : null;
   const isBlocked = !!blockedUntil && blockedUntil.getTime() > Date.now();
@@ -294,7 +291,9 @@ export default function AdminV2HomePage() {
       ? 'ЗАГРУЗКА…'
       : isBlocked
         ? `ПРИЁМ ПРИОСТАНОВЛЕН ДО ${timeHHmm(blockedUntil!)}`
-        : `СМЕНА ${shiftLabel} · ПРИЁМ ЗАКАЗОВ ВКЛЮЧЁН`;
+        : todayRanges && !todayRanges.length
+          ? 'СЕГОДНЯ ВЫХОДНОЙ ПО ГРАФИКУ'
+          : `СМЕНА ${shiftLabel} · ПРИЁМ ЗАКАЗОВ ВКЛЮЧЁН`;
 
   const heroTitle = feedFailed
     ? 'Не удалось загрузить заказы'

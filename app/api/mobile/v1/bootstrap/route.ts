@@ -4,11 +4,13 @@ import { Promotion } from '../../../../../lib/models/promotion.model';
 import { getSetting } from '../../../../../lib/settings';
 import { toPromotionPublicView } from '../../../../../lib/promotions/serialize';
 import { isPromotionEffectivelyActive } from '../../../../../lib/promotions/status';
+import { formatMinutesAsHHmm } from '../../../../../lib/order-acceptance-hours';
 import {
-  formatMinutesAsHHmm,
-  getNowMinutesInTimeZone,
-  parseOrdersTimeToMinutes,
-} from '../../../../../lib/order-acceptance-hours';
+  evaluateOrderHours,
+  rangeEndMinutes,
+  rangeStartMinutes,
+  resolveWeeklySchedule,
+} from '../../../../../lib/opening-schedule';
 import { normalizeFreeDeliveryThreshold } from '../../../../../lib/delivery/delivery-fee';
 import {
   WORKSHOPS,
@@ -31,18 +33,20 @@ export async function GET() {
     await connectToDatabase();
     const s = (await getSetting<Record<string, any>>('storeSettings', {})) || {};
 
-    const startMinutes = parseOrdersTimeToMinutes(s.ordersStartHour, 16);
-    const endMinutes = parseOrdersTimeToMinutes(s.ordersEndHour, 22);
     const timeZone = (s.ordersTimeZone as string) || 'Europe/Berlin';
     const blockedUntil = s.ordersBlockedUntil ? new Date(s.ordersBlockedUntil as string) : null;
     const blockReason = (s.ordersBlockedReason as string) || 'Кухня переполнена. Попробуйте позже.';
-    const beforeOpenTemplate =
-      (s.ordersClosedMessageBeforeOpen as string) || 'Мы откроем в {time}';
-    const afterCloseMessage =
-      (s.ordersClosedMessageAfterClose as string) || 'Мы закрыты, вернемся к вам завтра.';
 
     const now = new Date();
-    const nowMinutes = getNowMinutesInTimeZone(timeZone, now);
+    const orderHours = evaluateOrderHours(s, now, {
+      beforeOpen: 'Мы откроем в {time}',
+      afterClose: 'Мы закрыты, вернемся к вам завтра.',
+    });
+    // Старые клиенты знают только «с/до» на день: отдаём границы СЕГОДНЯШНИХ
+    // смен; выходной — 00:00/00:00 (их проверка «now >= end» даст «закрыто»).
+    const todayRanges = orderHours.state.todayRanges;
+    const startMinutes = todayRanges.length ? rangeStartMinutes(todayRanges[0]) : 0;
+    const endMinutes = todayRanges.length ? rangeEndMinutes(todayRanges[todayRanges.length - 1]) : 0;
 
     const modalPromos = await Promotion.find({
       enabled: true,
@@ -67,13 +71,9 @@ export async function GET() {
       acceptingOrders = false;
       // {minutes}/@ и {time} в тексте из админки.
       ordersClosedMessage = formatBlockTemplate(blockReason, blockedUntil.toISOString(), now);
-    } else if (nowMinutes < startMinutes) {
+    } else if (!orderHours.accepting) {
       acceptingOrders = false;
-      const timeLabel = formatMinutesAsHHmm(startMinutes);
-      ordersClosedMessage = beforeOpenTemplate.replace('{time}', timeLabel);
-    } else if (nowMinutes >= endMinutes) {
-      acceptingOrders = false;
-      ordersClosedMessage = afterCloseMessage;
+      ordersClosedMessage = orderHours.message;
     }
 
     const data = {
@@ -82,8 +82,14 @@ export async function GET() {
       ordersEndTime: formatMinutesAsHHmm(endMinutes),
       // Старые клиенты: только час (не точно для :30)
       ordersStartHour: Math.floor(startMinutes / 60),
-      ordersEndHour: Math.floor(endMinutes / 60),
+      ordersEndHour: Math.floor(endMinutes / 60) % 24,
       ordersTimeZone: timeZone,
+      /** Недельный график: { mon: [{ start, end }, …], …, sun: [] } — пустой день = выходной. */
+      ordersWeeklySchedule: resolveWeeklySchedule(s),
+      /** Смены сегодня (по ordersTimeZone). */
+      ordersTodayRanges: todayRanges,
+      /** Ближайшее открытие, когда сейчас закрыто по графику. */
+      ordersOpensAt: orderHours.state.nextOpening,
       ordersBlockedUntil: s.ordersBlockedUntil ?? null,
       ordersBlockedReason: (s.ordersBlockedReason as string) || null,
       ordersClosedMessageBeforeOpen: (s.ordersClosedMessageBeforeOpen as string) || null,

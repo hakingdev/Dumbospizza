@@ -28,11 +28,7 @@ import {
 } from '../../../lib/orders/payment-draft';
 import { claimPendingPrintOrders } from '../../../lib/orders/print-queue';
 import { getSetting } from '../../../lib/settings';
-import {
-  formatMinutesAsHHmm,
-  getNowMinutesInTimeZone,
-  parseOrdersTimeToMinutes,
-} from '../../../lib/order-acceptance-hours';
+import { evaluateOrderHours } from '../../../lib/opening-schedule';
 import {
   WORKSHOP_BLOCK_MESSAGE_KEY,
   blockedWorkshopsForItems,
@@ -112,35 +108,25 @@ export async function POST(request: NextRequest) {
 
     // Check if orders are currently blocked
     const storeSettings = await getSetting<Record<string, any>>('storeSettings', {});
-    const startMinutes = parseOrdersTimeToMinutes(storeSettings?.ordersStartHour, 16);
-    const endMinutes = parseOrdersTimeToMinutes(storeSettings?.ordersEndHour, 22);
-    const timeZone = storeSettings?.ordersTimeZone || 'Europe/Berlin';
     const blockedUntil = storeSettings?.ordersBlockedUntil
       ? new Date(storeSettings.ordersBlockedUntil)
       : null;
     const blockReason = storeSettings?.ordersBlockedReason || 'Кухня переполнена. Попробуйте позже.';
-    const beforeOpenTemplate = storeSettings?.ordersClosedMessageBeforeOpen || 'Мы откроем в {time}';
-    const afterCloseMessage = storeSettings?.ordersClosedMessageAfterClose || 'Мы закрыты, вернемся к вам завтра.';
 
     const now = new Date();
-    const nowMinutes = getNowMinutesInTimeZone(timeZone, now);
 
     // Пауза приёма (глобальная и по цехам) проверяется НИЖЕ — после того, как
     // подтянуты категории позиций: только там видно, задет ли заказ стопом цеха
     // и какой из двух сроков позже.
 
-    if (nowMinutes < startMinutes) {
-      const timeLabel = formatMinutesAsHHmm(startMinutes);
-      const closedReason = beforeOpenTemplate.replace('{time}', timeLabel);
+    // Недельный график: по дню — свои интервалы (утро/вечер), выходные дни.
+    const orderHours = evaluateOrderHours(storeSettings, now, {
+      beforeOpen: 'Мы откроем в {time}',
+      afterClose: 'Мы закрыты, вернемся к вам завтра.',
+    });
+    if (!orderHours.accepting) {
       return NextResponse.json(
-        { success: false, error: closedReason, opensAtTime: timeLabel },
-        { status: 403 }
-      );
-    }
-
-    if (nowMinutes >= endMinutes) {
-      return NextResponse.json(
-        { success: false, error: afterCloseMessage, opensAtTime: formatMinutesAsHHmm(startMinutes) },
+        { success: false, error: orderHours.message, opensAtTime: orderHours.opensAtTime },
         { status: 403 }
       );
     }

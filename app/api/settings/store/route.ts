@@ -3,6 +3,7 @@ import { connectToDatabase } from '../../../../lib/models';
 import { getSetting, setSetting } from '../../../../lib/settings';
 import { getServerSession } from 'next-auth';
 import { authOptions, isAdmin } from '../../../../lib/auth';
+import { validateWeeklySchedule } from '../../../../lib/opening-schedule';
 
 const PUBLIC_SETTING_KEYS = [
   'storeName',
@@ -21,6 +22,9 @@ const PUBLIC_SETTING_KEYS = [
   'deliverySlotStepMinutes',
   'ordersStartHour',
   'ordersEndHour',
+  // Недельный график приёма (по дням, несколько интервалов) — по нему витрина
+  // пишет часы, а чекаут заранее закрывает оформление.
+  'ordersWeeklySchedule',
   'ordersTimeZone',
   'ordersClosedReason',
   'ordersClosedMessageBeforeOpen',
@@ -80,6 +84,18 @@ export async function POST(request: NextRequest) {
 
     await connectToDatabase();
     const data = await request.json();
+    // Битый график молча закрыл бы приём (или открыл бы его не тогда) —
+    // не сохраняем, а возвращаем ошибки. Целый — кладём нормализованным.
+    if (data && data.ordersWeeklySchedule != null) {
+      const { schedule, errors } = validateWeeklySchedule(data.ordersWeeklySchedule);
+      if (!schedule) {
+        return NextResponse.json(
+          { success: false, error: 'Invalid ordersWeeklySchedule', errors },
+          { status: 400 }
+        );
+      }
+      data.ordersWeeklySchedule = schedule;
+    }
     await setSetting('storeSettings', data || {});
     return NextResponse.json({ success: true });
   } catch (error: any) {

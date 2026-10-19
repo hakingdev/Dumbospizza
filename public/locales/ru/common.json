@@ -30,6 +30,7 @@
       "quality_text": "Только свежие ингредиенты",
       "hours_title": "с {start} до {end} каждый день",
       "hours_text": "Ежедневно с {start} до {end}",
+      "hours_title_weekly": "Часы работы",
       "safe_title": "Безопасность",
       "safe_text": "Гарантия качества и свежести"
     },
@@ -389,7 +390,10 @@
     }
   },
   "header": {
-    "hours": "с {start} до {end} каждый день"
+    "hours": "с {start} до {end} каждый день",
+    "hours_today": "сегодня {hours}",
+    "closed_today": "сегодня выходной",
+    "closed_label": "выходной"
   },
   "city_modal": {
     "title": "Где вы находитесь?",

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import de from '../../public/locales/de/common.json';
 
@@ -74,5 +74,53 @@ describe('Header — телефон ресторана (из настроек / 
     render(<Header />);
     await waitFor(() => expect(screen.getByText('+49 971 123456')).toBeTruthy());
     expect(screen.queryByText(/022\s*210-210/)).toBeNull();
+  });
+});
+
+describe('Header — часы из недельного графика', () => {
+  const schedule = {
+    mon: [
+      { start: '10:00', end: '14:00' },
+      { start: '17:00', end: '21:00' },
+    ],
+    tue: [],
+    wed: [{ start: '17:00', end: '22:00' }],
+    thu: [{ start: '17:00', end: '22:00' }],
+    fri: [{ start: '17:00', end: '22:00' }],
+    sat: [{ start: '17:00', end: '22:00' }],
+    sun: [{ start: '17:00', end: '22:00' }],
+  };
+  const mockSettings = (settings: Record<string, unknown>) => {
+    global.fetch = vi.fn(() =>
+      Promise.resolve({ ok: true, json: () => Promise.resolve({ success: true, settings }) })
+    ) as any;
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('разные смены по дням — в полосе только сегодняшние', async () => {
+    vi.setSystemTime(new Date('2026-10-19T10:00:00Z')); // понедельник, 12:00 Берлин
+    mockSettings({ ordersWeeklySchedule: schedule });
+    render(<Header />);
+    await waitFor(() => expect(screen.getByText('heute 10:00–14:00, 17:00–21:00')).toBeTruthy());
+  });
+
+  it('выходной сегодня — «heute Ruhetag»', async () => {
+    vi.setSystemTime(new Date('2026-10-20T10:00:00Z')); // вторник
+    mockSettings({ ordersWeeklySchedule: schedule });
+    render(<Header />);
+    await waitFor(() => expect(screen.getByText('heute Ruhetag')).toBeTruthy());
+  });
+
+  it('одинаковые часы на всю неделю — прежнее «täglich»', async () => {
+    vi.setSystemTime(new Date('2026-10-20T10:00:00Z'));
+    mockSettings({ ordersStartHour: '17:00', ordersEndHour: '22:00' });
+    render(<Header />);
+    await waitFor(() => expect(screen.getByText('täglich 17:00 - 22:00')).toBeTruthy());
   });
 });

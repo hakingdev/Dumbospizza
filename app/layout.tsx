@@ -12,7 +12,7 @@ import { consentBootstrapScript } from '../lib/consent'
 import { SITE_URL } from '../lib/site-url'
 import { connectToDatabase } from '../lib/models'
 import { getSetting } from '../lib/settings'
-import { resolveOrderAcceptanceHours } from '../lib/order-acceptance-hours'
+import { resolveWeeklySchedule, toOpeningHoursSpecification } from '../lib/opening-schedule'
 
 const inter = Inter({ subsets: ['latin', 'cyrillic'] })
 const siteUrl = SITE_URL
@@ -56,12 +56,12 @@ export default async function RootLayout({
 }: {
   children: React.ReactNode
 }) {
-  // Часы приёма заказов для JSON-LD берём из настроек админки; при ошибке — дефолт.
-  let orderHours = resolveOrderAcceptanceHours(null)
+  // Часы приёма заказов для JSON-LD — недельный график из админки; при ошибке — дефолт.
+  let schedule = resolveWeeklySchedule(null)
   try {
     await connectToDatabase()
     const storeSettings = await getSetting<Record<string, any>>('storeSettings', {})
-    orderHours = resolveOrderAcceptanceHours(storeSettings)
+    schedule = resolveWeeklySchedule(storeSettings)
   } catch (error) {
     console.error('Error loading store settings for structured data:', error)
   }
@@ -116,22 +116,7 @@ export default async function RootLayout({
                 latitude: 50.19526,
                 longitude: 10.07827
               },
-              openingHoursSpecification: [
-                {
-                  '@type': 'OpeningHoursSpecification',
-                  dayOfWeek: [
-                    'Monday',
-                    'Tuesday',
-                    'Wednesday',
-                    'Thursday',
-                    'Friday',
-                    'Saturday',
-                    'Sunday'
-                  ],
-                  opens: orderHours.start,
-                  closes: orderHours.end
-                }
-              ],
+              openingHoursSpecification: toOpeningHoursSpecification(schedule),
               servesCuisine: ['Pizza', 'Italienisch'],
               priceRange: '€€',
               paymentAccepted: 'Cash, Credit Card',

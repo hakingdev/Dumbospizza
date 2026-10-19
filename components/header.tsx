@@ -10,7 +10,7 @@ import { useCart } from '../lib/contexts/CartContext'
 import { CartModal } from './cart/CartModal'
 import { DEFAULT_STORE_PHONE, phoneToTelHref } from '../lib/store-phone'
 import { trackGoogleAdsPhoneCall } from '../lib/analytics/google-ads'
-import { formatOrderHoursTemplate, resolveOrderAcceptanceHours } from '../lib/order-acceptance-hours'
+import { headerHoursText, resolveWeeklySchedule } from '../lib/opening-schedule'
 
 export function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -18,7 +18,10 @@ export function Header() {
   const [storeInfo, setStoreInfo] = useState({
     phone: DEFAULT_STORE_PHONE,
   });
-  const [orderHours, setOrderHours] = useState(() => resolveOrderAcceptanceHours(null));
+  const [orderHours, setOrderHours] = useState(() => ({
+    schedule: resolveWeeklySchedule(null),
+    timeZone: 'Europe/Berlin',
+  }));
   const { language } = useLanguage();
   const [t, setT] = useState<any>(() => (k: string, fallback?: string) => fallback ?? k);
   const { cartItemsCount } = useCart();
@@ -57,7 +60,10 @@ export function Header() {
         if (data.success && data.settings) {
           const phone = data.settings.phone || data.settings.supportPhone || DEFAULT_STORE_PHONE;
           setStoreInfo({ phone });
-          setOrderHours(resolveOrderAcceptanceHours(data.settings));
+          setOrderHours({
+            schedule: resolveWeeklySchedule(data.settings),
+            timeZone: data.settings.ordersTimeZone || 'Europe/Berlin',
+          });
         }
       } catch (error) {
         console.error('Error loading store settings:', error);
@@ -79,7 +85,7 @@ export function Header() {
                   <Phone className="mr-1 h-4 w-4 shrink-0" />
                   <span className="font-medium" translate="no">{storeInfo.phone}</span>
                 </a>
-                <span className="min-w-0 leading-tight">{formatOrderHoursTemplate(t('header.hours', 'täglich {start} - {end}'), orderHours)}</span>
+                <span className="min-w-0 leading-tight">{headerHoursText(orderHours.schedule, { t, timeZone: orderHours.timeZone, now: new Date() })}</span>
               </div>
             </div>
           </div>

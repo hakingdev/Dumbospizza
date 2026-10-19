@@ -16,70 +16,53 @@ import {
   LoadError,
   Loading,
   SectionLabel,
+  Toggle,
   btnGhost,
   btnOutline,
   btnPrimary,
 } from '../../../components/admin-v2/ui';
+import { WeeklyScheduleEditor } from '../../../components/admin-v2/weekly-schedule-editor';
+import { getNowMinutesInTimeZone } from '../../../lib/order-acceptance-hours';
+import {
+  WEEKDAY_KEYS,
+  type OrderHoursState,
+  formatNextOpeningDay,
+  getOrderHoursState,
+  rangeEndMinutes,
+  resolveWeeklySchedule,
+  scheduleBounds,
+  validateWeeklySchedule,
+  weekdayLabel,
+  weeklySchedulesEqual,
+} from '../../../lib/opening-schedule';
 
-const WEEKDAYS = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
 const ZONE_COLORS = ['#B8956B', '#C9AC82', '#DCC9A9', '#EBE0CE', '#9A7A56', '#7C6145'];
 
-function normalizeHour(value: unknown, fallback: string): string {
-  const str = String(value ?? '').trim();
-  if (/^\d{1,2}$/.test(str)) return `${str.padStart(2, '0')}:00`;
-  if (/^\d{1,2}:\d{2}$/.test(str)) {
-    const [h, m] = str.split(':');
-    return `${h.padStart(2, '0')}:${m}`;
-  }
-  return fallback;
-}
-
-/** «Закрытие через 2 ч 48 мин» из конца смены HH:mm. */
-function timeUntil(end: string): string | null {
-  const [h, m] = end.split(':').map(Number);
-  const now = new Date();
-  const target = new Date();
-  target.setHours(h, m, 0, 0);
-  const diff = Math.round((target.getTime() - now.getTime()) / 60000);
-  if (diff <= 0) return null;
-  const hours = Math.floor(diff / 60);
-  const minutes = diff % 60;
+/** «2 ч 48 мин» / «15 мин». */
+function formatDuration(totalMinutes: number): string {
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
   return hours > 0 ? `${hours} ч ${minutes} мин` : `${minutes} мин`;
 }
 
-function Toggle({
-  on,
-  onChange,
-  busy,
-  disabled,
-  label,
-}: {
-  on: boolean;
-  onChange?: (next: boolean) => void;
-  busy?: boolean;
-  disabled?: boolean;
-  label: string;
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={on}
-      aria-label={label}
-      title={label}
-      disabled={busy || disabled}
-      onClick={() => onChange?.(!on)}
-      className={`relative h-[26px] w-11 flex-none rounded-full border-none transition ${
-        disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
-      } ${busy ? 'opacity-50' : ''}`}
-      style={{ background: on ? '#8A6C4C' : '#D1D5DB' }}
-    >
-      <span
-        className="absolute top-[3px] h-5 w-5 rounded-full bg-white shadow-[0_1px_2px_rgba(17,24,39,.24)] transition-all"
-        style={{ left: on ? 21 : 3 }}
-      />
-    </button>
-  );
+/** Строка статуса под баннером приёма: где мы сейчас в графике дня. */
+function describeHoursState(state: OrderHoursState, timeZone: string, now: Date): string {
+  if (state.open && state.current) {
+    const left = rangeEndMinutes(state.current) - getNowMinutesInTimeZone(timeZone, now);
+    const later = state.todayRanges.find((r) => r.start > state.current!.start);
+    return (
+      `Закрытие через ${formatDuration(Math.max(left, 0))} · сегодня до ${state.current.end}` +
+      (later ? ` · затем ${later.start}–${later.end}` : '')
+    );
+  }
+  const next = state.nextOpening;
+  if (!next) return 'В графике нет рабочих дней — заказы не принимаются';
+  if (next.daysAhead === 0) {
+    const hadShift = state.todayRanges.some((r) => r.start < next.time);
+    return hadShift ? `Перерыв · откроемся в ${next.time}` : `Сегодня откроемся в ${next.time}`;
+  }
+  const today = state.todayRanges.length ? 'Сегодня приём окончен' : 'Сегодня выходной';
+  return `${today} · откроемся ${formatNextOpeningDay(next, 'ru')} в ${next.time}`;
 }
 
 function Field({
@@ -121,8 +104,7 @@ export default function VenuePage() {
 
   /** Редактируемые поля — инициализация от настроек. */
   const [form, setForm] = useState({
-    startHour: '',
-    endHour: '',
+    schedule: resolveWeeklySchedule(null),
     phone: '',
     email: '',
     deliveryTime: '',
@@ -131,8 +113,7 @@ export default function VenuePage() {
   const [initialized, setInitialized] = useState(false);
 
   const formFromSettings = (settings: NonNullable<typeof store.settings>) => ({
-    startHour: normalizeHour(settings.ordersStartHour, '17:00'),
-    endHour: normalizeHour(settings.ordersEndHour, '21:30'),
+    schedule: resolveWeeklySchedule(settings),
     phone: settings.phone || '',
     email: settings.email || settings.contactEmail || '',
     deliveryTime: settings.deliveryTime || '',
@@ -150,8 +131,7 @@ export default function VenuePage() {
   const dirty = useMemo(() => {
     if (!store.settings || !initialized) return false;
     return (
-      form.startHour !== normalizeHour(store.settings.ordersStartHour, '17:00') ||
-      form.endHour !== normalizeHour(store.settings.ordersEndHour, '21:30') ||
+      !weeklySchedulesEqual(form.schedule, resolveWeeklySchedule(store.settings)) ||
       form.phone !== (store.settings.phone || '') ||
       form.email !== (store.settings.email || store.settings.contactEmail || '') ||
       form.deliveryTime !== (store.settings.deliveryTime || '') ||
@@ -163,14 +143,35 @@ export default function VenuePage() {
     ? new Date(store.settings.ordersBlockedUntil)
     : null;
   const isBlocked = !!blockedUntil && blockedUntil.getTime() > Date.now();
-  const closesIn = timeUntil(form.endHour || '21:30');
   const blockMinutes = Number(store.settings?.ordersBlockMinutes) || 30;
 
+  /* Статус по СОХРАНЁННОМУ графику (не по черновику формы); тикает раз в минуту. */
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+  const timeZone = store.settings?.ordersTimeZone || 'Europe/Berlin';
+  const hoursState = useMemo(
+    () => getOrderHoursState(resolveWeeklySchedule(store.settings), timeZone, now),
+    [store.settings, timeZone, now]
+  );
+  const hoursLine = describeHoursState(hoursState, timeZone, now);
+  const scheduleErrors = useMemo(() => validateWeeklySchedule(form.schedule).errors, [form.schedule]);
+
   const handleSave = async () => {
+    const { schedule, errors } = validateWeeklySchedule(form.schedule);
+    if (!schedule || errors.length) {
+      setEditHours(true);
+      alert('В графике работы есть ошибки — исправьте отмеченные интервалы');
+      return;
+    }
+    // Старые поля держим как «самое раннее / самое позднее» — фолбэк без графика.
+    const bounds = scheduleBounds(schedule);
     setSaving(true);
     const ok = await patchStoreSettings({
-      ordersStartHour: form.startHour,
-      ordersEndHour: form.endHour,
+      ordersWeeklySchedule: schedule,
+      ...(bounds ? { ordersStartHour: bounds.start, ordersEndHour: bounds.end } : {}),
       phone: form.phone,
       email: form.email,
       deliveryTime: form.deliveryTime,
@@ -294,9 +295,7 @@ export default function VenuePage() {
           <div className="text-sm leading-5 text-gray-600">
             {isBlocked
               ? store.settings?.ordersBlockedReason || 'Пауза, включится автоматически'
-              : closesIn
-                ? `Закрытие через ${closesIn} · сегодня до ${form.endHour}`
-                : `Смена ${form.startHour}–${form.endHour}`}
+              : hoursLine}
           </div>
         </div>
         <Toggle
@@ -320,9 +319,7 @@ export default function VenuePage() {
           <span className="text-sm leading-5 text-gray-600">
             {isBlocked
               ? store.settings?.ordersBlockedReason || 'Пауза, включится автоматически'
-              : closesIn
-                ? `Закрытие через ${closesIn} · сегодня до ${form.endHour}`
-                : `Смена ${form.startHour}–${form.endHour}`}
+              : hoursLine}
           </span>
         </div>
         <button
@@ -350,40 +347,40 @@ export default function VenuePage() {
               {editHours ? 'Готово' : 'Изменить'}
             </button>
           </div>
-          {WEEKDAYS.map((day) => (
-            <div key={day} className="flex h-11 items-center gap-3">
-              <span className="min-w-0 flex-1 text-base leading-6 text-gray-900">{day}</span>
-              <span className="flex-none text-base font-bold leading-6 text-gray-900 tabular-nums">
-                {form.startHour} – {form.endHour}
-              </span>
-            </div>
-          ))}
-          {editHours && (
-            <div className="flex flex-col gap-3 rounded-xl bg-[#FAF7F2] p-4">
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:gap-4">
-                <label className="flex flex-1 flex-col gap-1">
-                  <span className="text-sm font-bold leading-5 text-gray-900">Начало приёма</span>
-                  <input
-                    type="time"
-                    value={form.startHour}
-                    onChange={(e) => setForm({ ...form, startHour: e.target.value })}
-                    className="h-12 rounded-xl border border-gray-300 bg-white px-4 text-base leading-6 text-gray-900 outline-none transition focus:border-[#8A6C4C]"
-                  />
-                </label>
-                <label className="flex flex-1 flex-col gap-1">
-                  <span className="text-sm font-bold leading-5 text-gray-900">Конец приёма</span>
-                  <input
-                    type="time"
-                    value={form.endHour}
-                    onChange={(e) => setForm({ ...form, endHour: e.target.value })}
-                    className="h-12 rounded-xl border border-gray-300 bg-white px-4 text-base leading-6 text-gray-900 outline-none transition focus:border-[#8A6C4C]"
-                  />
-                </label>
-              </div>
-              <p className="m-0 text-sm leading-5 text-gray-600">
-                Пока часы едины для всех дней недели — расписание по дням появится позже
-              </p>
-            </div>
+          {editHours ? (
+            <WeeklyScheduleEditor
+              value={form.schedule}
+              onChange={(schedule) => setForm({ ...form, schedule })}
+              errors={scheduleErrors}
+              today={hoursState.today}
+            />
+          ) : (
+            WEEKDAY_KEYS.map((day) => {
+              const ranges = form.schedule[day];
+              const isToday = day === hoursState.today;
+              return (
+                <div key={day} className="flex min-h-11 items-center gap-3 py-1">
+                  <span
+                    className={`min-w-0 flex-1 text-base leading-6 ${
+                      isToday ? 'font-bold text-[#7C6145]' : 'text-gray-900'
+                    }`}
+                  >
+                    {weekdayLabel(day, 'ru')}
+                  </span>
+                  {ranges.length ? (
+                    <span className="flex flex-none flex-col items-end text-base font-bold leading-6 text-gray-900 tabular-nums">
+                      {ranges.map((r) => (
+                        <span key={`${r.start}-${r.end}`}>
+                          {r.start} – {r.end}
+                        </span>
+                      ))}
+                    </span>
+                  ) : (
+                    <span className="flex-none text-base leading-6 text-gray-500">Выходной</span>
+                  )}
+                </div>
+              );
+            })
           )}
         </Card>
 

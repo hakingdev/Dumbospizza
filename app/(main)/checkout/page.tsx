@@ -16,11 +16,7 @@ import LoyaltyRedeem from '../../../components/checkout/LoyaltyRedeem'
 import { getBogoPickerMerchandise, getVisibleBogoSecondItems } from '../../../lib/promotions/discount-total'
 import { useLanguage } from '../../../lib/contexts/LanguageContext'
 import { loadTranslation } from '../../../lib/i18n'
-import {
-  formatMinutesAsHHmm,
-  getNowMinutesInTimeZone,
-  parseOrdersTimeToMinutes,
-} from '../../../lib/order-acceptance-hours'
+import { evaluateOrderHours } from '../../../lib/opening-schedule'
 import { useKitchenBlocks } from '../../../lib/contexts/KitchenBlocksContext'
 import {
   WORKSHOP_BLOCK_HEADLINE,
@@ -284,16 +280,10 @@ export default function CheckoutPage() {
   useEffect(() => {
     const evaluateOrderBlock = () => {
       const settings = orderSettings || {}
-      const startMinutes = parseOrdersTimeToMinutes(settings.ordersStartHour, 16)
-      const endMinutes = parseOrdersTimeToMinutes(settings.ordersEndHour, 22)
-      const timeZone = settings.ordersTimeZone || 'Europe/Berlin'
       const blockedUntil = settings.ordersBlockedUntil ? new Date(settings.ordersBlockedUntil) : null
       const blockReason = settings.ordersBlockedReason || 'Die Küche ist gerade ausgelastet. Bitte versuchen Sie es später.'
-      const beforeOpenTemplate = settings.ordersClosedMessageBeforeOpen || 'Wir öffnen um {time}'
-      const afterCloseMessage = settings.ordersClosedMessageAfterClose || 'Wir sind geschlossen und morgen wieder für Sie da.'
 
       const now = new Date()
-      const nowMinutes = getNowMinutesInTimeZone(timeZone, now)
 
       // Цех из корзины стоит — его сообщение точнее глобального И знает свой
       // срок: при «весь приём 10 мин + суши 30 мин» обещать 10 минут нельзя.
@@ -310,16 +300,14 @@ export default function CheckoutPage() {
         return
       }
 
-      if (nowMinutes < startMinutes) {
-        const timeLabel = formatMinutesAsHHmm(startMinutes)
+      // Недельный график (та же функция, что на сервере в POST /api/orders).
+      const orderHours = evaluateOrderHours(settings, now, {
+        beforeOpen: 'Wir öffnen um {time}',
+        afterClose: 'Wir sind geschlossen und morgen wieder für Sie da.',
+      })
+      if (!orderHours.accepting) {
         setOrderBlocked(true)
-        setOrderBlockMessage(beforeOpenTemplate.replace('{time}', timeLabel))
-        return
-      }
-
-      if (nowMinutes >= endMinutes) {
-        setOrderBlocked(true)
-        setOrderBlockMessage(afterCloseMessage)
+        setOrderBlockMessage(orderHours.message || '')
         return
       }
 

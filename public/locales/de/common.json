@@ -30,6 +30,7 @@
       "quality_text": "Nur frische Zutaten",
       "hours_title": "täglich von {start} bis {end} Uhr",
       "hours_text": "Täglich {start}–{end}",
+      "hours_title_weekly": "Öffnungszeiten",
       "safe_title": "Sicherheit",
       "safe_text": "Garantie für Qualität und Frische"
     },
@@ -366,7 +367,10 @@
     }
   },
   "header": {
-    "hours": "täglich {start} - {end}"
+    "hours": "täglich {start} - {end}",
+    "hours_today": "heute {hours}",
+    "closed_today": "heute Ruhetag",
+    "closed_label": "Ruhetag"
   },
   "city_modal": {
     "title": "Wo befinden Sie sich?",

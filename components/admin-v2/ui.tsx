@@ -296,6 +296,43 @@ export function EmptyState({
   );
 }
 
+/* ---- Тумблер (зоны доставки, приём заказов, рабочий день) ---- */
+
+export function Toggle({
+  on,
+  onChange,
+  busy,
+  disabled,
+  label,
+}: {
+  on: boolean;
+  onChange?: (next: boolean) => void;
+  busy?: boolean;
+  disabled?: boolean;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      aria-label={label}
+      title={label}
+      disabled={busy || disabled}
+      onClick={() => onChange?.(!on)}
+      className={`relative h-[26px] w-11 flex-none rounded-full border-none transition ${
+        disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+      } ${busy ? 'opacity-50' : ''}`}
+      style={{ background: on ? '#8A6C4C' : '#D1D5DB' }}
+    >
+      <span
+        className="absolute top-[3px] h-5 w-5 rounded-full bg-white shadow-[0_1px_2px_rgba(17,24,39,.24)] transition-all"
+        style={{ left: on ? 21 : 3 }}
+      />
+    </button>
+  );
+}
+
 /* ---- Микро-надпись секции («СОСТАВ», «КЛИЕНТ») ---- */
 
 export function SectionLabel({ children }: { children: ReactNode }) {
