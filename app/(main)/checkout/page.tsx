@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ChevronLeft, CreditCard, Truck, Check, Landmark, Loader2, Minus, Percent, Plus, Trash2, Wallet } from 'lucide-react'
+import { ChevronLeft, Clock, CreditCard, Truck, Check, Landmark, Loader2, MapPin, Minus, Percent, Plus, Trash2, User, Wallet } from 'lucide-react'
 import { useCart, loyaltyRedeemBaseAmount } from '../../../lib/contexts/CartContext'
 import { storageSet } from '../../../lib/safe-storage'
 import CouponInput from '../../../components/cart/CouponInput'
@@ -891,7 +891,7 @@ export default function CheckoutPage() {
       // Страховка: пока клиент заполнял форму, выбранный слот мог перестать
       // проходить минимальный запас (60/90 мин) — тогда «как можно раньше».
       const submitDesiredTime = (() => {
-        if (deliveryType !== 'delivery' || !desiredDeliveryTime) return undefined
+        if (!desiredDeliveryTime) return undefined
         const slots = getDeliveryTimeSlots(
           orderSettings?.deliverySlotStart ?? '17:00',
           orderSettings?.deliverySlotEnd ?? '21:30',
@@ -1214,7 +1214,7 @@ export default function CheckoutPage() {
             }`}>
               1
             </span>
-            <p className="mt-1 text-sm">{t('checkout.steps.address', 'Adresse')}</p>
+            <p className="mt-1 text-sm">{deliveryType === 'pickup' ? t('checkout.steps.contact', 'Kontakt') : t('checkout.steps.address', 'Adresse')}</p>
           </div>
         </div>
         
@@ -1259,7 +1259,11 @@ export default function CheckoutPage() {
           {/* Step 1: Delivery Info */}
           {step === 1 && (
             <div className="bg-white rounded-lg shadow-md p-6">
-              <h2 className="text-xl font-semibold mb-4">{t('checkout.delivery_info', 'Lieferinformationen')}</h2>
+              <h2 className="text-xl font-semibold mb-4">
+                {deliveryType === 'pickup'
+                  ? t('checkout.pickup_info', 'Abholinformationen')
+                  : t('checkout.delivery_info', 'Lieferinformationen')}
+              </h2>
               
               <div className="mb-6">
                 <label className="block text-gray-700 font-medium mb-2">{t('checkout.delivery_type_label', 'Wählen Sie die Art der Übergabe:')}</label>
@@ -1320,11 +1324,30 @@ export default function CheckoutPage() {
                 </div>
               </div>
               
-              {deliveryType === 'delivery' && (
-                <div className="mb-6">
-                  <p className="text-sm text-gray-600">
-                    {t('checkout.zone_auto_hint', 'Ihr Liefergebiet wird anhand Ihrer Adresse unten geprüft.')}
-                  </p>
+              <div className="mb-6">
+                  {deliveryType === 'delivery' ? (
+                    <p className="text-sm text-gray-600">
+                      {t('checkout.zone_auto_hint', 'Ihr Liefergebiet wird anhand Ihrer Adresse unten geprüft.')}
+                    </p>
+                  ) : (
+                    // Самовывоз: гостю нужно знать, КУДА идти — раньше адреса
+                    // не было ни здесь, ни на шаге оплаты.
+                    <div className="flex items-start gap-3 rounded-lg border border-gray-200 bg-gray-50 p-4">
+                      <MapPin className="mt-0.5 h-5 w-5 shrink-0 text-primary-600" aria-hidden="true" />
+                      <div className="min-w-0 text-sm">
+                        <p className="font-medium text-gray-900">{t('checkout.pickup_at', 'Abholung bei')}</p>
+                        <p className="text-gray-700">{deliveryFacts.storeAddress || 'Kurhausstraße 11A, 97688 Bad Kissingen'}</p>
+                        <a
+                          href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(deliveryFacts.storeAddress || 'Kurhausstraße 11A, 97688 Bad Kissingen')}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-1 inline-block font-medium text-primary-700 underline-offset-2 hover:underline"
+                        >
+                          {t('checkout.pickup_route', 'Route anzeigen')}
+                        </a>
+                      </div>
+                    </div>
+                  )}
 
                   {(() => {
                     const start = orderSettings?.deliverySlotStart ?? '17:00'
@@ -1336,8 +1359,13 @@ export default function CheckoutPage() {
                     const visibleSlots = filterSlotsByCurrentTime(slots, timeZone, minLeadMinutes)
                     return (
                       <div className="mt-4">
-                        <label className="block text-gray-700 font-medium mb-2">{t('checkout.desired_delivery_time', 'Gewünschte Lieferzeit')}</label>
+                        <label htmlFor="desired-time" className="block text-gray-700 font-medium mb-2">
+                          {deliveryType === 'pickup'
+                            ? t('checkout.desired_pickup_time', 'Gewünschte Abholzeit')
+                            : t('checkout.desired_delivery_time', 'Gewünschte Lieferzeit')}
+                        </label>
                         <select
+                          id="desired-time"
                           className="input"
                           value={visibleSlots.includes(desiredDeliveryTime) ? desiredDeliveryTime : ''}
                           onChange={(e) => setDesiredDeliveryTime(e.target.value)}
@@ -1353,8 +1381,7 @@ export default function CheckoutPage() {
                       </div>
                     )
                   })()}
-                </div>
-              )}
+              </div>
               
               <h3 className="text-lg font-medium mb-4">{t('checkout.contact_info', 'Kontaktinformationen')}</h3>
               
@@ -1578,6 +1605,56 @@ export default function CheckoutPage() {
 
           {step === 2 && !onlinePay && (
             <div className="bg-white rounded-lg shadow-md p-6">
+              {/* Сводка шага 1: на оплате гость видит, кто, куда и когда, и не
+                  держит адрес в голове; «Ändern» возвращает к адресу. */}
+              <section aria-labelledby="checkout-review-title" className="mb-6 rounded-lg border border-gray-200 bg-gray-50 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <h2 id="checkout-review-title" className="text-base font-semibold text-gray-900">
+                    {deliveryType === 'pickup' ? t('checkout.review_pickup', 'Ihre Abholung') : t('checkout.review_delivery', 'Ihre Lieferung')}
+                  </h2>
+                  <button
+                    type="button"
+                    onClick={handlePreviousStep}
+                    className="-my-1 shrink-0 rounded px-2 py-1 text-sm font-medium text-primary-700 hover:bg-primary-50"
+                  >
+                    {t('checkout.review_edit', 'Ändern')}
+                  </button>
+                </div>
+                <ul className="mt-2 space-y-1.5 text-sm text-gray-700">
+                  <li className="flex items-start gap-2">
+                    <User className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" aria-hidden="true" />
+                    <NoTranslate className="min-w-0 break-words">
+                      {[contactDetails.name, contactDetails.phone].filter(Boolean).join(' · ')}
+                    </NoTranslate>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" aria-hidden="true" />
+                    {deliveryType === 'pickup' ? (
+                      <span className="min-w-0 break-words">
+                        {t('checkout.pickup_at', 'Abholung bei')} {deliveryFacts.storeAddress || 'Kurhausstraße 11A, 97688 Bad Kissingen'}
+                      </span>
+                    ) : (
+                      <NoTranslate className="min-w-0 break-words">
+                        {`${contactDetails.street} ${contactDetails.houseNumber}, ${contactDetails.postalCode} ${contactDetails.city}`}
+                        {contactDetails.floor ? ` · ${contactDetails.floor}` : ''}
+                      </NoTranslate>
+                    )}
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <Clock className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" aria-hidden="true" />
+                    <span className="min-w-0">
+                      {desiredDeliveryTime
+                        ? `${deliveryType === 'pickup' ? t('checkout.desired_pickup_time', 'Gewünschte Abholzeit') : t('checkout.desired_delivery_time', 'Gewünschte Lieferzeit')}: ${desiredDeliveryTime} Uhr`
+                        : deliveryType === 'pickup'
+                          ? `${t('checkout.as_soon_as_possible', 'So schnell wie möglich')} · ${t('checkout.pickup_time', '15–20 Minuten')}`
+                          : deliveryFacts.timeRange
+                            ? `${t('checkout.as_soon_as_possible', 'So schnell wie möglich')} · ${fillTemplate(t('checkout.delivery_time', 'In der Regel {time} Minuten'), { time: deliveryFacts.timeRange })}`
+                            : t('checkout.as_soon_as_possible', 'So schnell wie möglich')}
+                    </span>
+                  </li>
+                </ul>
+              </section>
+
               <h2 className="text-xl font-semibold mb-4">{t('checkout.payment_method', 'Zahlungsmethode')}</h2>
 
               {deliveryType === 'delivery' && renderMinOrderBox('mb-4')}
@@ -1618,7 +1695,11 @@ export default function CheckoutPage() {
                       </svg>
                     </div>
                     <div>
-                      <p className="font-medium">{t('checkout.payments.cash', 'Bar bei Lieferung')}</p>
+                      <p className="font-medium">
+                        {deliveryType === 'pickup'
+                          ? t('checkout.payments.cash_pickup', 'Barzahlung bei Abholung')
+                          : t('checkout.payments.cash', 'Barzahlung bei Lieferung')}
+                      </p>
                     </div>
                     {paymentMethod === 'cash' && (
                       <Check className="h-5 w-5 ml-auto text-primary-600" />
@@ -1649,7 +1730,11 @@ export default function CheckoutPage() {
                     />
                     <CreditCard className="h-6 w-6 mr-3 text-primary-600" />
                     <div>
-                      <p className="font-medium">{t('checkout.payments.card', 'Karte bei Lieferung')}</p>
+                      <p className="font-medium">
+                        {deliveryType === 'pickup'
+                          ? t('checkout.payments.card_pickup', 'Kartenzahlung bei Abholung')
+                          : t('checkout.payments.card', 'Kartenzahlung bei Lieferung')}
+                      </p>
                     </div>
                     {paymentMethod === 'card' && (
                       <Check className="h-5 w-5 ml-auto text-primary-600" />
@@ -1786,13 +1871,14 @@ export default function CheckoutPage() {
                       <Loader2 className="w-5 h-5 animate-spin" />
                       {t('checkout.submitting', 'Wird gesendet...')}
                     </>
-                  ) : isOnlineCheckoutMethod(paymentMethod) ? (
+                  ) : (
+                    // §312j Abs. 3 BGB: кнопка, которой заключается платный
+                    // договор, должна однозначно говорить о плате —
+                    // «Bestellung aufgeben» / «Jetzt bezahlen» этого не делают.
                     <>
-                      {t('checkout.pay_now', 'Jetzt bezahlen')}
+                      {t('checkout.place_order_binding', 'Zahlungspflichtig bestellen')}
                       <NoTranslate>{` · ${formatEuro(displayTotal)}`}</NoTranslate>
                     </>
-                  ) : (
-                    t('checkout.place_order', 'Bestellung abschicken')
                   )}
                 </button>
               </div>
@@ -2016,10 +2102,12 @@ export default function CheckoutPage() {
                 <NoTranslate className="font-medium">{formatEuro(merchandiseSubtotal)}</NoTranslate>
               </div>
               
-              <div className="flex justify-between mb-2">
-                <span>{t('checkout.delivery', 'Lieferung')}</span>
-                <span>{state.deliveryFee === 0 ? t('cart.free_delivery', 'Kostenlos') : <NoTranslate>{formatEuro(state.deliveryFee)}</NoTranslate>}</span>
-              </div>
+              {deliveryType === 'delivery' && (
+                <div className="flex justify-between mb-2">
+                  <span>{t('checkout.delivery', 'Lieferung')}</span>
+                  <span>{state.deliveryFee === 0 ? t('cart.free_delivery', 'Kostenlos') : <NoTranslate>{formatEuro(state.deliveryFee)}</NoTranslate>}</span>
+                </div>
+              )}
 
               {minOrderSurcharge > 0 && (
                 <div className="flex justify-between mb-2">

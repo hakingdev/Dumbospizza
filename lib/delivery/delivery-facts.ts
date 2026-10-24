@@ -21,14 +21,20 @@ export interface DeliveryZoneSummary {
   paidFeeFrom: number | null;
 }
 
-/** «30-70» / «30–70» / «45» из настройки deliveryTime → «30–70» (или null). */
-export function formatDeliveryTimeRange(raw: unknown): string | null {
+/** «30-70» / «30–70 min» / «45» из настройки deliveryTime → минуты (или null). */
+export function parseDeliveryTimeRange(raw: unknown): { from: number; to: number } | null {
   const nums = String(raw ?? '').match(/\d+/g);
   if (!nums || nums.length === 0) return null;
   const [from, to] = nums.map(Number);
   if (!Number.isFinite(from) || from <= 0) return null;
-  if (to == null || to <= from) return String(from);
-  return `${from}–${to}`;
+  return { from, to: to != null && to > from ? to : from };
+}
+
+/** Та же настройка для текста: «30–70» (или null). */
+export function formatDeliveryTimeRange(raw: unknown): string | null {
+  const range = parseDeliveryTimeRange(raw);
+  if (!range) return null;
+  return range.to > range.from ? `${range.from}–${range.to}` : String(range.from);
 }
 
 export function summarizeDeliveryZones(zones: DeliveryZoneFact[]): DeliveryZoneSummary {

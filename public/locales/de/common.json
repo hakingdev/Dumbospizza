@@ -141,7 +141,8 @@
     "steps": {
       "address": "Adresse",
       "payment": "Zahlung",
-      "confirmation": "Bestätigung"
+      "confirmation": "Bestätigung",
+      "contact": "Kontakt"
     },
     "delivery_info": "Lieferinformationen",
     "delivery_type_label": "Lieferart auswählen:",
@@ -182,7 +183,9 @@
       "paypal_hint": "Mit Ihrem PayPal-Konto bezahlen",
       "pay_title": "Bezahlung",
       "online_amount": "Zu zahlen",
-      "back_to_methods": "Zurück zur Zahlungsart"
+      "back_to_methods": "Zurück zur Zahlungsart",
+      "cash_pickup": "Barzahlung bei Abholung",
+      "card_pickup": "Kartenzahlung bei Abholung"
     },
     "submitting": "Bestellung wird aufgegeben...",
     "place_order": "Bestellung aufgeben",
@@ -235,7 +238,15 @@
     "surcharge_hint": "Der fehlende Betrag wird als Mindermengenzuschlag berechnet. Fügen Sie Artikel hinzu, sinkt der Zuschlag automatisch.",
     "add_more": "Weitere Artikel hinzufügen",
     "topup_in_cart": "Im Warenkorb",
-    "topup_browse_done": "Fertig"
+    "topup_browse_done": "Fertig",
+    "pickup_info": "Abholinformationen",
+    "pickup_at": "Abholung bei",
+    "pickup_route": "Route anzeigen",
+    "desired_pickup_time": "Gewünschte Abholzeit",
+    "place_order_binding": "Zahlungspflichtig bestellen",
+    "review_delivery": "Ihre Lieferung",
+    "review_pickup": "Ihre Abholung",
+    "review_edit": "Ändern"
   },
   "confirmation": {
     "thank_you": "Vielen Dank für Ihre Bestellung!",
@@ -246,7 +257,7 @@
     "order_success": "Ihre Bestellung",
     "order_success_suffix": "wurde erfolgreich aufgegeben.",
     "order_number": "Bestellnummer",
-    "delivery_info": "Wir liefern sie so schnell wie möglich",
+    "delivery_info": "So schnell wie möglich",
     "pickup_info": "Sie können sie in unserem Restaurant abholen",
     "confirmation_sent": "Wir haben eine Bestätigung an Ihre Telefonnummer gesendet",
     "track_order": "Bestellung verfolgen",
@@ -261,7 +272,11 @@
     "order_date": "Bestelldatum",
     "points_earned": "Sie haben",
     "points_suffix": "Punkte für diese Bestellung erhalten!",
-    "points_hint": "Nutzen Sie diese bei der nächsten Bestellung für einen Rabatt."
+    "points_hint": "Nutzen Sie diese bei der nächsten Bestellung für einen Rabatt.",
+    "eta_delivery": "Voraussichtliche Lieferung",
+    "eta_pickup": "Abholbereit",
+    "eta_around": "gegen",
+    "pickup_eta_default": "in 15–20 Minuten"
   },
   "profile": {
     "title": "Mein Konto",

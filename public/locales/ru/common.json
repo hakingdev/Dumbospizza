@@ -166,7 +166,8 @@
     "steps": {
       "address": "Адрес",
       "payment": "Оплата",
-      "confirmation": "Подтверждение"
+      "confirmation": "Подтверждение",
+      "contact": "Контакты"
     },
     "delivery_info": "Информация о доставке",
     "delivery_type_label": "Выберите способ получения:",
@@ -207,7 +208,9 @@
       "paypal_hint": "Оплата через ваш аккаунт PayPal",
       "pay_title": "Оплата",
       "online_amount": "К оплате",
-      "back_to_methods": "Назад к выбору оплаты"
+      "back_to_methods": "Назад к выбору оплаты",
+      "cash_pickup": "Наличными при получении",
+      "card_pickup": "Картой при получении"
     },
     "submitting": "Оформление...",
     "place_order": "Оформить заказ",
@@ -260,7 +263,15 @@
     "surcharge_hint": "Недостающая сумма добавится к заказу как доплата. Если добавите товары, доплата уменьшится автоматически.",
     "add_more": "Добавить ещё товары",
     "topup_in_cart": "В корзине",
-    "topup_browse_done": "Готово"
+    "topup_browse_done": "Готово",
+    "pickup_info": "Самовывоз",
+    "pickup_at": "Самовывоз:",
+    "pickup_route": "Проложить маршрут",
+    "desired_pickup_time": "Желаемое время самовывоза",
+    "place_order_binding": "Заказать с оплатой",
+    "review_delivery": "Ваша доставка",
+    "review_pickup": "Ваш самовывоз",
+    "review_edit": "Изменить"
   },
   "confirmation": {
     "thank_you": "Спасибо за ваш заказ!",
@@ -271,7 +282,7 @@
     "order_success": "Ваш заказ",
     "order_success_suffix": "был успешно оформлен.",
     "order_number": "Номер заказа",
-    "delivery_info": "Мы доставим его в кратчайшие сроки",
+    "delivery_info": "Как можно скорее",
     "pickup_info": "Вы можете забрать его в нашем ресторане",
     "confirmation_sent": "Мы отправили подтверждение на ваш номер телефона",
     "track_order": "Отслеживать заказ",
@@ -286,7 +297,11 @@
     "order_date": "Дата заказа",
     "points_earned": "Вы заработали",
     "points_suffix": "баллов за этот заказ!",
-    "points_hint": "Используйте их при следующем заказе для получения скидки."
+    "points_hint": "Используйте их при следующем заказе для получения скидки.",
+    "eta_delivery": "Ориентировочная доставка",
+    "eta_pickup": "Можно забрать",
+    "eta_around": "около",
+    "pickup_eta_default": "через 15–20 минут"
   },
   "profile": {
     "title": "Личный кабинет",
