@@ -823,6 +823,19 @@ export default function CheckoutPage() {
   const handlePreviousStep = () => {
     setStep(prev => prev - 1)
   }
+
+  // Новый шаг (и панель онлайн-оплаты) показываем с начала: «Weiter» стоит
+  // внизу длинной формы, и без прокрутки шаг оплаты открывался с низа
+  // страницы — гость видел AGB-галочку, а не выбор способа оплаты.
+  const onlinePayOpen = !!onlinePay
+  const firstStepRenderRef = useRef(true)
+  useEffect(() => {
+    if (firstStepRenderRef.current) {
+      firstStepRenderRef.current = false
+      return
+    }
+    window.scrollTo({ top: 0, behavior: 'auto' })
+  }, [step, onlinePayOpen])
   
   const handleSubmitOrder = async (e: React.FormEvent) => {
     e.preventDefault()
