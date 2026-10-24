@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { AnimatePresence, motion, useAnimationControls, useReducedMotion } from 'framer-motion';
+import { AnimatePresence, motion, useAnimationControls, useReducedMotion } from 'motion/react';
 import { Check, ChevronLeft, ChevronRight, Plus, ShoppingCart, X } from 'lucide-react';
 import { useCart } from '../../lib/contexts/CartContext';
 import { normalizeObjectId } from '../../lib/normalize-id';

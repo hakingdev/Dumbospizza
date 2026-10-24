@@ -2,6 +2,7 @@
 
 import { SessionProvider } from 'next-auth/react';
 import { ReactNode } from 'react';
+import { MotionConfig } from 'motion/react';
 import { CartProvider } from '../lib/contexts/CartContext';
 import { KitchenBlocksProvider } from '../lib/contexts/KitchenBlocksContext';
 import { LanguageProvider } from '../lib/contexts/LanguageContext';
@@ -15,7 +16,10 @@ export default function Providers({ children }: { children: ReactNode }) {
       <LanguageProvider>
         <CartProvider>
           {/* Стоп цеха (стоп-бот): карточки, страница товара и чекаут берут состояние отсюда. */}
-          <KitchenBlocksProvider>{children}</KitchenBlocksProvider>
+          <KitchenBlocksProvider>
+            {/* «Уменьшить движение» в ОС: Motion гасит сдвиги/масштаб, оставляя прозрачность. */}
+            <MotionConfig reducedMotion="user">{children}</MotionConfig>
+          </KitchenBlocksProvider>
         </CartProvider>
       </LanguageProvider>
     </SessionProvider>

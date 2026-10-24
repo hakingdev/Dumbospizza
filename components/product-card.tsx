@@ -1,7 +1,7 @@
 "use client";
 
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Plus, ShoppingCart } from 'lucide-react'
 import ProductModal from './ProductModal'
 import { useLanguage } from '../lib/contexts/LanguageContext'
@@ -34,6 +34,9 @@ interface ProductCardProps {
 export function ProductCard({ product }: ProductCardProps) {
   const [isHovered, setIsHovered] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  // Модалка раскрывается из фото карточки — центр фото в координатах окна.
+  const imageRef = useRef<HTMLButtonElement>(null);
+  const [modalOrigin, setModalOrigin] = useState<{ x: number; y: number } | null>(null);
   const { language } = useLanguage();
   const [t, setT] = useState<any>(() => (k: string, fallback?: string) => fallback ?? k);
 
@@ -65,6 +68,8 @@ export function ProductCard({ product }: ProductCardProps) {
       showNotice(blockedIds);
       return;
     }
+    const rect = imageRef.current?.getBoundingClientRect();
+    setModalOrigin(rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null);
     setIsModalOpen(true);
   };
 
@@ -88,6 +93,7 @@ export function ProductCard({ product }: ProductCardProps) {
         type="button"
         onClick={handleOpenModal}
         aria-label={`${product.name}: ${ctaLabel}`}
+        ref={imageRef}
         className="relative h-28 w-28 shrink-0 overflow-hidden rounded-xl bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-700 md:mb-4 md:h-56 md:w-full"
       >
         {/* На фото бейджи только с md: в 112-px превью телефона длинный текст акции закрывал бы пиццу */}
@@ -184,6 +190,8 @@ export function ProductCard({ product }: ProductCardProps) {
           isOpen={isModalOpen}
           onClose={() => setIsModalOpen(false)}
           productId={product.id}
+          origin={modalOrigin}
+          preview={{ name: product.name, image: product.image }}
         />
       )}
     </div>
