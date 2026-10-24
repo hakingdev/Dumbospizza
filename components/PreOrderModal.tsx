@@ -188,10 +188,12 @@ export default function PreOrderModal({ isOpen, onClose }: PreOrderModalProps) {
                   </p>
                 </div>
                 <button
+                  type="button"
                   onClick={handleClose}
-                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                  aria-label="Schließen"
+                  className="text-gray-500 hover:text-gray-700 transition-colors"
                 >
-                  <X className="h-6 w-6" />
+                  <X className="h-6 w-6" aria-hidden="true" />
                 </button>
               </div>
 
@@ -232,7 +234,7 @@ export default function PreOrderModal({ isOpen, onClose }: PreOrderModalProps) {
                     id="name"
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent ${
+                    className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-primary-600 focus:border-transparent ${
                       errors.name ? 'border-red-500' : 'border-gray-300'
                     }`}
                     placeholder="Ihr Name"
@@ -251,7 +253,7 @@ export default function PreOrderModal({ isOpen, onClose }: PreOrderModalProps) {
                     id="phone"
                     value={formData.phone}
                     onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent ${
+                    className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-primary-600 focus:border-transparent ${
                       errors.phone ? 'border-red-500' : 'border-gray-300'
                     }`}
                     placeholder="+49 971 1234567"
@@ -270,7 +272,7 @@ export default function PreOrderModal({ isOpen, onClose }: PreOrderModalProps) {
                     value={formData.address}
                     onChange={(e) => setFormData({ ...formData, address: e.target.value })}
                     rows={3}
-                    className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent ${
+                    className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-primary-600 focus:border-transparent ${
                       errors.address ? 'border-red-500' : 'border-gray-300'
                     }`}
                     placeholder="Straße, Hausnummer, PLZ, Stadt"
@@ -289,7 +291,7 @@ export default function PreOrderModal({ isOpen, onClose }: PreOrderModalProps) {
                     id="email"
                     value={formData.email}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-600 focus:border-transparent"
                     placeholder="ihre@email.de"
                   />
                 </div>

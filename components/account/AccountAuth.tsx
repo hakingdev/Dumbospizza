@@ -129,7 +129,8 @@ export default function AccountAuth({ onAuthenticated }: AccountAuthProps) {
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     placeholder="Name"
-                    className="w-full min-w-0 rounded-md border border-gray-300 py-2 pl-10 pr-4 focus:border-primary-500 focus:ring-primary-500"
+                    aria-label="Name"
+                    className="w-full min-w-0 rounded-md border border-gray-300 py-2 pl-10 pr-4 focus:border-primary-600 focus:ring-primary-600"
                     required
                   />
                 </div>
@@ -142,8 +143,9 @@ export default function AccountAuth({ onAuthenticated }: AccountAuthProps) {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="E-Mail"
+                  aria-label="E-Mail"
                   autoComplete="email"
-                  className="w-full min-w-0 rounded-md border border-gray-300 py-2 pl-10 pr-4 focus:border-primary-500 focus:ring-primary-500"
+                  className="w-full min-w-0 rounded-md border border-gray-300 py-2 pl-10 pr-4 focus:border-primary-600 focus:ring-primary-600"
                   required
                 />
               </div>
@@ -156,8 +158,9 @@ export default function AccountAuth({ onAuthenticated }: AccountAuthProps) {
                     value={phoneNumber}
                     onChange={(e) => setPhoneNumber(e.target.value)}
                     placeholder="Telefonnummer"
+                    aria-label="Telefonnummer"
                     autoComplete="tel"
-                    className="w-full min-w-0 rounded-md border border-gray-300 py-2 pl-10 pr-4 focus:border-primary-500 focus:ring-primary-500"
+                    className="w-full min-w-0 rounded-md border border-gray-300 py-2 pl-10 pr-4 focus:border-primary-600 focus:ring-primary-600"
                     required
                   />
                 </div>
@@ -172,8 +175,9 @@ export default function AccountAuth({ onAuthenticated }: AccountAuthProps) {
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder="Passwort"
+                      aria-label="Passwort"
                       autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-                      className="w-full min-w-0 rounded-md border border-gray-300 py-2 pl-10 pr-4 focus:border-primary-500 focus:ring-primary-500"
+                      className="w-full min-w-0 rounded-md border border-gray-300 py-2 pl-10 pr-4 focus:border-primary-600 focus:ring-primary-600"
                       minLength={6}
                       required
                     />

@@ -143,7 +143,7 @@ export default function TrackOrderPage() {
                     ? t('track.phone_placeholder', 'Telefonnummer eingeben (z. B. +49123456789)')
                     : t('track.order_placeholder', 'Bestellnummer eingeben (z. B. 230901001)')
                 }
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-600 focus:border-transparent"
               />
             </div>
           </div>
@@ -202,7 +202,7 @@ export default function TrackOrderPage() {
                 <div className="relative">
                   <div className="overflow-hidden h-2 mb-4 text-xs flex rounded bg-gray-200">
                     <div 
-                      className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-primary-500"
+                      className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-primary-600"
                       style={{ 
                         width: `${
                           order.status === 'cancelled' 
@@ -222,7 +222,7 @@ export default function TrackOrderPage() {
                         <div key={step.status} className="flex flex-col items-center w-1/5">
                           <div className={`
                             rounded-full h-8 w-8 flex items-center justify-center
-                            ${isCompleted ? 'bg-primary-500 text-white' : 'bg-gray-200 text-gray-500'}
+                            ${isCompleted ? 'bg-primary-600 text-white' : 'bg-gray-200 text-gray-500'}
                             ${isCurrent ? 'ring-4 ring-primary-100' : ''}
                           `}>
                             {isCompleted ? (

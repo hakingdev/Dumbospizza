@@ -270,7 +270,7 @@ export default function MenuPage() {
                   }`}
                 >
                   {g.name}
-                  <span className={`ml-1.5 ${active ? 'text-white/70' : 'text-gray-400'}`}>{g.products.length}</span>
+                  <span className={`ml-1.5 tabular-nums ${active ? 'text-white' : 'text-gray-600'}`}>{g.products.length}</span>
                 </button>
               );
             })}

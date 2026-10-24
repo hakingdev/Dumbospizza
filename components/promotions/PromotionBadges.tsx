@@ -86,7 +86,7 @@ export function ProductCardPrice({
   return (
     <div className="min-w-0 leading-tight">
       <p className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-        <span className="text-base font-bold text-primary-800 md:text-lg">
+        <span className="text-base font-bold text-primary-700 md:text-lg">
           {fromLabel}{' '}
           <span className="whitespace-nowrap tabular-nums" translate="no">{shownPrice.toFixed(2)} €</span>
         </span>

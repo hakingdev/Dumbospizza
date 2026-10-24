@@ -214,14 +214,14 @@ export default function CouponInput({
               value={couponCode}
               onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
               placeholder={t('checkout.promo_placeholder')}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500 text-sm"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary-600 focus:border-primary-600 text-sm"
             />
             {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
           </div>
           <button
             type="submit"
             disabled={!couponCode || isSubmitting}
-            className="inline-flex min-h-[40px] shrink-0 items-center justify-center whitespace-nowrap rounded-md bg-primary-600 px-4 py-2 text-center text-sm font-medium leading-tight text-white transition-colors hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:opacity-50"
+            className="inline-flex min-h-[40px] shrink-0 items-center justify-center whitespace-nowrap rounded-md bg-primary-600 px-4 py-2 text-center text-sm font-medium leading-tight text-white transition-colors hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2 disabled:opacity-50"
           >
             {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : t('checkout.apply_promo')}
           </button>
@@ -240,7 +240,7 @@ export default function CouponInput({
             onClick={handleRemove}
             aria-label={t('cart.remove_promo', 'Gutscheincode entfernen')}
             title={t('cart.remove_promo', 'Gutscheincode entfernen')}
-            className="inline-flex items-center justify-center gap-1.5 min-h-[40px] px-4 rounded-md border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500 transition-colors shrink-0 w-full sm:w-auto"
+            className="inline-flex items-center justify-center gap-1.5 min-h-[40px] px-4 rounded-md border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-600 transition-colors shrink-0 w-full sm:w-auto"
           >
             <XCircle className="w-4 h-4" />
             {t('cart.remove_promo_short', 'Entfernen')}

@@ -205,6 +205,8 @@ export default function CartPage() {
           <div className="lg:col-span-2">
             {/* Cart Items */}
             <div className="bg-white rounded-lg shadow-md overflow-hidden">
+              {/* Невидимый h2: без него после h1 «Warenkorb» сразу шли h3 позиций */}
+              <h2 className="sr-only">{t('cart.items', 'Artikel im Warenkorb')}</h2>
               <ul className="divide-y divide-gray-200">
                 {state.items.map((item) => (
                   <li key={item.id} className={`p-4 ${blockedWorkshopFor(item) ? 'bg-amber-50' : ''}`}>
@@ -218,7 +220,8 @@ export default function CartPage() {
                         {item.image ? (
                           <SafeImage src={item.image} alt={item.name} className="w-full h-full object-cover" />
                         ) : (
-                          <>[{t('category.image_placeholder', 'Bild')} <NoTranslate>{item.name}</NoTranslate>]</>
+                          // Как в выезжающей корзине: заглушка-эмодзи, а не «[Bild …]» серым по серому
+                          <span className="text-3xl" aria-hidden="true">🍕</span>
                         )}
                       </div>
 

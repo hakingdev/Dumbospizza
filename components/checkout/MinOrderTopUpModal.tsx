@@ -260,7 +260,7 @@ export default function MinOrderTopUpModal({
             {!browse && (
               <div className="mt-4 h-2 overflow-hidden rounded-full bg-gray-100">
                 <div
-                  className={`h-full rounded-full transition-all duration-300 ${reached ? 'bg-emerald-500' : 'bg-primary-500'}`}
+                  className={`h-full rounded-full transition-all duration-300 ${reached ? 'bg-emerald-500' : 'bg-primary-600'}`}
                   style={{ width: `${progress}%` }}
                 />
               </div>

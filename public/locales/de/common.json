@@ -125,7 +125,8 @@
     "terms_agreement": "Mit der Bestellung stimmen Sie zu",
     "repeat_skipped": "Nicht mehr im Sortiment und daher übersprungen:",
     "decrease": "Menge verringern",
-    "increase": "Menge erhöhen"
+    "increase": "Menge erhöhen",
+    "items": "Artikel im Warenkorb"
   },
   "checkout": {
     "title": "Kasse",

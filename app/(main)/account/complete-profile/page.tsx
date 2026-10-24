@@ -133,7 +133,7 @@ function CompleteProfileForm() {
                   onChange={(e) => setName(e.target.value)}
                   placeholder="Name"
                   autoComplete="name"
-                  className="w-full min-w-0 rounded-md border border-gray-300 py-2 pl-10 pr-4 focus:border-primary-500 focus:ring-primary-500"
+                  className="w-full min-w-0 rounded-md border border-gray-300 py-2 pl-10 pr-4 focus:border-primary-600 focus:ring-primary-600"
                   required
                 />
               </div>
@@ -146,7 +146,7 @@ function CompleteProfileForm() {
                   onChange={(e) => setPhoneNumber(e.target.value)}
                   placeholder="Telefonnummer"
                   autoComplete="tel"
-                  className="w-full min-w-0 rounded-md border border-gray-300 py-2 pl-10 pr-4 focus:border-primary-500 focus:ring-primary-500"
+                  className="w-full min-w-0 rounded-md border border-gray-300 py-2 pl-10 pr-4 focus:border-primary-600 focus:ring-primary-600"
                   required
                 />
               </div>

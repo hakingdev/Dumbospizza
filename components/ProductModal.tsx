@@ -329,10 +329,12 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
                 ) : product?.available ? (
                   <>
                     <button
+                      type="button"
                       onClick={onClose}
-                      className="absolute top-3 right-3 z-20 bg-white/90 backdrop-blur rounded-full p-2 shadow-lg hover:bg-white transition-colors"
+                      aria-label={t('common.close', 'Schließen')}
+                      className="absolute top-3 right-3 z-20 flex h-11 w-11 items-center justify-center rounded-full bg-white/90 shadow-lg backdrop-blur transition-colors hover:bg-white"
                     >
-                      <X className="h-5 w-5" />
+                      <X className="h-5 w-5" aria-hidden="true" />
                     </button>
 
                     <div className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain">
@@ -382,6 +384,8 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
                                 <button
                                   key={size.id}
                                   onClick={() => setSelectedSize(size)}
+                                  type="button"
+                                  aria-pressed={sel}
                                   className={`w-full p-3 sm:p-4 rounded-xl border-2 transition-all text-left flex items-center justify-between gap-3 ${
                                     sel ? 'border-primary-600 bg-primary-50' : 'border-gray-200 hover:border-primary-300'
                                   }`}
@@ -428,8 +432,9 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
                                 return (
                                   <button
                                     key={option._id}
-                                    type="button"
                                     onClick={() => toggleOption(group, option)}
+                                    type="button"
+                                    aria-pressed={isSelected}
                                     className={`w-full p-3 sm:p-4 rounded-xl border-2 transition-all text-left flex justify-between items-center gap-3 ${
                                       isSelected ? 'border-primary-600 bg-primary-50' : 'border-gray-200 hover:border-primary-300'
                                     }`}
@@ -469,6 +474,8 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
                                 <button
                                   key={index}
                                   onClick={() => toggleTopping(topping)}
+                                  type="button"
+                                  aria-pressed={isSelected}
                                   className={`p-3 rounded-xl border-2 transition-all text-left ${
                                     isSelected
                                       ? 'border-primary-600 bg-primary-50'
@@ -503,6 +510,8 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
                                 <button
                                   key={index}
                                   onClick={() => toggleSauce(sauce)}
+                                  type="button"
+                                  aria-pressed={isSelected}
                                   className={`p-3 rounded-xl border-2 transition-all text-left ${
                                     isSelected
                                       ? 'border-primary-600 bg-primary-50'
@@ -537,6 +546,8 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
                                 <button
                                   key={index}
                                   onClick={() => toggleSide(side)}
+                                  type="button"
+                                  aria-pressed={isSelected}
                                   className={`p-3 rounded-xl border-2 transition-all text-left ${
                                     isSelected
                                       ? 'border-primary-600 bg-primary-50'
@@ -564,17 +575,21 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
                         <h3 className="text-xl font-bold mb-3">{t('product_modal.quantity', 'Menge:')}</h3>
                         <div className="flex items-center gap-4">
                           <button
+                            type="button"
                             onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                            aria-label={t('cart.decrease', 'Menge verringern')}
                             className="w-12 h-12 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary-600 hover:bg-primary-50 transition-all"
                           >
-                            <Minus className="h-5 w-5" />
+                            <Minus className="h-5 w-5" aria-hidden="true" />
                           </button>
-                          <span className="text-3xl font-bold w-16 text-center">{quantity}</span>
+                          <span className="text-3xl font-bold w-16 text-center tabular-nums" aria-live="polite">{quantity}</span>
                           <button
+                            type="button"
                             onClick={() => setQuantity(quantity + 1)}
+                            aria-label={t('cart.increase', 'Menge erhöhen')}
                             className="w-12 h-12 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary-600 hover:bg-primary-50 transition-all"
                           >
-                            <Plus className="h-5 w-5" />
+                            <Plus className="h-5 w-5" aria-hidden="true" />
                           </button>
                         </div>
                       </div>

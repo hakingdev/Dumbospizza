@@ -186,7 +186,7 @@ export default function LoyaltyRedeem({
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder={`max. ${max.toFixed(2)}`}
-            className="min-w-0 flex-1 rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-primary-500 focus:ring-primary-500"
+            className="min-w-0 flex-1 rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-primary-600 focus:ring-primary-600"
           />
           <button
             type="button"

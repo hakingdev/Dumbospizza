@@ -177,7 +177,7 @@ export default function DeliveryPage() {
               onMouseLeave={() => setHoveredZoneId(null)}
               onClick={() => setSelectedZoneId(zone._id)}
               className={`w-full text-left bg-white rounded-xl p-4 shadow-sm border transition-colors ${
-                activeZoneId === zone._id ? 'border-primary-500 ring-1 ring-primary-500' : 'border-gray-100'
+                activeZoneId === zone._id ? 'border-primary-600 ring-1 ring-primary-600' : 'border-gray-100'
               }`}
             >
               <div className="mb-2 flex items-start justify-between gap-3">

@@ -1168,7 +1168,7 @@ export default function CheckoutPage() {
           >
             <input
               type="checkbox"
-              className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-600"
               checked={acceptMinOrderSurcharge}
               onChange={(e) => chooseMinOrderSurcharge(e.target.checked)}
             />
@@ -1203,10 +1203,10 @@ export default function CheckoutPage() {
       {/* Steps Progress */}
       <div className="flex mb-10">
         <div className="flex-1">
-          <div className={`h-1 ${step >= 1 ? 'bg-primary-500' : 'bg-gray-200'}`}></div>
+          <div className={`h-1 ${step >= 1 ? 'bg-primary-600' : 'bg-gray-200'}`}></div>
           <div className="mt-2 text-center">
             <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full ${
-              step >= 1 ? 'bg-primary-500 text-white' : 'bg-gray-200 text-gray-600'
+              step >= 1 ? 'bg-primary-600 text-white' : 'bg-gray-200 text-gray-600'
             }`}>
               1
             </span>
@@ -1215,10 +1215,10 @@ export default function CheckoutPage() {
         </div>
         
         <div className="flex-1">
-          <div className={`h-1 ${step >= 2 ? 'bg-primary-500' : 'bg-gray-200'}`}></div>
+          <div className={`h-1 ${step >= 2 ? 'bg-primary-600' : 'bg-gray-200'}`}></div>
           <div className="mt-2 text-center">
             <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full ${
-              step >= 2 ? 'bg-primary-500 text-white' : 'bg-gray-200 text-gray-600'
+              step >= 2 ? 'bg-primary-600 text-white' : 'bg-gray-200 text-gray-600'
             }`}>
               2
             </span>
@@ -1227,10 +1227,10 @@ export default function CheckoutPage() {
         </div>
         
         <div className="flex-1">
-          <div className={`h-1 ${step >= 3 ? 'bg-primary-500' : 'bg-gray-200'}`}></div>
+          <div className={`h-1 ${step >= 3 ? 'bg-primary-600' : 'bg-gray-200'}`}></div>
           <div className="mt-2 text-center">
             <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full ${
-              step >= 3 ? 'bg-primary-500 text-white' : 'bg-gray-200 text-gray-600'
+              step >= 3 ? 'bg-primary-600 text-white' : 'bg-gray-200 text-gray-600'
             }`}>
               3
             </span>
@@ -1262,7 +1262,7 @@ export default function CheckoutPage() {
                 <div className="flex flex-col md:flex-row gap-4">
                   <label className={`flex items-center p-4 border rounded-lg cursor-pointer ${
                     deliveryType === 'delivery' 
-                      ? 'border-primary-500 bg-primary-50'
+                      ? 'border-primary-600 bg-primary-50'
                       : 'border-gray-200 hover:border-gray-300'
                   }`}>
                     <input
@@ -1285,7 +1285,7 @@ export default function CheckoutPage() {
                   
                   <label className={`flex items-center p-4 border rounded-lg cursor-pointer ${
                     deliveryType === 'pickup' 
-                      ? 'border-primary-500 bg-primary-50'
+                      ? 'border-primary-600 bg-primary-50'
                       : 'border-gray-200 hover:border-gray-300'
                   }`}>
                     <input
@@ -1391,7 +1391,7 @@ export default function CheckoutPage() {
                   onChange={handleContactDetailChange}
                 />
                 <p className="text-xs text-gray-500 mt-1">{t('checkout.email_hint', 'An diese Adresse wird der Beleg gesendet')}</p>
-                <p className="text-xs text-gray-400 mt-1">
+                <p className="text-xs text-gray-500 mt-1">
                   {t(
                     'checkout.email_marketing_notice',
                     'Wir können Ihre E-Mail-Adresse nutzen, um Sie über eigene ähnliche Angebote zu informieren (§ 7 Abs. 3 UWG). Sie können dem jederzeit über den Abmelde-Link in jeder E-Mail oder per Nachricht an info@dumbospizza.de widersprechen.'
@@ -1524,7 +1524,7 @@ export default function CheckoutPage() {
                     name="saveAddress"
                     checked={contactDetails.saveAddress}
                     onChange={handleContactDetailChange}
-                    className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                    className="h-4 w-4 text-primary-600 focus:ring-primary-600 border-gray-300 rounded"
                   />
                   <span className="ml-2 text-gray-700">{t('checkout.save_info', 'Informationen für nächste Bestellungen speichern')}</span>
                 </label>
@@ -1584,7 +1584,7 @@ export default function CheckoutPage() {
                 <div className="flex flex-col gap-4">
                   <label className={`flex items-center p-4 border rounded-lg cursor-pointer ${
                     paymentMethod === 'cash' 
-                      ? 'border-primary-500 bg-primary-50'
+                      ? 'border-primary-600 bg-primary-50'
                       : 'border-gray-200 hover:border-gray-300'
                   }`}>
                     <input
@@ -1619,7 +1619,7 @@ export default function CheckoutPage() {
                   
                   <label className={`flex items-center p-4 border rounded-lg cursor-pointer ${
                     paymentMethod === 'card' 
-                      ? 'border-primary-500 bg-primary-50'
+                      ? 'border-primary-600 bg-primary-50'
                       : 'border-gray-200 hover:border-gray-300'
                   }`}>
                     <input
@@ -1656,7 +1656,7 @@ export default function CheckoutPage() {
                       key={group.id}
                       className={`flex items-center p-4 border rounded-lg cursor-pointer ${
                         paymentMethod === group.id
-                          ? 'border-primary-500 bg-primary-50'
+                          ? 'border-primary-600 bg-primary-50'
                           : 'border-gray-200 hover:border-gray-300'
                       }`}
                     >
@@ -1710,7 +1710,7 @@ export default function CheckoutPage() {
                         })
                       }
                     }}
-                    className="h-4 w-4 mt-1 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                    className="h-4 w-4 mt-1 text-primary-600 focus:ring-primary-600 border-gray-300 rounded"
                   />
                   <span className="ml-2 text-gray-700 text-sm">
                     {t('checkout.terms_prefix', 'Ich habe die')}{' '}
@@ -1736,7 +1736,7 @@ export default function CheckoutPage() {
                     type="checkbox"
                     checked={smsConsent}
                     onChange={(e) => setSmsConsent(e.target.checked)}
-                    className="h-4 w-4 mt-1 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                    className="h-4 w-4 mt-1 text-primary-600 focus:ring-primary-600 border-gray-300 rounded"
                   />
                   <span className="ml-2 text-gray-700 text-sm">
                     {t(
@@ -1745,7 +1745,7 @@ export default function CheckoutPage() {
                     )}
                   </span>
                 </label>
-                <p className="ml-6 mt-1 text-xs text-gray-400">
+                <p className="ml-6 mt-1 text-xs text-gray-500">
                   {t('checkout.sms_consent_hint', 'Freiwillig — die Bestellung ist auch ohne diese Zustimmung möglich.')}
                 </p>
               </div>
@@ -1813,7 +1813,7 @@ export default function CheckoutPage() {
                       <div key={`${item.id}-${item.size?.id || 'no-size'}-${index}`} className="bg-gray-50 rounded-lg p-3">
                         <div className="flex justify-between items-start">
                           <div className="flex-1">
-                            <h4 className="font-semibold text-gray-900 mb-1"><NoTranslate>{item.name}</NoTranslate></h4>
+                            <h3 className="font-semibold text-gray-900 mb-1"><NoTranslate>{item.name}</NoTranslate></h3>
                           
                             {item.size && item.size.name && (
                               <p className="text-sm text-gray-700 mb-1">
