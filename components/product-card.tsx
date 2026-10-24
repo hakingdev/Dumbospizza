@@ -111,7 +111,9 @@ export function ProductCard({ product }: ProductCardProps) {
           <SafeImage
             src={product.image}
             alt=""
-            className={`absolute inset-0 h-full w-full object-cover ${blockedWorkshop ? 'opacity-50 grayscale' : ''}`}
+            // Лёгкий поворот пиццы при наведении (только мышь). scale-110 прячет
+            // углы фото, которые иначе открылись бы при повороте на 6°.
+            className={`absolute inset-0 h-full w-full object-cover transition-transform duration-500 ease-out [@media(hover:hover)]:group-hover:rotate-6 [@media(hover:hover)]:group-hover:scale-110 motion-reduce:transition-none motion-reduce:transform-none ${blockedWorkshop ? 'opacity-50 grayscale' : ''}`}
           />
         ) : (
           <span className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200 text-4xl md:text-6xl" aria-hidden="true">

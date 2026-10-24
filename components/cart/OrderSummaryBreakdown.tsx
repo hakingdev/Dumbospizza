@@ -5,6 +5,7 @@ import { getBogoPickerMerchandise } from '../../lib/promotions/discount-total';
 import PromotionCartSummary from '../promotions/PromotionCartSummary';
 import { NoTranslate } from '../NoTranslate';
 import { formatEuro } from '../../lib/format-euro';
+import CountingAmount from '../CountingAmount';
 
 /**
  * Единый разбор итоговой суммы (subtotal → скидки → Gesamtsumme) для CartModal,
@@ -96,7 +97,7 @@ export default function OrderSummaryBreakdown({
       <div className="border-t pt-2 flex justify-between font-bold text-lg">
         <span>{showDelivery ? t('cart.total', 'Gesamtsumme') : t('cart.total_without_delivery', 'Summe')}</span>
         <NoTranslate className="text-primary-600 whitespace-nowrap">
-          {eur(showDelivery ? total : total - deliveryFee)}
+          <CountingAmount value={showDelivery ? total : total - deliveryFee} />
         </NoTranslate>
       </div>
       {!showDelivery && (

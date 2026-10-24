@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Dialog } from '@headlessui/react';
 import { AnimatePresence, motion } from 'motion/react';
-import { AddedDeltaChip, RollingAmount, SelectionPop } from './product-modal-motion';
+import { AddedDeltaChip, PizzaStage, SelectionPop } from './product-modal-motion';
+import CountingAmount from './CountingAmount';
 import { X, Plus, Minus, ShoppingCart, Check } from 'lucide-react';
 import { useCart } from '../lib/contexts/CartContext';
 import { useKitchenBlocks } from '../lib/contexts/KitchenBlocksContext';
@@ -153,7 +154,13 @@ export default function ProductModal({ isOpen, onClose, productId, origin, previ
     loadTranslations();
   }, [language]);
 
+  // Новая добавка «сыплется» на фото пиццы (PizzaStage сам решает, есть ли
+  // для неё кусочки: сыр, салями, зелень… — для напитка эффекта не будет).
+  const [toppingBurst, setToppingBurst] = useState<{ id: number; name: string } | null>(null);
+  const sprinkle = (name: string) => setToppingBurst({ id: Date.now() + Math.random(), name });
+
   const toggleTopping = (topping: Extra) => {
+    if (!selectedToppings.some((x) => x.name === topping.name)) sprinkle(topping.name);
     setSelectedToppings(prev => {
       const exists = prev.find(t => t.name === topping.name);
       if (exists) {
@@ -164,6 +171,7 @@ export default function ProductModal({ isOpen, onClose, productId, origin, previ
   };
 
   const toggleSauce = (sauce: Extra) => {
+    if (!selectedSauces.some((x) => x.name === sauce.name)) sprinkle(sauce.name);
     setSelectedSauces(prev => {
       const exists = prev.find(s => s.name === sauce.name);
       if (exists) {
@@ -186,6 +194,11 @@ export default function ProductModal({ isOpen, onClose, productId, origin, previ
   // Выбор опции в группе с учётом правил (maxSelect: 1 = переключатель, иначе чекбоксы)
   const toggleOption = (group: OptionGroup, option: OptionItem) => {
     setOptionError('');
+    const current = selectedOptions[group._id] || [];
+    const adding =
+      !current.some((o) => o._id === option._id) &&
+      !(group.maxSelect > 1 && current.length >= group.maxSelect);
+    if (adding) sprinkle(option.name);
     setSelectedOptions((prev) => {
       const current = prev[group._id] || [];
       const exists = current.some((o) => o._id === option._id);
@@ -433,11 +446,13 @@ export default function ProductModal({ isOpen, onClose, productId, origin, previ
                       {/* Фото — справа на десктопе, сверху на мобильном */}
                       <div className="order-1 lg:order-2 lg:sticky lg:top-0">
                         {product.image && !product.image.includes('default-product') ? (
-                          <SafeImage
-                            src={product.image}
-                            alt={product.name}
-                            className="w-full max-h-[42vh] lg:max-h-[60vh] object-contain rounded-xl bg-gray-50"
-                          />
+                          <PizzaStage burst={toppingBurst} className="rounded-xl bg-gray-50">
+                            <SafeImage
+                              src={product.image}
+                              alt={product.name}
+                              className="w-full max-h-[42vh] lg:max-h-[60vh] object-contain rounded-xl bg-gray-50"
+                            />
+                          </PizzaStage>
                         ) : (
                           <div className="bg-gradient-to-br from-gray-100 to-gray-200 rounded-xl aspect-[4/3] flex items-center justify-center">
                             <div className="text-center">
@@ -737,7 +752,7 @@ export default function ProductModal({ isOpen, onClose, productId, origin, previ
                             <span className="min-w-0">
                               {t('product.add_to_cart', 'In den Warenkorb')} —{' '}
                               <NoTranslate>
-                                <RollingAmount value={calculateTotal()} text={formatEuro(calculateTotal())} />
+                                <CountingAmount value={calculateTotal()} />
                               </NoTranslate>
                             </span>
                           </>
