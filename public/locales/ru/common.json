@@ -125,7 +125,8 @@
     "extras_label": "Дополнительно",
     "discount": "Скидка",
     "no_registration_required": "Регистрация не требуется",
-    "terms_agreement": "Оформляя заказ, вы соглашаетесь с"
+    "terms_agreement": "Оформляя заказ, вы соглашаетесь с",
+    "repeat_skipped": "Больше нет в меню, поэтому пропущено:"
   },
   "delivery_check": {
     "alert_address": "Введите адрес",
@@ -230,7 +231,8 @@
       "submit_generic": "Произошла ошибка при оформлении заказа. Попробуйте еще раз.",
       "terms_required": "Подтвердите согласие с AGB и Widerrufsbelehrung",
       "closed": "Сейчас заказы не принимаются."
-    }
+    },
+    "bogo_remaining_multi": "Выбрано {{chosen}} из {{n}}"
   },
   "confirmation": {
     "thank_you": "Спасибо за ваш заказ!",
@@ -298,7 +300,8 @@
       "login_failed": "Произошла ошибка при входе",
       "name_required": "Имя не может быть пустым",
       "update_failed": "Произошла ошибка при обновлении профиля"
-    }
+    },
+    "repeat_all_unavailable": "Этих товаров, к сожалению, больше нет в меню."
   },
   "track": {
     "title": "Отслеживание заказа",

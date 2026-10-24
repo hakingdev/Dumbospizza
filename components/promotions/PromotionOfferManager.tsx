@@ -23,8 +23,9 @@ export default function PromotionOfferManager() {
   const { language } = useLanguage();
   const [t, setT] = useState<any>(() => (k: string, fb?: string) => fb || k);
   const [open, setOpen] = useState<'bogo' | 'gift' | null>(null);
-  // временный выбор для текущего попапа (одна награда за раз)
-  const [slot, setSlot] = useState<Record<string, string>>({});
+  // временный выбор для текущего попапа: promotionId → выбранные опции награды
+  // (повтор id = та же награда дважды; при remaining>1 все слоты в одном окне)
+  const [slot, setSlot] = useState<Record<string, string[]>>({});
   const [giftSlot, setGiftSlot] = useState<Record<string, string>>({});
   const dismissed = useRef<Set<string>>(new Set());
   const lastCartSig = useRef<string>('');
@@ -84,6 +85,17 @@ export default function PromotionOfferManager() {
       !state.selectedFreeGifts[o.promotionId]
   );
 
+  // Оффер исчез из пересчёта, пока окно было открыто (слот заполнился, акция
+  // ушла, оффер-«призрак» гонки гидратации) → закрываем окно и СБРАСЫВАЕМ open.
+  // Раньше рендер просто возвращал null, а open оставался установленным навсегда —
+  // guard `if (open) return` блокировал ВСЕ будущие попапы (окно 2+1 «не появлялось
+  // до ручного обновления страницы», QA-пункт 5). handledCalc/dismissed не трогаем:
+  // пользователь не делал выбора/отказа — новый pending-оффер откроется сразу.
+  useEffect(() => {
+    if (open === 'bogo' && bogoOffers.length === 0) setOpen(null);
+    if (open === 'gift' && giftOffers.length === 0) setOpen(null);
+  }, [open, bogoOffers.length, giftOffers.length]);
+
   useEffect(() => {
     if (onCartPage || open) return;
     // Уже обработали этот расчёт (выбор/отказ) — ждём свежий пересчёт корзины,
@@ -95,8 +107,8 @@ export default function PromotionOfferManager() {
       setSlot((s) => {
         const next = { ...s };
         for (const o of bogoOffers) {
-          if (o.options.length === 1 && !next[o.promotionId]) {
-            next[o.promotionId] = o.options[0].id || o.options[0].productId;
+          if (o.options.length === 1 && !(next[o.promotionId]?.length)) {
+            next[o.promotionId] = [o.options[0].id || o.options[0].productId];
           }
         }
         return next;
@@ -118,13 +130,15 @@ export default function PromotionOfferManager() {
       <BogoHalfPricePickerModal
         offers={bogoOffers}
         selections={slot}
-        onSelect={(promotionId, optionId) => setSlot((s) => ({ ...s, [promotionId]: optionId }))}
+        onChange={(promotionId, optionIds) => setSlot((s) => ({ ...s, [promotionId]: optionIds }))}
         onConfirm={() => {
-          // Заполняем ОДИН слот выбранной наградой. НЕ помечаем оффер dismissed:
-          // если остаются незаполненные слоты (2-я, 3-я, … пицца), движок вернёт оффер
-          // снова и попап откроется для следующего ВЫБОРА (не дубль первого).
-          for (const [pid, oid] of Object.entries(slot)) {
-            if (oid) setSelectedBogoSecond(pid, oid);
+          // Применяем ВСЕ выбранные награды из одного окна (по одной на слот).
+          // НЕ помечаем оффер dismissed: если пользователь заполнил не все слоты,
+          // движок вернёт оффер с остатком и попап откроется для добора.
+          for (const [pid, oids] of Object.entries(slot)) {
+            for (const oid of oids) {
+              if (oid) setSelectedBogoSecond(pid, oid);
+            }
           }
           // Защита от повторного показа на ТОМ ЖЕ расчёте (до прихода свежего пересчёта).
           handledCalc.current = state.promotionCalculation;

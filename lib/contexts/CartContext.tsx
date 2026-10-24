@@ -122,6 +122,23 @@ type CartAction =
   | { type: 'SYNC_TOTALS'; payload: Partial<CartState> }
   | { type: 'RESET_CHECKOUT_DATA' };
 
+/**
+ * Срок жизни НЕОФОРМЛЕННОЙ корзины (QA #8): собранная и брошенная корзина не
+ * должна жить вечно — она «тянет за собой» скидки, купоны и акционные награды,
+ * которых давно нет. Отсчёт — от последнего изменения СОСТАВА корзины
+ * (`cartTouchedAt` в сохранённом JSON), а не от визитов/пересчётов.
+ */
+export const CART_TTL_MS = 24 * 60 * 60 * 1000;
+
+/** Просрочена ли сохранённая корзина. Легаси-запись без штампа не трогаем —
+ *  штамп появится при первом же сохранении, и TTL начнёт отсчёт. */
+export function isSavedCartExpired(parsed: any, now: number): boolean {
+  const touchedAt = Number(parsed?.cartTouchedAt) || 0;
+  if (!touchedAt) return false;
+  const hasItems = Array.isArray(parsed?.items) && parsed.items.length > 0;
+  return hasItems && now - touchedAt > CART_TTL_MS;
+}
+
 const initialState: CartState = {
   items: [],
   subtotal: 0,
@@ -387,10 +404,13 @@ function trimBogoSelectionsForItem(
 export function cartReducer(state: CartState, action: CartAction): CartState {
   switch (action.type) {
     case 'ADD_ITEM': {
-      // Check if item already exists with the same customizations
+      // Дедуп по ТОВАРУ (productId), не по id строки: ProductModal ставит
+      // id = product._id (у двух размеров одного товара id совпадал), а товарная
+      // страница — уникальный id на каждый клик (одинаковые позиции не мержились).
+      const payloadProductKey = String(action.payload.productId || action.payload.id);
       const existingItemIndex = state.items.findIndex(item => {
-        if (item.id !== action.payload.id) return false;
-        
+        if (String(item.productId || item.id) !== payloadProductKey) return false;
+
         // Check if sizes match
         if (
           (item.size?.id !== action.payload.size?.id) ||
@@ -399,14 +419,14 @@ export function cartReducer(state: CartState, action: CartAction): CartState {
         ) {
           return false;
         }
-        
+
         // Check if extras match (simplified check)
         const extrasMatch = JSON.stringify(item.extras) === JSON.stringify(action.payload.extras);
         return extrasMatch;
       });
-      
+
       let newItems;
-      
+
       if (existingItemIndex >= 0) {
         // Update existing item quantity
         newItems = [...state.items];
@@ -415,10 +435,27 @@ export function cartReducer(state: CartState, action: CartAction): CartState {
           quantity: newItems[existingItemIndex].quantity + action.payload.quantity,
         };
       } else {
-        // Add new item
-        newItems = [...state.items, action.payload];
+        // Уникальный id СТРОКИ: UPDATE_ITEM/REMOVE_ITEM адресуют строку по id,
+        // и дубликат id заставлял «+/−» и удаление менять НЕСКОЛЬКО строк разом
+        // (QA #9/#11: тот же товар в другом размере, повтор заказа). Суффикс
+        // детерминирован (наименьший свободный номер) — редьюсер остаётся чистым.
+        let lineId = action.payload.id;
+        if (state.items.some((i) => i.id === lineId)) {
+          let n = 2;
+          while (state.items.some((i) => i.id === `${action.payload.id}#${n}`)) n++;
+          lineId = `${action.payload.id}#${n}`;
+        }
+        newItems = [
+          ...state.items,
+          {
+            ...action.payload,
+            id: lineId,
+            // Товарная принадлежность не должна зависеть от суффикса строки.
+            productId: action.payload.productId || action.payload.id,
+          },
+        ];
       }
-      
+
       const newState = { ...state, items: newItems, declinedFreeGifts: {} };
       return {
         ...newState,
@@ -801,6 +838,17 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         const savedCart = storageGet('pizza-cart');
         if (savedCart) {
           const parsed = JSON.parse(savedCart);
+          // QA #8: брошенная корзина старше CART_TTL_MS сбрасывается — вместе с
+          // купоном, выбором наград и устаревшим расчётом акций. Контактные
+          // данные клиента («для следующих заказов») при этом сохраняем.
+          if (isSavedCartExpired(parsed, Date.now())) {
+            return {
+              ...initialState,
+              contactInfo: { ...initialState.contactInfo, ...(parsed.contactInfo || {}) },
+              deliveryAddress: parsed.deliveryAddress || undefined,
+              deliveryType: parsed.deliveryType === 'pickup' ? 'pickup' : 'delivery',
+            };
+          }
           const loaded = {
             ...initialState,
             ...parsed,
@@ -828,12 +876,30 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
             // und vor allem die −5 €-Rabattzeile) aus gespeicherten Warenkörben werfen,
             // sonst behält ein alter Warenkorb den Rabatt ohne die Kombi.
             items: Array.isArray(parsed.items)
-              ? parsed.items
-                  .filter((item: CartItem & { comboId?: string }) => !item.comboId)
-                  .map((item: CartItem) => ({
-                    ...item,
-                    categoryId: normalizeObjectId(item.categoryId),
-                  }))
+              ? (() => {
+                  // Дубликаты line-id из старых корзин (QA #9/#11): «+/−» и
+                  // удаление адресуются по id и меняли несколько строк разом.
+                  // Переименовываем только ДУБЛИ (первая строка держит оригинал —
+                  // не рвём привязки BOGO-наград по itemId).
+                  const seenIds = new Set<string>();
+                  return parsed.items
+                    .filter((item: CartItem & { comboId?: string }) => !item.comboId)
+                    .map((item: CartItem) => {
+                      let id = String(item.id ?? item.productId ?? 'line');
+                      if (seenIds.has(id)) {
+                        let n = 2;
+                        while (seenIds.has(`${id}#${n}`)) n++;
+                        id = `${id}#${n}`;
+                      }
+                      seenIds.add(id);
+                      return {
+                        ...item,
+                        id,
+                        productId: item.productId || item.id,
+                        categoryId: normalizeObjectId(item.categoryId),
+                      };
+                    });
+                })()
               : [],
           };
           return { ...loaded, ...calculateTotals(loaded) };
@@ -856,8 +922,32 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   // SecurityError (включена блокировка всех cookies). CartProvider оборачивает всё
   // приложение, так что бросок отсюда ронял КАЖДУЮ страницу. storageSet при
   // недоступном storage просто вернёт false — корзина живёт в памяти до перезагрузки.
+  // Штамп последнего изменения СОСТАВА корзины — по нему истекает CART_TTL_MS.
+  // Живёт вне state (ref + поле cartTouchedAt в сохранённом JSON), чтобы фоновые
+  // пересчёты акций и прочие обновления state не «омолаживали» брошенную корзину.
+  const cartTouchedAtRef = useRef(0);
+  const savedItemsSigRef = useRef<string | null>(null);
   useEffect(() => {
-    storageSet('pizza-cart', JSON.stringify(state));
+    const sig = state.items
+      .map((i) => `${i.productId || i.id}:${i.size?.name || ''}:${i.quantity}`)
+      .join('|');
+    if (savedItemsSigRef.current === null) {
+      // Первый прогон после гидратации: состав не менялся — наследуем прежний штамп.
+      savedItemsSigRef.current = sig;
+      try {
+        cartTouchedAtRef.current =
+          Number(JSON.parse(storageGet('pizza-cart') || '{}')?.cartTouchedAt) || Date.now();
+      } catch {
+        cartTouchedAtRef.current = Date.now();
+      }
+    } else if (sig !== savedItemsSigRef.current) {
+      savedItemsSigRef.current = sig;
+      cartTouchedAtRef.current = Date.now();
+    }
+    storageSet(
+      'pizza-cart',
+      JSON.stringify({ ...state, cartTouchedAt: cartTouchedAtRef.current })
+    );
   }, [state]);
 
   const recalculatePromotions = useCallback(async () => {

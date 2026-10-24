@@ -4,14 +4,16 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ChevronLeft, CreditCard, Truck, Check, Landmark, Loader2, Wallet } from 'lucide-react'
+import { ChevronLeft, CreditCard, Truck, Check, Landmark, Loader2, Percent, Wallet } from 'lucide-react'
 import { useCart, loyaltyRedeemBaseAmount } from '../../../lib/contexts/CartContext'
 import { storageSet } from '../../../lib/safe-storage'
 import CouponInput from '../../../components/cart/CouponInput'
 import { getConflictingPromotions } from '../../../lib/promotions/coupon-conflict'
 import PromotionCartSummary from '../../../components/promotions/PromotionCartSummary'
 import BogoRewardLines from '../../../components/promotions/BogoRewardLines'
+import BogoHalfPricePickerModal from '../../../components/promotions/BogoHalfPricePickerModal'
 import GratisGiftPickerModal from '../../../components/promotions/GratisGiftPickerModal'
+import type { PromotionCalculationResult } from '../../../lib/promotions/types'
 import LoyaltyRedeem from '../../../components/checkout/LoyaltyRedeem'
 import { getBogoPickerMerchandise, getVisibleBogoSecondItems } from '../../../lib/promotions/discount-total'
 import { useLanguage } from '../../../lib/contexts/LanguageContext'
@@ -112,7 +114,7 @@ function PayPalMark() {
 
 export default function CheckoutPage() {
   const router = useRouter()
-  const { state, setDeliveryType: setCartDeliveryType, setDeliveryZone: setCartDeliveryZone, setDeliveryFee, setFreeDeliveryThreshold, setContactInfo, setDeliveryAddress, setPaymentMethod: setCartPaymentMethod, clearCart, applyCoupon, removeCoupon, setPromotionPromoCode, setLoyaltyPoints, setSelectedFreeGift, declineFreeGift } = useCart()
+  const { state, setDeliveryType: setCartDeliveryType, setDeliveryZone: setCartDeliveryZone, setDeliveryFee, setFreeDeliveryThreshold, setContactInfo, setDeliveryAddress, setPaymentMethod: setCartPaymentMethod, clearCart, applyCoupon, removeCoupon, setPromotionPromoCode, setLoyaltyPoints, setSelectedFreeGift, declineFreeGift, setSelectedBogoSecond } = useCart()
   const { language } = useLanguage()
   const [t, setT] = useState<any>(() => (k: string, fallback?: string) => fallback ?? k)
   const [step, setStep] = useState(1)
@@ -130,6 +132,17 @@ export default function CheckoutPage() {
   // уже не поправить — поэтому здесь тот же пикер, что и на /cart.
   const [showGiftModal, setShowGiftModal] = useState(false)
   const [giftSlot, setGiftSlot] = useState<Record<string, string>>({})
+  // Выбор награды BOGO (2+1) прямо в оформлении: глобальный авто-попап
+  // (PromotionOfferManager) на /checkout отключён, а добрать пиццу можно и
+  // отсюда (мини-корзина) — без своего пикера гость молча терял акцию:
+  // сообщение о ней есть, окна выбора нет (баг-репорт тестирования).
+  const [showBogoModal, setShowBogoModal] = useState(false)
+  const [bogoSlot, setBogoSlot] = useState<Record<string, string[]>>({})
+  const bogoDismissed = useRef<Set<string>>(new Set())
+  const lastBogoCartSig = useRef('')
+  // Расчёт, по которому пользователь уже сделал выбор/отказ, — до прихода
+  // СВЕЖЕГО пересчёта попап не переоткрываем (иначе stale-оффер мигает).
+  const handledBogoCalc = useRef<PromotionCalculationResult | null>(null)
   // Онлайн-оплата: после создания draft-заказа шаг 2 показывает инлайн-панель
   // с РОВНО ОДНИМ виджетом метода, выбранного в списке, — SumUp с whitelist
   // группы (Karte/Apple/Google Pay; позже SEPA) или нативные PayPal-кнопки.
@@ -216,6 +229,69 @@ export default function CheckoutPage() {
     setGiftSlot({})
     setShowGiftModal(false)
   }
+
+  const bogoOffers = state.promotionCalculation?.bogoSecondOffers || []
+  // Изменился состав корзины (добрали пиццу из мини-корзины) — это новое
+  // Angebot-событие: отказ больше не действует, попап можно предложить снова.
+  const bogoCartSig = state.items
+    .map((i) => `${i.productId || i.id}:${i.size?.name || ''}:${i.quantity}`)
+    .join('|')
+  if (bogoCartSig !== lastBogoCartSig.current) {
+    lastBogoCartSig.current = bogoCartSig
+    bogoDismissed.current.clear()
+  }
+  // Сколько наград акции уже ОТРАЖЕНО в текущем расчёте: если пользователь
+  // выбрал награду, а пересчёт (debounce) ещё не пришёл, оффер устаревший —
+  // не переоткрываем окно, ждём свежий расчёт (иначе модалка мигает ~1 с).
+  const bogoReflectedCount = (promotionId: string) =>
+    (state.promotionCalculation?.bogoSecondItems || [])
+      .filter((it) => it.promotionId === promotionId)
+      .reduce((sum, it) => sum + (it.quantity || 1), 0)
+  const pendingBogoOffers = bogoOffers.filter((o) => {
+    if (bogoDismissed.current.has(o.promotionId)) return false
+    const chosen = state.selectedBogoSecond[o.promotionId]?.length || 0
+    return chosen <= bogoReflectedCount(o.promotionId)
+  })
+
+  const openBogoModal = () => {
+    // Фиксированная награда (1 позиция от ресторана) — предвыбираем, модалка = подтверждение.
+    setBogoSlot((s) => {
+      const next = { ...s }
+      for (const o of bogoOffers) {
+        if (o.options.length === 1 && !(next[o.promotionId]?.length)) {
+          next[o.promotionId] = [o.options[0].id || o.options[0].productId]
+        }
+      }
+      return next
+    })
+    setShowBogoModal(true)
+  }
+  const handleBogoConfirm = () => {
+    // применяем все выбранные награды из одного окна (по одной на слот)
+    for (const [promotionId, optionIds] of Object.entries(bogoSlot)) {
+      for (const optionId of optionIds) {
+        if (optionId) setSelectedBogoSecond(promotionId, optionId)
+      }
+    }
+    handledBogoCalc.current = state.promotionCalculation
+    setBogoSlot({})
+    setShowBogoModal(false)
+  }
+  const handleBogoDecline = () => {
+    bogoOffers.forEach((o) => bogoDismissed.current.add(o.promotionId))
+    handledBogoCalc.current = state.promotionCalculation
+    setBogoSlot({})
+    setShowBogoModal(false)
+  }
+
+  // Авто-показ окна награды, как на меню: незаполненный слот 2+1 — всплывает
+  // выбор. Не во время онлайн-оплаты (draft уже создан, суммы зафиксированы).
+  useEffect(() => {
+    if (showBogoModal || showGiftModal || onlinePay) return
+    if (state.promotionCalculation && state.promotionCalculation === handledBogoCalc.current) return
+    if (pendingBogoOffers.length > 0) openBogoModal()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showBogoModal, showGiftModal, onlinePay, pendingBogoOffers.length, state.promotionCalculation])
 
   const [desiredDeliveryTime, setDesiredDeliveryTime] = useState<string>('')
   // Проверка адреса доставки (зона определяется по адресу, не выбором из списка).
@@ -391,6 +467,100 @@ export default function CheckoutPage() {
     }
   }, [paymentMethod, visibleGroups])
 
+  // Префилл контактов (QA #15 «зачем вводить заново?»): сначала прошлый ввод
+  // из корзины (переживает перезагрузку), затем профиль залогиненного клиента
+  // (/api/customer/me) — имя/телефон/email и адрес по умолчанию. Заполняем
+  // ТОЛЬКО пустые поля, пользовательский ввод не перетираем; адрес берём
+  // целиком и лишь пока улица не начата (не смешиваем два адреса).
+  const prefilledRef = useRef(false)
+  useEffect(() => {
+    if (prefilledRef.current) return
+    prefilledRef.current = true
+
+    type ContactPatch = { name?: string; phone?: string; email?: string }
+    type AddressPatch = {
+      street?: string
+      houseNumber?: string
+      postalCode?: string
+      city?: string
+      floor?: string
+      notes?: string
+    }
+    const fillContact = (src: ContactPatch) => {
+      setContactDetails(prev => ({
+        ...prev,
+        name: prev.name.trim() ? prev.name : src.name || prev.name,
+        phone: prev.phone.trim() ? prev.phone : src.phone || prev.phone,
+        email: prev.email.trim() ? prev.email : src.email || prev.email,
+      }))
+    }
+    const fillAddress = (addr: AddressPatch | undefined) => {
+      if (!addr?.street) return
+      setContactDetails(prev => {
+        if (prev.street.trim()) return prev
+        return {
+          ...prev,
+          street: addr.street || '',
+          houseNumber: addr.houseNumber || '',
+          postalCode: addr.postalCode || '',
+          city: addr.city || prev.city,
+          floor: addr.floor || '',
+          notes: prev.notes.trim() ? prev.notes : addr.notes || '',
+        }
+      })
+    }
+
+    // 1) прошлый ввод, сохранённый в корзине
+    fillContact({
+      name: state.contactInfo?.name,
+      phone: state.contactInfo?.phoneNumber,
+      email: state.contactInfo?.email,
+    })
+    fillAddress(state.deliveryAddress)
+
+    // 2) профиль залогиненного клиента — добивает оставшиеся пустыми поля
+    fetch('/api/customer/me')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!d?.success || !d.user) return
+        fillContact({
+          name: d.user.name,
+          phone: d.user.phoneNumber,
+          email: d.user.email || undefined,
+        })
+        const addresses = Array.isArray(d.user.addresses) ? d.user.addresses : []
+        fillAddress(addresses.find((a: any) => a?.isDefault) || addresses[0])
+      })
+      .catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Единый канал синхронизации контактов/адреса в корзину — работает и для
+  // ручного ввода, и для программного префилла. Заодно чинит старый баг:
+  // handleContactDetailChange писал ключ `phone`, а поле в contactInfo
+  // называется `phoneNumber` — телефон не доезжал до пересчёта акций.
+  useEffect(() => {
+    const { name, phone, email } = contactDetails
+    if (name || phone || email) setContactInfo({ name, phoneNumber: phone, email })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contactDetails.name, contactDetails.phone, contactDetails.email])
+  useEffect(() => {
+    if (deliveryType !== 'delivery') return
+    const { street, houseNumber, postalCode, city, floor, notes } = contactDetails
+    if (street || houseNumber || postalCode) {
+      setDeliveryAddress({ street, houseNumber, postalCode, city, floor, notes })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    deliveryType,
+    contactDetails.street,
+    contactDetails.houseNumber,
+    contactDetails.postalCode,
+    contactDetails.city,
+    contactDetails.floor,
+    contactDetails.notes,
+  ])
+
   const handleContactDetailChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value, type } = e.target
     const checked = type === 'checkbox' ? (e.target as HTMLInputElement).checked : undefined
@@ -409,14 +579,8 @@ export default function CheckoutPage() {
       })
     }
 
-    // Update cart context
-    if (name === 'name' || name === 'phone' || name === 'email') {
-      setContactInfo({ [name]: value })
-    }
-    
-    if (deliveryType === 'delivery' && (name === 'street' || name === 'houseNumber' || name === 'postalCode' || name === 'city' || name === 'floor' || name === 'notes')) {
-      setDeliveryAddress({ [name]: value })
-    }
+    // Синхронизация контактов/адреса в корзину живёт в эффектах выше —
+    // единый канал и для ручного ввода, и для префилла.
 
     // Изменение адреса сбрасывает предыдущую проверку зоны → Weiter снова блокируется.
     if (name === 'street' || name === 'houseNumber' || name === 'postalCode' || name === 'city') {
@@ -1611,6 +1775,22 @@ export default function CheckoutPage() {
               <BogoRewardLines calculation={state.promotionCalculation} selectedFreeGifts={state.selectedFreeGifts} variant="compact" />
             </div>
 
+            {/* Незаполненный слот 2+1: кнопка выбора остаётся и после отказа в попапе */}
+            {bogoOffers.length > 0 && (
+              <button
+                type="button"
+                onClick={openBogoModal}
+                className="mb-4 flex min-h-[56px] w-full items-center gap-3 rounded-lg border-2 border-orange-400 bg-orange-50 p-3 text-left leading-tight text-orange-800 transition-colors hover:bg-orange-100"
+              >
+                <Percent className="h-5 w-5 shrink-0" />
+                <span className="text-sm font-medium">
+                  {bogoOffers[0]?.bogoMode === 'half_price'
+                    ? t('cart.bogo_half_pick', '2+1 Aktion: 3. Artikel zum halben Preis — jetzt sichern')
+                    : t('cart.bogo_free_pick', '2+1 Aktion: 3. Artikel gratis — jetzt sichern')}
+                </span>
+              </button>
+            )}
+
             {/* Скидки/подарки */}
             <PromotionCartSummary
               calculation={state.promotionCalculation}
@@ -1685,6 +1865,17 @@ export default function CheckoutPage() {
           </div>
         </div>
       </div>
+
+      {showBogoModal && bogoOffers.length > 0 && (
+        <BogoHalfPricePickerModal
+          offers={bogoOffers}
+          selections={bogoSlot}
+          onChange={(promotionId, optionIds) => setBogoSlot((s) => ({ ...s, [promotionId]: optionIds }))}
+          onConfirm={handleBogoConfirm}
+          onClose={handleBogoDecline}
+          t={t}
+        />
+      )}
 
       {showGiftModal && giftOffers.length > 0 && (
         <GratisGiftPickerModal

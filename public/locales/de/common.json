@@ -122,7 +122,8 @@
     "loyalty_discount": "Treuepunkte",
     "promo_total": "Rabatt Aktionen",
     "no_registration_required": "Keine Registrierung erforderlich",
-    "terms_agreement": "Mit der Bestellung stimmen Sie zu"
+    "terms_agreement": "Mit der Bestellung stimmen Sie zu",
+    "repeat_skipped": "Nicht mehr im Sortiment und daher übersprungen:"
   },
   "checkout": {
     "title": "Kasse",
@@ -205,7 +206,8 @@
       "submit_generic": "Beim Absenden der Bestellung ist ein Fehler aufgetreten. Bitte erneut versuchen.",
       "terms_required": "Bitte bestätigen Sie die AGB und die Widerrufsbelehrung",
       "closed": "Bestellungen werden derzeit nicht angenommen."
-    }
+    },
+    "bogo_remaining_multi": "{{chosen}} von {{n}} Artikeln ausgewählt"
   },
   "confirmation": {
     "thank_you": "Vielen Dank für Ihre Bestellung!",
@@ -273,7 +275,8 @@
       "login_failed": "Beim Login ist ein Fehler aufgetreten",
       "name_required": "Name darf nicht leer sein",
       "update_failed": "Profil konnte nicht aktualisiert werden"
-    }
+    },
+    "repeat_all_unavailable": "Diese Artikel sind leider nicht mehr verfügbar."
   },
   "track": {
     "title": "Bestellung verfolgen",

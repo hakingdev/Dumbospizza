@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { stripPromoLabels } from '../gift-label';
+import { isPromoRewardName, stripPromoLabels } from '../gift-label';
 
 describe('stripPromoLabels', () => {
   it('entfernt das [GRATIS]-Präfix', () => {
@@ -24,5 +24,21 @@ describe('stripPromoLabels', () => {
 
   it('ist robust gegenüber null/undefined', () => {
     expect(stripPromoLabels(undefined as unknown as string)).toBe('');
+  });
+});
+
+describe('isPromoRewardName', () => {
+  it('erkennt [GRATIS]- und [AKTION]-Positionen', () => {
+    expect(isPromoRewardName('[GRATIS] Cola 0,33l')).toBe(true);
+    expect(isPromoRewardName('[AKTION] Pizza 2')).toBe(true);
+  });
+
+  it('lässt normale Artikel durch (auch mit Klammern im Namen)', () => {
+    expect(isPromoRewardName('Margherita')).toBe(false);
+    expect(isPromoRewardName('Pizza (scharf)')).toBe(false);
+  });
+
+  it('ist robust gegenüber null/undefined', () => {
+    expect(isPromoRewardName(undefined as unknown as string)).toBe(false);
   });
 });

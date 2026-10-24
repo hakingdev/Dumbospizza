@@ -15,6 +15,8 @@ import { repeatOrder } from '../../lib/api-client';
 import { useCart } from '../../lib/contexts/CartContext';
 import { isOnlinePaymentMethod } from '../../lib/orders/tax';
 import { downloadOrderInvoice } from '../../lib/orders/download-invoice';
+import { REPEAT_SKIPPED_STORAGE_KEY } from '../../lib/orders/repeat-notice';
+import { storageRemove, storageSet } from '../../lib/safe-storage';
 import { NoTranslate } from '../NoTranslate';
 
 interface OrderHistoryItemProps {
@@ -30,6 +32,7 @@ export default function OrderHistoryItem({
   const { language } = useLanguage();
   const [t, setT] = useState<any>(() => (k: string, fallback?: string) => fallback ?? k);
   const [isRepeating, setIsRepeating] = useState(false);
+  const [repeatError, setRepeatError] = useState<string | null>(null);
   const [isDownloadingInvoice, setIsDownloadingInvoice] = useState(false);
   const [invoiceError, setInvoiceError] = useState<string | null>(null);
   const { addItem, clearCart } = useCart();
@@ -103,16 +106,40 @@ export default function OrderHistoryItem({
     if (isRepeating) return;
 
     setIsRepeating(true);
+    setRepeatError(null);
     try {
       const result = await repeatOrder(order._id);
 
       if (result.success && result.orderData) {
+        // Сервер уже отфильтровал награды акций ([GRATIS]/[AKTION]) и позиции,
+        // которых больше нет в меню; действующие акции корзина применит сама.
+        const items = result.orderData.items || [];
+        const skipped: string[] = result.orderData.skippedItems || [];
+
+        if (items.length === 0) {
+          // Копировать нечего — корзину не трогаем, остаёмся на странице.
+          setRepeatError(
+            t(
+              'profile.repeat_all_unavailable',
+              'Diese Artikel sind leider nicht mehr verfügbar.',
+            ),
+          );
+          return;
+        }
+
         // Очищаем корзину перед добавлением новых товаров
         clearCart();
 
         // Добавляем каждый товар из предыдущего заказа в корзину
-        for (const item of result.orderData.items) {
+        for (const item of items) {
           addItem(item);
+        }
+
+        // Пропущенные позиции показываем баннером на /cart (flash через session).
+        if (skipped.length > 0) {
+          storageSet(REPEAT_SKIPPED_STORAGE_KEY, JSON.stringify(skipped), 'session');
+        } else {
+          storageRemove(REPEAT_SKIPPED_STORAGE_KEY, 'session');
         }
 
         // Перенаправляем на корзину
@@ -226,6 +253,12 @@ export default function OrderHistoryItem({
             </Link>
           </div>
         </div>
+
+        {repeatError && (
+          <p className="mt-2 text-pretty text-xs leading-5 text-red-600">
+            {repeatError}
+          </p>
+        )}
 
         {invoiceError && (
           <p className="mt-2 text-pretty text-xs leading-5 text-red-600 sm:text-right">
