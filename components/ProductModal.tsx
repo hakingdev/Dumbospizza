@@ -1,7 +1,10 @@
 "use client";
 
-import { useState, useEffect, Fragment } from 'react';
-import { Dialog, Transition } from '@headlessui/react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { Dialog } from '@headlessui/react';
+import { AnimatePresence, motion } from 'motion/react';
+import { AddedDeltaChip, PizzaStage, SelectionPop } from './product-modal-motion';
+import CountingAmount from './CountingAmount';
 import { X, Plus, Minus, ShoppingCart, Check } from 'lucide-react';
 import { useCart } from '../lib/contexts/CartContext';
 import { useKitchenBlocks } from '../lib/contexts/KitchenBlocksContext';
@@ -72,9 +75,13 @@ interface ProductModalProps {
   isOpen: boolean;
   onClose: () => void;
   productId: string;
+  /** Центр карточки, по которой нажали (координаты окна): окно раскрывается из неё. */
+  origin?: { x: number; y: number } | null;
+  /** То, что уже известно с карточки, — показываем сразу, пока грузятся опции. */
+  preview?: { name: string; image?: string } | null;
 }
 
-export default function ProductModal({ isOpen, onClose, productId }: ProductModalProps) {
+export default function ProductModal({ isOpen, onClose, productId, origin, preview }: ProductModalProps) {
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
   const [quantity, setQuantity] = useState(1);
@@ -85,6 +92,21 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
   // выбранные опции по группам: { [groupId]: OptionItem[] }
   const [selectedOptions, setSelectedOptions] = useState<Record<string, OptionItem[]>>({});
   const [optionError, setOptionError] = useState<string>('');
+
+  // Окно растёт из карточки, по которой нажали, и сворачивается обратно в неё.
+  // Callback-ref, а не эффект: панель живёт в портале и появляется в DOM, когда
+  // захочет Headless UI. Размер — offsetWidth/Height (без transform), центр — из
+  // rect: при масштабе вокруг центра он не смещается.
+  const panelRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      if (!el || !origin) return;
+      const rect = el.getBoundingClientRect();
+      const left = rect.left + rect.width / 2 - el.offsetWidth / 2;
+      const top = rect.top + rect.height / 2 - el.offsetHeight / 2;
+      el.style.transformOrigin = `${origin.x - left}px ${origin.y - top}px`;
+    },
+    [origin]
+  );
   const { addItem } = useCart();
   const { blockedWorkshopFor, messageFor, showNotice } = useKitchenBlocks();
   const { language } = useLanguage();
@@ -132,7 +154,13 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
     loadTranslations();
   }, [language]);
 
+  // Новая добавка «сыплется» на фото пиццы (PizzaStage сам решает, есть ли
+  // для неё кусочки: сыр, салями, зелень… — для напитка эффекта не будет).
+  const [toppingBurst, setToppingBurst] = useState<{ id: number; name: string } | null>(null);
+  const sprinkle = (name: string) => setToppingBurst({ id: Date.now() + Math.random(), name });
+
   const toggleTopping = (topping: Extra) => {
+    if (!selectedToppings.some((x) => x.name === topping.name)) sprinkle(topping.name);
     setSelectedToppings(prev => {
       const exists = prev.find(t => t.name === topping.name);
       if (exists) {
@@ -143,6 +171,7 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
   };
 
   const toggleSauce = (sauce: Extra) => {
+    if (!selectedSauces.some((x) => x.name === sauce.name)) sprinkle(sauce.name);
     setSelectedSauces(prev => {
       const exists = prev.find(s => s.name === sauce.name);
       if (exists) {
@@ -165,6 +194,11 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
   // Выбор опции в группе с учётом правил (maxSelect: 1 = переключатель, иначе чекбоксы)
   const toggleOption = (group: OptionGroup, option: OptionItem) => {
     setOptionError('');
+    const current = selectedOptions[group._id] || [];
+    const adding =
+      !current.some((o) => o._id === option._id) &&
+      !(group.maxSelect > 1 && current.length >= group.maxSelect);
+    if (adding) sprinkle(option.name);
     setSelectedOptions((prev) => {
       const current = prev[group._id] || [];
       const exists = current.some((o) => o._id === option._id);
@@ -223,6 +257,31 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
 
     return (basePrice + toppingsTotal + saucesTotal + sidesTotal + optionsTotal) * quantity;
   };
+
+  // Сумма платных добавок на одну позицию: её рост — сигнал «добавили соус/
+  // топпинг», над кнопкой коротко всплывает «+0,50 €».
+  const extrasTotal =
+    selectedToppings.reduce((sum, x) => sum + x.price, 0) +
+    selectedSauces.reduce((sum, x) => sum + x.price, 0) +
+    selectedSides.reduce((sum, x) => sum + x.price, 0) +
+    Object.values(selectedOptions)
+      .flat()
+      .reduce((sum, o) => sum + (Number(o.price) || 0), 0);
+  const [addedDelta, setAddedDelta] = useState<{ id: number; text: string } | null>(null);
+  const lastExtrasRef = useRef(extrasTotal);
+  const deltaTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    const diff = Math.round((extrasTotal - lastExtrasRef.current) * 100) / 100;
+    lastExtrasRef.current = extrasTotal;
+    if (diff <= 0) return;
+    const id = Date.now();
+    setAddedDelta({ id, text: `+${formatEuro(diff)}` });
+    if (deltaTimerRef.current) clearTimeout(deltaTimerRef.current);
+    deltaTimerRef.current = setTimeout(() => setAddedDelta(null), 900);
+  }, [extrasTotal]);
+  useEffect(() => () => {
+    if (deltaTimerRef.current) clearTimeout(deltaTimerRef.current);
+  }, []);
 
   // Плоский список выбранных опций для корзины/заказа
   const buildSelectedOptions = () => {
@@ -296,36 +355,74 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
   };
 
   return (
-    <Transition appear show={isOpen} as={Fragment}>
-      <Dialog as="div" className="relative z-50" onClose={onClose}>
-        <Transition.Child
-          as={Fragment}
-          enter="ease-out duration-300"
-          enterFrom="opacity-0"
-          enterTo="opacity-100"
-          leave="ease-in duration-200"
-          leaveFrom="opacity-100"
-          leaveTo="opacity-0"
-        >
-          <div className="fixed inset-0 bg-black bg-opacity-50" />
-        </Transition.Child>
+    <AnimatePresence>
+      {isOpen && (
+      <Dialog static open as="div" className="relative z-50" onClose={onClose}>
+        <motion.div
+          aria-hidden="true"
+          className="fixed inset-0 bg-black/50"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+        />
 
         <div className="fixed inset-0 overflow-y-auto">
           <div className="flex min-h-full items-stretch sm:items-center justify-center p-0 sm:p-4">
-            <Transition.Child
-              as={Fragment}
-              enter="ease-out duration-300"
-              enterFrom="opacity-0 sm:scale-95"
-              enterTo="opacity-100 sm:scale-100"
-              leave="ease-in duration-200"
-              leaveFrom="opacity-100 sm:scale-100"
-              leaveTo="opacity-0 sm:scale-95"
-            >
-              <Dialog.Panel className="relative w-full sm:max-w-3xl h-[100dvh] sm:h-auto sm:max-h-[90vh] transform overflow-hidden rounded-none sm:rounded-2xl bg-white shadow-xl transition-all flex flex-col">
+              <Dialog.Panel
+                as={motion.div}
+                ref={panelRef}
+                initial={{ opacity: 0, scale: 0.5 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.5, transition: { duration: 0.2, ease: 'easeIn' } }}
+                transition={{
+                  scale: { type: 'spring', visualDuration: 0.38, bounce: 0.12 },
+                  opacity: { duration: 0.18 },
+                }}
+                className="relative w-full sm:max-w-3xl h-[100dvh] sm:h-auto sm:max-h-[90vh] overflow-hidden rounded-none sm:rounded-2xl bg-white shadow-xl flex flex-col"
+              >
                 {loading ? (
-                  <div className="p-12 text-center">
-                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto"></div>
-                    <p className="mt-4 text-gray-600">{t('common.loading', 'Wird geladen...')}</p>
+                  // Пока грузятся опции, показываем то, что уже известно с
+                  // карточки: окно раскрывается с фото и названием, а не пустым.
+                  <div className="relative flex-1 overflow-hidden px-4 py-4 sm:px-6 sm:py-6">
+                    <button
+                      type="button"
+                      onClick={onClose}
+                      aria-label={t('common.close', 'Schließen')}
+                      className="absolute top-3 right-3 z-20 flex h-11 w-11 items-center justify-center rounded-full bg-white/90 shadow-lg backdrop-blur transition-colors hover:bg-white"
+                    >
+                      <X className="h-5 w-5" aria-hidden="true" />
+                    </button>
+                    <p className="sr-only" role="status">{t('common.loading', 'Wird geladen...')}</p>
+                    <div className="grid lg:grid-cols-2 gap-6 lg:gap-8 items-start">
+                      <div className="order-1 lg:order-2">
+                        {preview?.image ? (
+                          <SafeImage
+                            src={preview.image}
+                            alt=""
+                            className="w-full max-h-[42vh] lg:max-h-[60vh] object-contain rounded-xl bg-gray-50"
+                          />
+                        ) : (
+                          <div className="aspect-[4/3] rounded-xl bg-gray-100" />
+                        )}
+                      </div>
+                      <div className="order-2 lg:order-1 min-w-0">
+                        {preview?.name ? (
+                          <h2 className="text-2xl sm:text-3xl font-bold mb-4">
+                            <NoTranslate>{preview.name}</NoTranslate>
+                          </h2>
+                        ) : (
+                          <div className="mb-4 h-8 w-2/3 rounded bg-gray-100" />
+                        )}
+                        <div className="space-y-3 animate-pulse motion-reduce:animate-none" aria-hidden="true">
+                          <div className="h-4 w-full rounded bg-gray-100" />
+                          <div className="h-4 w-5/6 rounded bg-gray-100" />
+                          <div className="mt-6 h-14 rounded-xl bg-gray-100" />
+                          <div className="h-14 rounded-xl bg-gray-100" />
+                          <div className="h-14 rounded-xl bg-gray-100" />
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 ) : product?.available ? (
                   <>
@@ -338,17 +435,24 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
                       <X className="h-5 w-5" aria-hidden="true" />
                     </button>
 
-                    <div className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain">
+                    <motion.div
+                      className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ duration: 0.2 }}
+                    >
                      <div className="px-4 py-4 sm:px-6 sm:py-6">
                       <div className="grid lg:grid-cols-2 gap-6 lg:gap-8 items-start">
                       {/* Фото — справа на десктопе, сверху на мобильном */}
                       <div className="order-1 lg:order-2 lg:sticky lg:top-0">
                         {product.image && !product.image.includes('default-product') ? (
-                          <SafeImage
-                            src={product.image}
-                            alt={product.name}
-                            className="w-full max-h-[42vh] lg:max-h-[60vh] object-contain rounded-xl bg-gray-50"
-                          />
+                          <PizzaStage burst={toppingBurst} className="rounded-xl bg-gray-50">
+                            <SafeImage
+                              src={product.image}
+                              alt={product.name}
+                              className="w-full max-h-[42vh] lg:max-h-[60vh] object-contain rounded-xl bg-gray-50"
+                            />
+                          </PizzaStage>
                         ) : (
                           <div className="bg-gradient-to-br from-gray-100 to-gray-200 rounded-xl aspect-[4/3] flex items-center justify-center">
                             <div className="text-center">
@@ -382,12 +486,13 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
                               const sel = selectedSize?.id === size.id;
                               const sub = size.label ?? size.size;
                               return (
-                                <button
+                                <motion.button
+                                  whileTap={{ scale: 0.98 }}
                                   key={size.id}
                                   onClick={() => setSelectedSize(size)}
                                   type="button"
                                   aria-pressed={sel}
-                                  className={`w-full p-3 sm:p-4 rounded-xl border-2 transition-all text-left flex items-center justify-between gap-3 ${
+                                  className={`w-full p-3 sm:p-4 rounded-xl border-2 transition-colors text-left flex items-center justify-between gap-3 ${
                                     sel ? 'border-primary-600 bg-primary-50' : 'border-gray-200 hover:border-primary-300'
                                   }`}
                                 >
@@ -399,11 +504,11 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
                                     <span className="text-primary-600 font-semibold whitespace-nowrap">
                                       <NoTranslate>{formatEuro(getSizePrice(product, size))}</NoTranslate>
                                     </span>
-                                    <span className={`h-5 w-5 rounded-full border-2 flex items-center justify-center ${sel ? 'border-primary-600' : 'border-gray-300'}`}>
-                                      {sel && <span className="h-2.5 w-2.5 rounded-full bg-primary-600" />}
+                                    <span className={`h-5 w-5 rounded-full border-2 flex items-center justify-center transition-colors duration-150 ${sel ? 'border-primary-600' : 'border-gray-300'}`}>
+                                      <SelectionPop show={sel} className="h-2.5 w-2.5 rounded-full bg-primary-600" />
                                     </span>
                                   </div>
-                                </button>
+                                </motion.button>
                               );
                             })}
                           </div>
@@ -431,12 +536,13 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
                               {(group.optionIds || []).map((option) => {
                                 const isSelected = isOptionSelected(group._id, option._id);
                                 return (
-                                  <button
+                                  <motion.button
+                                    whileTap={{ scale: 0.98 }}
                                     key={option._id}
                                     onClick={() => toggleOption(group, option)}
                                     type="button"
                                     aria-pressed={isSelected}
-                                    className={`w-full p-3 sm:p-4 rounded-xl border-2 transition-all text-left flex justify-between items-center gap-3 ${
+                                    className={`w-full p-3 sm:p-4 rounded-xl border-2 transition-colors text-left flex justify-between items-center gap-3 ${
                                       isSelected ? 'border-primary-600 bg-primary-50' : 'border-gray-200 hover:border-primary-300'
                                     }`}
                                   >
@@ -446,16 +552,18 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
                                         <NoTranslate className="text-sm text-gray-600 whitespace-nowrap">+{formatEuro(option.price)}</NoTranslate>
                                       )}
                                       {single ? (
-                                        <span className={`h-5 w-5 rounded-full border-2 flex items-center justify-center ${isSelected ? 'border-primary-600' : 'border-gray-300'}`}>
-                                          {isSelected && <span className="h-2.5 w-2.5 rounded-full bg-primary-600" />}
+                                        <span className={`h-5 w-5 rounded-full border-2 flex items-center justify-center transition-colors duration-150 ${isSelected ? 'border-primary-600' : 'border-gray-300'}`}>
+                                          <SelectionPop show={isSelected} className="h-2.5 w-2.5 rounded-full bg-primary-600" />
                                         </span>
                                       ) : (
-                                        <span className={`h-5 w-5 rounded border-2 flex items-center justify-center ${isSelected ? 'border-primary-600 bg-primary-600' : 'border-gray-300'}`}>
-                                          {isSelected && <Check className="h-3.5 w-3.5 text-white" />}
+                                        <span className={`h-5 w-5 rounded border-2 flex items-center justify-center transition-colors duration-150 ${isSelected ? 'border-primary-600 bg-primary-600' : 'border-gray-300'}`}>
+                                          <SelectionPop show={isSelected} className="flex">
+                                            <Check className="h-3.5 w-3.5 text-white" />
+                                          </SelectionPop>
                                         </span>
                                       )}
                                     </div>
-                                  </button>
+                                  </motion.button>
                                 );
                               })}
                             </div>
@@ -472,12 +580,13 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
                             {product.extras.toppings.map((topping, index) => {
                               const isSelected = selectedToppings.some(t => t.name === topping.name);
                               return (
-                                <button
+                                <motion.button
+                                  whileTap={{ scale: 0.98 }}
                                   key={index}
                                   onClick={() => toggleTopping(topping)}
                                   type="button"
                                   aria-pressed={isSelected}
-                                  className={`p-3 rounded-xl border-2 transition-all text-left ${
+                                  className={`p-3 rounded-xl border-2 transition-colors text-left ${
                                     isSelected
                                       ? 'border-primary-600 bg-primary-50'
                                       : 'border-gray-200 hover:border-primary-300'
@@ -488,11 +597,14 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
                                       <NoTranslate className="block font-semibold">{topping.name}</NoTranslate>
                                       <NoTranslate className="block text-sm text-gray-600">+{formatEuro(topping.price)}</NoTranslate>
                                     </div>
-                                    {isSelected && (
-                                      <div className="text-primary-600 font-bold text-xl">✓</div>
-                                    )}
+                                    <SelectionPop
+                                      show={isSelected}
+                                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary-600 text-white"
+                                    >
+                                      <Check className="h-4 w-4" aria-hidden="true" />
+                                    </SelectionPop>
                                   </div>
-                                </button>
+                                </motion.button>
                               );
                             })}
                           </div>
@@ -508,12 +620,13 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
                             {product.extras.sauces.map((sauce, index) => {
                               const isSelected = selectedSauces.some(s => s.name === sauce.name);
                               return (
-                                <button
+                                <motion.button
+                                  whileTap={{ scale: 0.98 }}
                                   key={index}
                                   onClick={() => toggleSauce(sauce)}
                                   type="button"
                                   aria-pressed={isSelected}
-                                  className={`p-3 rounded-xl border-2 transition-all text-left ${
+                                  className={`p-3 rounded-xl border-2 transition-colors text-left ${
                                     isSelected
                                       ? 'border-primary-600 bg-primary-50'
                                       : 'border-gray-200 hover:border-primary-300'
@@ -524,11 +637,14 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
                                       <NoTranslate className="block font-semibold">{sauce.name}</NoTranslate>
                                       <NoTranslate className="block text-sm text-gray-600">+{formatEuro(sauce.price)}</NoTranslate>
                                     </div>
-                                    {isSelected && (
-                                      <div className="text-primary-600 font-bold text-xl">✓</div>
-                                    )}
+                                    <SelectionPop
+                                      show={isSelected}
+                                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary-600 text-white"
+                                    >
+                                      <Check className="h-4 w-4" aria-hidden="true" />
+                                    </SelectionPop>
                                   </div>
-                                </button>
+                                </motion.button>
                               );
                             })}
                           </div>
@@ -544,12 +660,13 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
                             {product.extras.sides.map((side, index) => {
                               const isSelected = selectedSides.some(s => s.name === side.name);
                               return (
-                                <button
+                                <motion.button
+                                  whileTap={{ scale: 0.98 }}
                                   key={index}
                                   onClick={() => toggleSide(side)}
                                   type="button"
                                   aria-pressed={isSelected}
-                                  className={`p-3 rounded-xl border-2 transition-all text-left ${
+                                  className={`p-3 rounded-xl border-2 transition-colors text-left ${
                                     isSelected
                                       ? 'border-primary-600 bg-primary-50'
                                       : 'border-gray-200 hover:border-primary-300'
@@ -560,11 +677,14 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
                                       <NoTranslate className="block font-semibold">{side.name}</NoTranslate>
                                       <NoTranslate className="block text-sm text-gray-600">+{formatEuro(side.price)}</NoTranslate>
                                     </div>
-                                    {isSelected && (
-                                      <div className="text-primary-600 font-bold text-xl">✓</div>
-                                    )}
+                                    <SelectionPop
+                                      show={isSelected}
+                                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary-600 text-white"
+                                    >
+                                      <Check className="h-4 w-4" aria-hidden="true" />
+                                    </SelectionPop>
                                   </div>
-                                </button>
+                                </motion.button>
                               );
                             })}
                           </div>
@@ -597,10 +717,11 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
                       </div>{/* /конфигурация */}
                       </div>{/* /grid 2 колонки */}
                      </div>
-                    </div>
+                    </motion.div>
 
                     {/* Fixed Bottom Button */}
-                    <div className="flex-shrink-0 p-4 sm:p-6 border-t bg-gray-50">
+                    <div className="relative flex-shrink-0 p-4 sm:p-6 border-t bg-gray-50">
+                      <AddedDeltaChip id={addedDelta?.id ?? 0} text={addedDelta?.text ?? null} />
                       {optionError && (
                         <p className="text-sm text-red-600 mb-2 text-center">{optionError}</p>
                       )}
@@ -628,7 +749,12 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
                         ) : (
                           <>
                             <ShoppingCart className="h-6 w-6 shrink-0" />
-                            <span className="min-w-0">{t('product.add_to_cart', 'In den Warenkorb')} — <NoTranslate>{formatEuro(calculateTotal())}</NoTranslate></span>
+                            <span className="min-w-0">
+                              {t('product.add_to_cart', 'In den Warenkorb')} —{' '}
+                              <NoTranslate>
+                                <CountingAmount value={calculateTotal()} />
+                              </NoTranslate>
+                            </span>
                           </>
                         )}
                       </button>
@@ -648,10 +774,10 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
                   </div>
                 )}
               </Dialog.Panel>
-            </Transition.Child>
           </div>
         </div>
       </Dialog>
-    </Transition>
+      )}
+    </AnimatePresence>
   );
 }

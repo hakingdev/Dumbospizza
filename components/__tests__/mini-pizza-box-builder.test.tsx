@@ -56,7 +56,7 @@ beforeEach(() => {
   global.fetch = vi.fn().mockResolvedValue({
     json: async () => ({ success: true, products: PRODUCTS }),
   }) as any;
-  // jsdom hat kein matchMedia — framer-motion (useReducedMotion) braucht einen Stub.
+  // jsdom hat kein matchMedia — Motion (useReducedMotion) braucht einen Stub.
   window.matchMedia =
     window.matchMedia ||
     (((query: string) => ({

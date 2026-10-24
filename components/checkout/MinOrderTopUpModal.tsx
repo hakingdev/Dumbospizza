@@ -105,7 +105,14 @@ export default function MinOrderTopUpModal({
   const [loadError, setLoadError] = useState(false);
   // null — вкладка по умолчанию (подборка «Passend» или первая категория).
   const [activeTab, setActiveTab] = useState<string | null>(null);
-  const [openProductId, setOpenProductId] = useState<string | null>(null);
+  // Выбранный товар живёт дольше открытого окна: ProductModal остаётся
+  // смонтированным, чтобы успеть сыграть анимацию закрытия.
+  const [picked, setPicked] = useState<{
+    id: string;
+    origin: { x: number; y: number } | null;
+    preview: { name: string; image?: string };
+  } | null>(null);
+  const [pickedOpen, setPickedOpen] = useState(false);
   const { blockedWorkshopFor, showNotice } = useKitchenBlocks();
 
   useEffect(() => {
@@ -131,11 +138,11 @@ export default function MinOrderTopUpModal({
   // Escape закрывает окно — но не поверх открытого ProductModal (у того свой Escape).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !openProductId) onClose();
+      if (e.key === 'Escape' && !pickedOpen) onClose();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose, openProductId]);
+  }, [onClose, pickedOpen]);
 
   const suggestions = useMemo<Suggestion[]>(() => {
     const list: Suggestion[] = [];
@@ -188,7 +195,7 @@ export default function MinOrderTopUpModal({
     ? Math.min(100, Math.max(0, ((minOrderAmount - Math.max(shortfall, 0)) / minOrderAmount) * 100))
     : 100;
 
-  const openProduct = (s: Suggestion) => {
+  const openProduct = (s: Suggestion, target: HTMLElement) => {
     const workshop = blockedWorkshopFor({
       categoryId: readCategoryId(s.product.category),
       name: s.product.name,
@@ -197,7 +204,13 @@ export default function MinOrderTopUpModal({
       showNotice([workshop]);
       return;
     }
-    setOpenProductId(s.product._id);
+    const rect = target.getBoundingClientRect();
+    setPicked({
+      id: s.product._id,
+      origin: { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 },
+      preview: { name: s.product.name, image: s.product.image },
+    });
+    setPickedOpen(true);
   };
 
   return (
@@ -306,7 +319,7 @@ export default function MinOrderTopUpModal({
                       <li key={s.product._id}>
                         <button
                           type="button"
-                          onClick={() => openProduct(s)}
+                          onClick={(e) => openProduct(s, e.currentTarget)}
                           className="flex w-full items-center gap-3 py-3 text-left hover:bg-gray-50"
                         >
                           {s.product.image ? (
@@ -386,11 +399,13 @@ export default function MinOrderTopUpModal({
         </div>
       </div>
 
-      {openProductId && (
+      {picked && (
         <ProductModal
-          isOpen
-          onClose={() => setOpenProductId(null)}
-          productId={openProductId}
+          isOpen={pickedOpen}
+          onClose={() => setPickedOpen(false)}
+          productId={picked.id}
+          origin={picked.origin}
+          preview={picked.preview}
         />
       )}
     </>

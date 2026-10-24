@@ -16,6 +16,7 @@ import GratisGiftPickerModal from '../../../components/promotions/GratisGiftPick
 import type { PromotionCalculationResult } from '../../../lib/promotions/types'
 import LoyaltyRedeem from '../../../components/checkout/LoyaltyRedeem'
 import MinOrderTopUpModal from '../../../components/checkout/MinOrderTopUpModal'
+import CountingAmount from '../../../components/CountingAmount'
 import { getBogoPickerMerchandise, getVisibleBogoSecondItems } from '../../../lib/promotions/discount-total'
 import { useLanguage } from '../../../lib/contexts/LanguageContext'
 import { loadTranslation } from '../../../lib/i18n'
@@ -2133,7 +2134,7 @@ export default function CheckoutPage() {
             
             <div className="flex justify-between font-bold">
               <span>{t('cart.total', 'Gesamt')}</span>
-              <NoTranslate>{formatEuro(displayTotal)}</NoTranslate>
+              <NoTranslate><CountingAmount value={displayTotal} /></NoTranslate>
             </div>
           </div>
         </div>
