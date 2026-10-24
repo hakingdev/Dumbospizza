@@ -64,4 +64,20 @@ describe('evaluateDeliveryGate', () => {
     expect(low.reason).toBe('below_min_order');
     expect(low.shortfall).toBe(7);
   });
+
+  it('ниже минимума, но гость согласен доплатить → пропускаем (min_order_surcharge)', () => {
+    const r = evaluateDeliveryGate(input({ subtotal: 17.4, zoneMinOrderAmount: 18, acceptMinOrderSurcharge: true }));
+    expect(r).toEqual({ allowed: true, reason: 'min_order_surcharge', shortfall: 0.6 });
+  });
+
+  it('согласие на доплату не влияет, если минимум уже набран', () => {
+    const r = evaluateDeliveryGate(input({ subtotal: 18, zoneMinOrderAmount: 18, acceptMinOrderSurcharge: true }));
+    expect(r).toEqual({ allowed: true, reason: 'ok' });
+  });
+
+  it('согласие на доплату не открывает адрес вне зоны', () => {
+    const r = evaluateDeliveryGate(input({ canDeliver: false, acceptMinOrderSurcharge: true }));
+    expect(r.allowed).toBe(false);
+    expect(r.reason).toBe('outside_zone');
+  });
 });

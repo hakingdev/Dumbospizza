@@ -74,7 +74,7 @@ export default function SmsAbmeldenPage() {
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
                   placeholder="+49 151 23456789"
-                  className="w-full border border-gray-300 rounded px-3 py-2 focus:ring-primary-500 focus:border-primary-500"
+                  className="w-full border border-gray-300 rounded px-3 py-2 focus:ring-primary-600 focus:border-primary-600"
                 />
               </div>
               {error && <div className="text-sm text-red-600">{error}</div>}

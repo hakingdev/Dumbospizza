@@ -1,14 +1,20 @@
 "use client";
 
 import type { BogoSecondOffer } from '../../lib/promotions/types';
-import { Gift, Percent } from 'lucide-react';
+import { Gift, Minus, Percent, Plus } from 'lucide-react';
 import { SafeImage } from '../SafeImage';
 import { NoTranslate } from '../NoTranslate';
+import { formatEuro } from '../../lib/format-euro';
 
 interface BogoSecondPickerModalProps {
   offers: BogoSecondOffer[];
-  selections: Record<string, string>;
-  onSelect: (promotionId: string, productId: string) => void;
+  /**
+   * promotionId → выбранные опции (id опции, повтор = та же награда ещё раз).
+   * При remaining > 1 ВСЕ награды выбираются в этом одном окне (QA-пункт 6:
+   * раньше окно переоткрывалось на каждый слот по одному выбору).
+   */
+  selections: Record<string, string[]>;
+  onChange: (promotionId: string, optionIds: string[]) => void;
   onConfirm: () => void;
   onClose?: () => void;
   t?: (key: string, fallback?: string) => string;
@@ -17,12 +23,13 @@ interface BogoSecondPickerModalProps {
 export default function BogoSecondPickerModal({
   offers,
   selections,
-  onSelect,
+  onChange,
   onConfirm,
   onClose,
   t = (_k, fb) => fb || '',
 }: BogoSecondPickerModalProps) {
-  const allSelected = offers.every((offer) => Boolean(selections[offer.promotionId]));
+  const chosenFor = (promotionId: string) => selections[promotionId] || [];
+  const allSelected = offers.every((offer) => chosenFor(offer.promotionId).length > 0);
   // 2+1 с фиксированной наградой: у каждого оффера ровно 1 позиция (выбрал ресторан) —
   // попап становится подтверждением («Ja, gerne» / «Nein, danke») вместо выбора.
   const fixedReward = offers.every((offer) => offer.options.length === 1);
@@ -70,54 +77,54 @@ export default function BogoSecondPickerModal({
         </div>
 
         <div className="p-6 space-y-6">
-          {offers.map((offer) => (
-            <div key={offer.promotionId}>
-              <h3 className="font-semibold text-gray-900 mb-1"><NoTranslate>{offer.promotionName}</NoTranslate></h3>
-              <p className="text-sm text-gray-500 mb-1">{offer.label}</p>
-              {(offer.remaining ?? 0) > 1 && (
-                <p className="text-xs font-semibold text-orange-600 mb-3">
-                  {t('checkout.bogo_remaining', 'Noch {{n}} Artikel zur Auswahl').replace(
-                    '{{n}}',
-                    String(offer.remaining)
-                  )}
-                </p>
-              )}
-              <div className="space-y-2">
-                {offer.options.map((option) => {
-                  const optKey = option.id || option.productId;
-                  const selected = selections[offer.promotionId] === optKey;
-                  const isFree = offer.bogoMode === 'free';
-                  const priceLabel = isFree
-                    ? '0,00 €'
-                    : `${option.effectivePrice.toFixed(2)} €`;
+          {offers.map((offer) => {
+            const remaining = Math.max(1, offer.remaining ?? 1);
+            const chosen = chosenFor(offer.promotionId);
+            // Несколько незаполненных слотов → выбор количеств в ОДНОМ окне.
+            const multi = remaining > 1;
+            const isFree = offer.bogoMode === 'free';
 
-                  return (
-                    <label
-                      key={optKey}
-                      className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
-                        selected
-                          ? isFree
-                            ? 'border-emerald-500 bg-emerald-50 ring-1 ring-emerald-500'
-                            : 'border-orange-500 bg-orange-50 ring-1 ring-orange-500'
-                          : 'border-gray-200 hover:border-orange-300 hover:bg-gray-50'
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name={`bogo-${offer.promotionId}`}
-                        value={optKey}
-                        checked={selected}
-                        onChange={() => onSelect(offer.promotionId, optKey)}
-                        className={isFree ? 'text-emerald-600 focus:ring-emerald-500' : 'text-orange-600 focus:ring-orange-500'}
-                      />
-                      {option.image && (
-                        <SafeImage
-                          src={option.image}
-                          alt=""
-                          className="w-12 h-12 rounded object-cover shrink-0"
-                        />
-                      )}
-                      <NoTranslate className="font-medium text-gray-900 flex-1">{option.name}</NoTranslate>
+            const addOne = (optKey: string) => {
+              if (chosen.length >= remaining) return;
+              onChange(offer.promotionId, [...chosen, optKey]);
+            };
+            const removeOne = (optKey: string) => {
+              const idx = chosen.indexOf(optKey);
+              if (idx === -1) return;
+              const next = [...chosen];
+              next.splice(idx, 1);
+              onChange(offer.promotionId, next);
+            };
+
+            return (
+              <div key={offer.promotionId}>
+                <h3 className="font-semibold text-gray-900 mb-1"><NoTranslate>{offer.promotionName}</NoTranslate></h3>
+                <p className="text-sm text-gray-500 mb-1">{offer.label}</p>
+                {multi && (
+                  <p className="text-xs font-semibold text-orange-600 mb-3">
+                    {t('checkout.bogo_remaining_multi', '{{chosen}} von {{n}} Artikeln ausgewählt')
+                      .replace('{{chosen}}', String(chosen.length))
+                      .replace('{{n}}', String(remaining))}
+                  </p>
+                )}
+                <div className="space-y-2">
+                  {offer.options.map((option) => {
+                    const optKey = option.id || option.productId;
+                    const count = chosen.filter((id) => id === optKey).length;
+                    const selected = count > 0;
+                    const canAdd = chosen.length < remaining;
+                    const priceLabel = isFree
+                      ? '0,00 €'
+                      : `${formatEuro(option.effectivePrice)}`;
+                    const rowClass = `flex items-center gap-3 p-3 border rounded-lg transition-colors ${
+                      selected
+                        ? isFree
+                          ? 'border-emerald-500 bg-emerald-50 ring-1 ring-emerald-500'
+                          : 'border-orange-500 bg-orange-50 ring-1 ring-orange-500'
+                        : 'border-gray-200 hover:border-orange-300 hover:bg-gray-50'
+                    }`;
+
+                    const priceBlock = (
                       <span
                         className={`text-sm font-semibold shrink-0 ${
                           isFree ? 'text-emerald-600' : 'text-orange-600'
@@ -126,16 +133,96 @@ export default function BogoSecondPickerModal({
                         <NoTranslate>{priceLabel}</NoTranslate>
                         {!isFree && option.unitPrice > option.effectivePrice && (
                           <span className="block text-xs text-gray-400 line-through text-right">
-                            <NoTranslate>{option.unitPrice.toFixed(2)} €</NoTranslate>
+                            <NoTranslate>{formatEuro(option.unitPrice)}</NoTranslate>
                           </span>
                         )}
                       </span>
-                    </label>
-                  );
-                })}
+                    );
+
+                    if (!multi) {
+                      return (
+                        <label key={optKey} className={`${rowClass} cursor-pointer`}>
+                          <input
+                            type="radio"
+                            name={`bogo-${offer.promotionId}`}
+                            value={optKey}
+                            checked={chosen[0] === optKey}
+                            onChange={() => onChange(offer.promotionId, [optKey])}
+                            className={isFree ? 'text-emerald-600 focus:ring-emerald-500' : 'text-orange-600 focus:ring-orange-500'}
+                          />
+                          {option.image && (
+                            <SafeImage
+                              src={option.image}
+                              alt=""
+                              className="w-12 h-12 rounded object-cover shrink-0"
+                            />
+                          )}
+                          <NoTranslate className="font-medium text-gray-900 flex-1">{option.name}</NoTranslate>
+                          {priceBlock}
+                        </label>
+                      );
+                    }
+
+                    // Мультислот: количество наград по каждой опции (в сумме ≤ remaining).
+                    return (
+                      <div
+                        key={optKey}
+                        className={`${rowClass} ${!selected && canAdd ? 'cursor-pointer' : ''}`}
+                        onClick={() => {
+                          if (!selected && canAdd) addOne(optKey);
+                        }}
+                      >
+                        {option.image && (
+                          <SafeImage
+                            src={option.image}
+                            alt=""
+                            className="w-12 h-12 rounded object-cover shrink-0"
+                          />
+                        )}
+                        <NoTranslate className="font-medium text-gray-900 flex-1">{option.name}</NoTranslate>
+                        {priceBlock}
+                        <span
+                          className="flex items-center gap-1 shrink-0"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {selected && (
+                            <>
+                              <button
+                                type="button"
+                                aria-label={`${option.name} entfernen`}
+                                onClick={() => removeOne(optKey)}
+                                className="flex h-8 w-8 items-center justify-center rounded-full border border-gray-300 text-gray-700 hover:bg-gray-100"
+                              >
+                                <Minus className="h-4 w-4" />
+                              </button>
+                              <span className="w-5 text-center font-semibold text-gray-900">
+                                <NoTranslate>{count}</NoTranslate>
+                              </span>
+                            </>
+                          )}
+                          <button
+                            type="button"
+                            aria-label={`${option.name} hinzufügen`}
+                            onClick={() => addOne(optKey)}
+                            disabled={!canAdd}
+                            className={`flex h-8 w-8 items-center justify-center rounded-full border ${
+                              canAdd
+                                ? isFree
+                                  ? 'border-emerald-500 text-emerald-600 hover:bg-emerald-100'
+                                  : 'border-orange-500 text-orange-600 hover:bg-orange-100'
+                                : 'cursor-not-allowed border-gray-200 text-gray-300'
+                            }`}
+                          >
+                            <Plus className="h-4 w-4" />
+                          </button>
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         <div className="p-6 border-t bg-gray-50 rounded-b-xl flex gap-3">

@@ -84,7 +84,7 @@ export default function ProfileTab({
               <input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-primary-500 focus:ring-primary-500"
+                className="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-primary-600 focus:ring-primary-600"
                 required
               />
             </div>
@@ -96,7 +96,7 @@ export default function ProfileTab({
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-primary-500 focus:ring-primary-500"
+                className="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-primary-600 focus:ring-primary-600"
               />
             </div>
             {error && <p className="text-sm text-red-600">{error}</p>}

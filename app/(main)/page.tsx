@@ -7,6 +7,9 @@ import { CategoryProducts } from '../../components/category-products'
 import { Hero } from '../../components/hero'
 import { HomeBannerSlider } from '../../components/home-banner-slider'
 import { ProductCard } from '../../components/product-card'
+import { useDeliveryFacts } from '../../lib/delivery/use-delivery-facts'
+import { formatEuro } from '../../lib/format-euro'
+import { fillTemplate } from '../../lib/fill-template'
 import {
   PromotionBadgesProvider,
   toBadgeItems,
@@ -84,6 +87,8 @@ function CategorySectionWrapper({
 export default function Home() {
   const { language } = useLanguage()
   const [t, setT] = useState<any>(() => (k: string, fallback?: string) => fallback ?? k)
+  // Время и условия доставки — из настройки магазина и зон, не из текстов.
+  const delivery = useDeliveryFacts()
   const [categories, setCategories] = useState<any[]>([])
   const [showPreOrderModal, setShowPreOrderModal] = useState(false)
   const [valentineProducts, setValentineProducts] = useState<any[]>([])
@@ -240,7 +245,7 @@ export default function Home() {
               </Link>
             </div>
             <PromotionBadgesProvider items={valentineBadgeItems}>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-6 lg:grid-cols-3 xl:grid-cols-4">
                 {valentineProducts.map((product: any) => (
                   <ProductCard key={product._id} product={{
                     id: product._id,
@@ -298,7 +303,11 @@ export default function Home() {
                 <Truck className="h-8 w-8 text-primary-600" />
               </div>
               <h3 className="text-lg font-bold mb-2">{t('home.benefits.fast_title', 'Schnelle Lieferung')}</h3>
-              <p className="text-gray-600 text-sm">{t('home.benefits.fast_text', '30-60 Minuten, zu Stoßzeiten bis 90 Minuten')}</p>
+              <p className="text-gray-600 text-sm">
+                {delivery.timeRange
+                  ? fillTemplate(t('home.benefits.fast_text', 'In der Regel {time} Minuten'), { time: delivery.timeRange })
+                  : t('home.benefits.fast_text_generic', 'Frisch zubereitet und direkt zu Ihnen geliefert')}
+              </p>
             </div>
             
             <div className="text-center p-6 rounded-2xl bg-gradient-to-br from-secondary-50 to-white border border-secondary-100">
@@ -366,7 +375,12 @@ export default function Home() {
               <div className="text-5xl mb-4">🚚</div>
               <h3 className="text-2xl font-bold mb-4 text-gray-900">{t('home.info.delivery_title', 'Liefergebiete')}</h3>
               <p className="text-gray-600 mb-6">
-                {t('home.info.delivery_text', 'Wir liefern Pizza in viele Stadtteile. Der Mindestbestellwert hängt vom Liefergebiet ab. Kostenlose Lieferung ab 30 €.')}
+                {delivery.freeUpToKm && delivery.minOrderFrom
+                  ? fillTemplate(
+                      t('home.info.delivery_text', 'Wir liefern Pizza in jeden Stadtteil. Bis {km} km liefern wir kostenlos, der Mindestbestellwert beginnt bei {min} und hängt vom Liefergebiet ab.'),
+                      { km: delivery.freeUpToKm, min: formatEuro(delivery.minOrderFrom) }
+                    )
+                  : t('home.info.delivery_text_generic', 'Wir liefern Pizza in jeden Stadtteil. Liefergebühr und Mindestbestellwert hängen vom Liefergebiet ab.')}
               </p>
               <Link href="/delivery" className="inline-flex max-w-full items-center gap-1 font-bold leading-tight text-primary-600 hover:text-primary-700">
                 <span className="truncate">{t('home.info.delivery_cta', 'Liefergebiete ansehen')}</span>

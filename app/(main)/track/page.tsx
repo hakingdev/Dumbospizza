@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useLanguage } from '../../../lib/contexts/LanguageContext';
 import { loadTranslation } from '../../../lib/i18n';
 import { NoTranslate } from '../../../components/NoTranslate';
+import { formatEuro } from '../../../lib/format-euro';
 
 interface OrderStatusStep {
   status: string;
@@ -143,7 +144,7 @@ export default function TrackOrderPage() {
                     ? t('track.phone_placeholder', 'Telefonnummer eingeben (z. B. +49123456789)')
                     : t('track.order_placeholder', 'Bestellnummer eingeben (z. B. 230901001)')
                 }
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-600 focus:border-transparent"
               />
             </div>
           </div>
@@ -191,7 +192,7 @@ export default function TrackOrderPage() {
                       {t(`track.order_status.${order.status}`, 'Status')}
                     </span>
                     <p className="mt-2 font-semibold text-xl">
-                      <NoTranslate>{order.total.toFixed(2)} €</NoTranslate>
+                      <NoTranslate>{formatEuro(order.total)}</NoTranslate>
                     </p>
                   </div>
                 </div>
@@ -202,7 +203,7 @@ export default function TrackOrderPage() {
                 <div className="relative">
                   <div className="overflow-hidden h-2 mb-4 text-xs flex rounded bg-gray-200">
                     <div 
-                      className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-primary-500"
+                      className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-primary-600"
                       style={{ 
                         width: `${
                           order.status === 'cancelled' 
@@ -222,7 +223,7 @@ export default function TrackOrderPage() {
                         <div key={step.status} className="flex flex-col items-center w-1/5">
                           <div className={`
                             rounded-full h-8 w-8 flex items-center justify-center
-                            ${isCompleted ? 'bg-primary-500 text-white' : 'bg-gray-200 text-gray-500'}
+                            ${isCompleted ? 'bg-primary-600 text-white' : 'bg-gray-200 text-gray-500'}
                             ${isCurrent ? 'ring-4 ring-primary-100' : ''}
                           `}>
                             {isCompleted ? (
@@ -285,7 +286,7 @@ export default function TrackOrderPage() {
                       </div>
                       <div className="flex items-start">
                         <span className="text-gray-500 mr-2">{item.quantity} ×</span>
-                        <NoTranslate>{(item.price * item.quantity).toFixed(2)} €</NoTranslate>
+                        <NoTranslate>{formatEuro(item.price * item.quantity)}</NoTranslate>
                       </div>
                     </li>
                   ))}
@@ -295,26 +296,26 @@ export default function TrackOrderPage() {
                 <div className="mt-4 border-t pt-4">
                   <div className="flex justify-between py-1">
                     <span className="text-gray-600">{t('cart.subtotal', 'Zwischensumme')}:</span>
-                    <NoTranslate>{order.subtotal.toFixed(2)} €</NoTranslate>
+                    <NoTranslate>{formatEuro(order.subtotal)}</NoTranslate>
                   </div>
                   
                   {order.deliveryFee > 0 && (
                     <div className="flex justify-between py-1">
                       <span className="text-gray-600">{t('cart.delivery_fee', 'Lieferung')}:</span>
-                      <NoTranslate>{order.deliveryFee.toFixed(2)} €</NoTranslate>
+                      <NoTranslate>{formatEuro(order.deliveryFee)}</NoTranslate>
                     </div>
                   )}
                   
                   {order.loyaltyPointsUsed > 0 && (
                     <div className="flex justify-between py-1">
                       <span className="text-gray-600">{t('checkout.discount_points', 'Rabatt (Punkte)')}:</span>
-                      <NoTranslate>-{(order.loyaltyPointsUsed / 100).toFixed(2)} €</NoTranslate>
+                      <NoTranslate>-{formatEuro(order.loyaltyPointsUsed / 100)}</NoTranslate>
                     </div>
                   )}
                   
                   <div className="flex justify-between py-2 font-semibold text-lg border-t mt-2">
                     <span>{t('cart.total', 'Gesamt')}:</span>
-                    <NoTranslate>{order.total.toFixed(2)} €</NoTranslate>
+                    <NoTranslate>{formatEuro(order.total)}</NoTranslate>
                   </div>
                 </div>
               </div>

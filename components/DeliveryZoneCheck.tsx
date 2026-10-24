@@ -6,6 +6,7 @@ import { MapPin, X, AlertCircle, Check } from 'lucide-react';
 import { useLanguage } from '../lib/contexts/LanguageContext';
 import { loadTranslation } from '../lib/i18n';
 import { NoTranslate } from './NoTranslate';
+import { formatEuro } from '../lib/format-euro';
 
 export default function DeliveryZoneCheck() {
   const [isOpen, setIsOpen] = useState(false);
@@ -111,10 +112,12 @@ export default function DeliveryZoneCheck() {
                 <div className="relative">
                   {hasChecked && (
                     <button
+                      type="button"
                       onClick={handleClose}
-                      className="absolute top-4 right-4 z-10 text-gray-400 hover:text-gray-600"
+                      aria-label="Schließen"
+                      className="absolute top-4 right-4 z-10 text-gray-500 hover:text-gray-700"
                     >
-                      <X className="h-6 w-6" />
+                      <X className="h-6 w-6" aria-hidden="true" />
                     </button>
                   )}
 
@@ -141,7 +144,7 @@ export default function DeliveryZoneCheck() {
                           value={address}
                           onChange={(e) => setAddress(e.target.value)}
                           placeholder={t('delivery_check.address_placeholder', 'Kurhausstraße 11A, 97688 Bad Kissingen')}
-                          className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-primary-500"
+                          className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-primary-600"
                           onKeyPress={(e) => e.key === 'Enter' && checkDeliveryZone()}
                         />
                       </div>
@@ -188,10 +191,10 @@ export default function DeliveryZoneCheck() {
                                       <strong>{t('delivery_check.distance', 'Entfernung')}:</strong> <NoTranslate>{result.distance?.toFixed(1)} {t('delivery_check.km', 'km')}</NoTranslate>
                                     </p>
                                     <p className="mb-2">
-                                      <strong>{t('delivery_check.fee', 'Liefergebühr')}:</strong> <NoTranslate>{result.zone?.deliveryFee?.toFixed(2)} €</NoTranslate>
+                                      <strong>{t('delivery_check.fee', 'Liefergebühr')}:</strong> <NoTranslate>{formatEuro(result.zone?.deliveryFee)}</NoTranslate>
                                     </p>
                                     <p>
-                                      <strong>{t('delivery_check.min_order', 'Mindestbestellwert')}:</strong> <NoTranslate>{result.zone?.minOrderAmount?.toFixed(2)} €</NoTranslate>
+                                      <strong>{t('delivery_check.min_order', 'Mindestbestellwert')}:</strong> <NoTranslate>{formatEuro(result.zone?.minOrderAmount)}</NoTranslate>
                                     </p>
                                   </>
                                 ) : (

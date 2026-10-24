@@ -13,6 +13,9 @@ import OrderVatReceiptModal from '../../../../../components/checkout/OrderVatRec
 import { NoTranslate } from '../../../../../components/NoTranslate';
 import { trackMetaEvent } from '../../../../../lib/analytics/meta-pixel';
 import { trackGoogleAdsPurchase } from '../../../../../lib/analytics/google-ads';
+import { formatEuro } from '../../../../../lib/format-euro';
+import { useDeliveryFacts } from '../../../../../lib/delivery/use-delivery-facts';
+import { resolveOrderEta } from '../../../../../lib/orders/eta-display';
 
 interface OrderConfirmationProps {
   params: {
@@ -35,6 +38,7 @@ export default function OrderConfirmationPage({ params }: OrderConfirmationProps
   const router = useRouter();
   const { language } = useLanguage();
   const [t, setT] = useState<any>(() => (k: string, fallback?: string) => fallback ?? k);
+  const deliveryFacts = useDeliveryFacts();
 
   // Fetch order details — ровно один раз на orderId.
   // ВАЖНО: clearCart не в зависимостях. Его идентичность менялась при каждом
@@ -226,10 +230,38 @@ export default function OrderConfirmationPage({ params }: OrderConfirmationProps
           <h1 className="text-3xl font-bold mb-2">{t('confirmation.thank_you', 'Vielen Dank für Ihre Bestellung!')}</h1>
           <p className="text-lg mb-6">
             {t('confirmation.order_success', 'Ihre Bestellung')} <NoTranslate>#{order.orderNumber}</NoTranslate> {t('confirmation.order_success_suffix', 'wurde erfolgreich aufgegeben.')}
-            {order.deliveryType === 'delivery' 
-              ? ` ${t('confirmation.delivery_info', 'Wir liefern sie so schnell wie möglich.')}` 
-              : ` ${t('confirmation.pickup_info', 'Sie können sie in unserem Restaurant abholen.')}`}
           </p>
+
+          {/* Главный ответ этой страницы — «когда»: Wunschzeit, время от кухни
+              или окно из настройки магазина. Для самовывоза — ещё и «где». */}
+          {(() => {
+            const isPickup = order.deliveryType !== 'delivery';
+            const eta = resolveOrderEta(order, isPickup ? null : deliveryFacts.timeRangeMinutes);
+            const label = isPickup
+              ? t('confirmation.eta_pickup', 'Abholbereit')
+              : t('confirmation.eta_delivery', 'Voraussichtliche Lieferung');
+            const value = !eta
+              ? isPickup
+                ? t('confirmation.pickup_eta_default', 'in 15–20 Minuten')
+                : t('confirmation.delivery_info', 'So schnell wie möglich')
+              : eta.kind === 'window'
+                ? `${eta.from}–${eta.to} Uhr`
+                : `${eta.kind === 'kitchen' ? t('confirmation.eta_around', 'gegen') + ' ' : ''}${eta.time} Uhr`;
+            return (
+              <div className="mx-auto mb-6 inline-flex max-w-full items-center gap-3 rounded-xl bg-primary-50 px-5 py-3 text-left">
+                <Clock className="h-6 w-6 shrink-0 text-primary-700" aria-hidden="true" />
+                <div className="min-w-0">
+                  <p className="text-sm text-gray-600">{label}</p>
+                  <p className="text-xl font-bold tabular-nums text-gray-900">{value}</p>
+                  {isPickup && (
+                    <p className="text-sm text-gray-700">
+                      {deliveryFacts.storeAddress || 'Kurhausstraße 11A, 97688 Bad Kissingen'}
+                    </p>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
           
           <div className="border-t border-b border-gray-200 py-4 my-4">
             <p className="mb-1">{t('confirmation.confirmation_sent', 'Wir haben eine Bestätigung an Ihre Telefonnummer gesendet:')}</p>
@@ -296,7 +328,7 @@ export default function OrderConfirmationPage({ params }: OrderConfirmationProps
                   
                   <div className="flex items-start">
                     <span className="text-gray-600 mr-2">{item.quantity}×</span>
-                    <NoTranslate>{(item.price * item.quantity).toFixed(2)} €</NoTranslate>
+                    <NoTranslate>{formatEuro(item.price * item.quantity)}</NoTranslate>
                   </div>
                 </li>
               ))}
@@ -305,26 +337,26 @@ export default function OrderConfirmationPage({ params }: OrderConfirmationProps
             <div className="border-t pt-4">
               <div className="flex justify-between py-1">
                 <span className="text-gray-600">{t('cart.subtotal', 'Zwischensumme')}:</span>
-                <NoTranslate>{order.subtotal.toFixed(2)} €</NoTranslate>
+                <NoTranslate>{formatEuro(order.subtotal)}</NoTranslate>
               </div>
               
               {order.deliveryFee > 0 && (
                 <div className="flex justify-between py-1">
                   <span className="text-gray-600">{t('cart.delivery_fee', 'Lieferung')}:</span>
-                  <NoTranslate>{order.deliveryFee.toFixed(2)} €</NoTranslate>
+                  <NoTranslate>{formatEuro(order.deliveryFee)}</NoTranslate>
                 </div>
               )}
               
               {order.loyaltyPointsUsed > 0 && (
                 <div className="flex justify-between py-1">
                   <span className="text-gray-600">{t('checkout.discount_points', 'Rabatt (Punkte)')}:</span>
-                  <NoTranslate>-{(order.loyaltyPointsUsed / 100).toFixed(2)} €</NoTranslate>
+                  <NoTranslate>-{formatEuro(order.loyaltyPointsUsed / 100)}</NoTranslate>
                 </div>
               )}
               
               <div className="flex justify-between py-2 font-bold text-lg border-t mt-2">
                 <span>{t('cart.total', 'Gesamt')}:</span>
-                <NoTranslate>{order.total.toFixed(2)} €</NoTranslate>
+                <NoTranslate>{formatEuro(order.total)}</NoTranslate>
               </div>
             </div>
             
@@ -363,11 +395,15 @@ export default function OrderConfirmationPage({ params }: OrderConfirmationProps
                     )}
                   </>
                 ) : (
-                  <p>{t('confirmation.pickup_address', 'Abholung in unserem Restaurant: Kurhausstraße 11A, 97688 Bad Kissingen')}</p>
+                  <p>{deliveryFacts.storeAddress || 'Kurhausstraße 11A, 97688 Bad Kissingen'}</p>
                 )}
-                {order.deliveryType === 'delivery' && order.desiredDeliveryTime && (
+                {order.desiredDeliveryTime && (
                   <p className="mt-2">
-                    <span className="text-gray-600">{t('checkout.desired_delivery_time', 'Gewünschte Lieferzeit')}:</span>{' '}
+                    <span className="text-gray-600">
+                      {order.deliveryType === 'delivery'
+                        ? t('checkout.desired_delivery_time', 'Gewünschte Lieferzeit')
+                        : t('checkout.desired_pickup_time', 'Gewünschte Abholzeit')}:
+                    </span>{' '}
                     <NoTranslate>{order.desiredDeliveryTime}</NoTranslate>
                   </p>
                 )}

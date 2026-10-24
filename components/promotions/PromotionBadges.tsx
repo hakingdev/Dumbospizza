@@ -4,6 +4,8 @@ import { useEffect } from 'react';
 import { trackPromotionEvent } from '../../lib/api-client';
 import { computePromoDisplayPrice } from '../../lib/promotions/pricing';
 import { useProductBadges } from './PromotionBadgesContext';
+import { formatEuro } from '../../lib/format-euro';
+import { formatPromoDate } from '../../lib/format-date';
 
 /**
  * Просмотр акции засчитываем ОДИН раз на акцию за загрузку страницы. Раньше
@@ -23,10 +25,13 @@ export function PromotionBadges({
   productId,
   categoryId,
   className = '',
+  compact = false,
 }: {
   productId: string;
   categoryId?: string;
   className?: string;
+  /** Одна строка с обрезкой — для узкой колонки (строчная карточка на телефоне). */
+  compact?: boolean;
 }) {
   const { badges } = useProductBadges(productId, categoryId);
 
@@ -38,11 +43,11 @@ export function PromotionBadges({
 
   return (
     <div className={`flex flex-wrap gap-1 ${className}`}>
-      {badges.slice(0, 2).map((b) => (
+      {badges.slice(0, compact ? 1 : 2).map((b) => (
         <span
           key={b.promotionId}
           title={b.name}
-          className="bg-primary-600 text-white text-xs font-bold px-2 py-0.5 rounded"
+          className={`bg-primary-600 text-white text-xs font-bold px-2 py-1 rounded ${compact ? 'max-w-full truncate' : ''}`}
         >
           {b.badgeText}
         </span>
@@ -51,6 +56,11 @@ export function PromotionBadges({
   );
 }
 
+/**
+ * Цена карточки товара — своей строкой над кнопкой, а не рядом с названием:
+ * в одной flex-строке nowrap-цена text-xl отжимала заголовок до столбика букв
+ * на 1024–1200 px. Сумма не переносится, подпись «ab» — может.
+ */
 export function ProductCardPrice({
   productId,
   categoryId,
@@ -65,44 +75,31 @@ export function ProductCardPrice({
   const { badges, loaded } = useProductBadges(productId, categoryId);
 
   const { promoPrice, bestPercent, bogoHint } = computePromoDisplayPrice(basePrice, badges);
-
-  if (!loaded) {
-    return (
-      <span className="shrink-0 whitespace-nowrap text-right text-xl font-bold leading-tight text-primary-600">
-        {fromLabel} <span translate="no">{basePrice.toFixed(2)} €</span>
-      </span>
-    );
-  }
-
-  if (promoPrice != null && promoPrice < basePrice) {
-    return (
-      <div className="shrink-0 max-w-[45%] text-right leading-tight">
-        <span className="block text-sm text-gray-400 line-through" translate="no">{basePrice.toFixed(2)} €</span>
-        <span className="whitespace-nowrap text-xl font-bold text-primary-600">
-          {fromLabel} <span translate="no">{promoPrice.toFixed(2)} €</span>
-        </span>
-        {bestPercent != null && (
-          <span className="block break-words text-xs text-green-700">Heute {bestPercent} % Rabatt</span>
-        )}
-      </div>
-    );
-  }
-
-  if (bogoHint) {
-    return (
-      <div className="shrink-0 max-w-[45%] text-right leading-tight">
-        <span className="whitespace-nowrap text-xl font-bold text-primary-600">
-          {fromLabel} <span translate="no">{basePrice.toFixed(2)} €</span>
-        </span>
-        <span className="block break-words text-xs text-green-700">{bogoHint}</span>
-      </div>
-    );
-  }
+  const hasPromoPrice = loaded && promoPrice != null && promoPrice < basePrice;
+  const shownPrice = hasPromoPrice ? (promoPrice as number) : basePrice;
+  const hint = !loaded
+    ? null
+    : hasPromoPrice && bestPercent != null
+      ? `Heute ${bestPercent} % Rabatt`
+      : !hasPromoPrice
+        ? bogoHint
+        : null;
 
   return (
-    <span className="shrink-0 whitespace-nowrap text-right text-xl font-bold leading-tight text-primary-600">
-      {fromLabel} <span translate="no">{basePrice.toFixed(2)} €</span>
-    </span>
+    <div className="min-w-0 leading-tight">
+      <p className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+        <span className="text-base font-bold text-primary-700 md:text-lg">
+          {fromLabel}{' '}
+          <span className="whitespace-nowrap tabular-nums" translate="no">{formatEuro(shownPrice)}</span>
+        </span>
+        {hasPromoPrice && (
+          <span className="whitespace-nowrap text-sm tabular-nums text-gray-500 line-through" translate="no">
+            {formatEuro(basePrice)}
+          </span>
+        )}
+      </p>
+      {hint && <p className="mt-0.5 text-xs text-green-700">{hint}</p>}
+    </div>
   );
 }
 
@@ -142,7 +139,7 @@ export function ProductPromotionsBanner({
           )}
           {b.validTo && (
             <span className="block text-xs text-green-600/80 mt-0.5">
-              Gültig bis {new Date(b.validTo).toLocaleDateString('de-DE')}
+              Gültig bis {formatPromoDate(b.validTo)}
             </span>
           )}
         </div>

@@ -17,7 +17,10 @@ import { useKitchenBlocks } from '../../../lib/contexts/KitchenBlocksContext'
 import { WORKSHOP_BLOCK_HEADLINE } from '../../../lib/kitchen/workshops'
 import { getConflictingPromotions } from '../../../lib/promotions/coupon-conflict'
 import { PROMO_CONFLICT_MESSAGE } from '../../../components/cart/PromoConflictDialog'
+import { REPEAT_SKIPPED_STORAGE_KEY } from '../../../lib/orders/repeat-notice'
+import { storageGet, storageRemove } from '../../../lib/safe-storage'
 import { NoTranslate } from '../../../components/NoTranslate'
+import { formatEuro } from '../../../lib/format-euro'
 
 export default function CartPage() {
   const router = useRouter();
@@ -25,8 +28,24 @@ export default function CartPage() {
   const [t, setT] = useState<any>(() => (k: string, fallback?: string) => fallback ?? k);
   const [showGiftModal, setShowGiftModal] = useState(false);
   const [showBogoModal, setShowBogoModal] = useState(false);
-  const [bogoSlot, setBogoSlot] = useState<Record<string, string>>({});
+  const [bogoSlot, setBogoSlot] = useState<Record<string, string[]>>({});
   const [giftSlot, setGiftSlot] = useState<Record<string, string>>({});
+  // Flash от «Bestellung wiederholen»: позиции, которых больше нет в меню и
+  // которые сервер пропустил при копировании. Показываем один раз.
+  const [repeatSkipped, setRepeatSkipped] = useState<string[]>([]);
+  useEffect(() => {
+    const raw = storageGet(REPEAT_SKIPPED_STORAGE_KEY, 'session');
+    if (!raw) return;
+    storageRemove(REPEAT_SKIPPED_STORAGE_KEY, 'session');
+    try {
+      const names = JSON.parse(raw);
+      if (Array.isArray(names) && names.length > 0) {
+        setRepeatSkipped(names.map((n) => String(n)));
+      }
+    } catch {
+      // повреждённый flash — просто не показываем баннер
+    }
+  }, []);
   const {
     state,
     totals,
@@ -116,9 +135,11 @@ export default function CartPage() {
   };
 
   const handleBogoConfirm = () => {
-    // добавляем выбранную награду (по одной за пару) и закрываем
-    for (const [pid, oid] of Object.entries(bogoSlot)) {
-      if (oid) setSelectedBogoSecond(pid, oid);
+    // применяем все выбранные награды из одного окна (по одной на слот) и закрываем
+    for (const [pid, oids] of Object.entries(bogoSlot)) {
+      for (const oid of oids) {
+        if (oid) setSelectedBogoSecond(pid, oid);
+      }
     }
     setBogoSlot({});
     setShowBogoModal(false);
@@ -129,8 +150,8 @@ export default function CartPage() {
     setBogoSlot((s) => {
       const next = { ...s };
       for (const o of bogoOffers) {
-        if (o.options.length === 1 && !next[o.promotionId]) {
-          next[o.promotionId] = o.options[0].id || o.options[0].productId;
+        if (o.options.length === 1 && !(next[o.promotionId]?.length)) {
+          next[o.promotionId] = [o.options[0].id || o.options[0].productId];
         }
       }
       return next;
@@ -157,7 +178,22 @@ export default function CartPage() {
       </Link>
       
       <h1 className="text-3xl font-bold mb-8">{t('cart.title', 'Warenkorb')}</h1>
-      
+
+      {repeatSkipped.length > 0 && (
+        <div className="mb-6 flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+          <span className="text-xl leading-none" aria-hidden="true">
+            ℹ️
+          </span>
+          <p className="text-sm leading-6 text-amber-900">
+            {t(
+              'cart.repeat_skipped',
+              'Nicht mehr im Sortiment und daher übersprungen:'
+            )}{' '}
+            <NoTranslate>{repeatSkipped.join(', ')}</NoTranslate>
+          </p>
+        </div>
+      )}
+
       {state.items.length === 0 ? (
         <div className="text-center py-16">
           <p className="text-xl text-gray-500 mb-6">{t('cart.empty')}</p>
@@ -170,6 +206,8 @@ export default function CartPage() {
           <div className="lg:col-span-2">
             {/* Cart Items */}
             <div className="bg-white rounded-lg shadow-md overflow-hidden">
+              {/* Невидимый h2: без него после h1 «Warenkorb» сразу шли h3 позиций */}
+              <h2 className="sr-only">{t('cart.items', 'Artikel im Warenkorb')}</h2>
               <ul className="divide-y divide-gray-200">
                 {state.items.map((item) => (
                   <li key={item.id} className={`p-4 ${blockedWorkshopFor(item) ? 'bg-amber-50' : ''}`}>
@@ -183,7 +221,8 @@ export default function CartPage() {
                         {item.image ? (
                           <SafeImage src={item.image} alt={item.name} className="w-full h-full object-cover" />
                         ) : (
-                          <>[{t('category.image_placeholder', 'Bild')} <NoTranslate>{item.name}</NoTranslate>]</>
+                          // Как в выезжающей корзине: заглушка-эмодзи, а не «[Bild …]» серым по серому
+                          <span className="text-3xl" aria-hidden="true">🍕</span>
                         )}
                       </div>
 
@@ -241,12 +280,12 @@ export default function CartPage() {
                               <Plus className="w-4 h-4" />
                             </button>
                           </div>
-                          <NoTranslate className="font-semibold">{(item.price * item.quantity).toFixed(2)} €</NoTranslate>
+                          <NoTranslate className="font-semibold">{formatEuro(item.price * item.quantity)}</NoTranslate>
                           {state.promotionCalculation?.lineAdjustments
                             .filter((l) => l.productId === (item.productId || item.id))
                             .map((l, idx) => (
                               <div key={idx} className="text-xs text-green-600 text-right">
-                                {l.label}: <NoTranslate>-{l.discountAmount.toFixed(2)} €</NoTranslate>
+                                {l.label}: <NoTranslate>-{formatEuro(l.discountAmount)}</NoTranslate>
                               </div>
                             ))}
                         </div>
@@ -379,7 +418,12 @@ export default function CartPage() {
               </div>
               
               <div className="text-xs text-gray-500 text-center">
-                {t('cart.terms_agreement')} <Link href="/terms" className="text-primary-600 hover:underline">{t('footer.terms')}</Link> {t('common.and', 'und')} <Link href="/datenschutz" className="text-primary-600 hover:underline">{t('footer.privacy')}</Link>.
+                {/* Ссылка вела на несуществующую /terms («Nutzungsbedingungen»); условия — это AGB. */}
+                {t('cart.terms_prefix', 'Mit Ihrer Bestellung stimmen Sie unseren')}{' '}
+                <Link href="/agb" className="text-primary-600 hover:underline">{t('cart.terms_agb', 'AGB')}</Link>{' '}
+                {t('cart.terms_and_the', 'und der')}{' '}
+                <Link href="/datenschutz" className="text-primary-600 hover:underline">{t('cart.terms_privacy', 'Datenschutzerklärung')}</Link>{' '}
+                {t('cart.terms_suffix', 'zu.')}
               </div>
             </div>
           </div>
@@ -390,7 +434,7 @@ export default function CartPage() {
         <BogoHalfPricePickerModal
           offers={bogoOffers}
           selections={bogoSlot}
-          onSelect={(promotionId, optionId) => setBogoSlot((s) => ({ ...s, [promotionId]: optionId }))}
+          onChange={(promotionId, optionIds) => setBogoSlot((s) => ({ ...s, [promotionId]: optionIds }))}
           onConfirm={handleBogoConfirm}
           onClose={() => { setBogoSlot({}); setShowBogoModal(false); }}
           t={t}

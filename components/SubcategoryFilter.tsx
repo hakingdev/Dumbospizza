@@ -57,7 +57,7 @@ export default function SubcategoryFilter({
             }`}
           >
             {chip.name}
-            <span className={`ml-1.5 ${active ? 'text-white/70' : 'text-gray-400'}`}>{chip.count}</span>
+            <span className={`ml-1.5 tabular-nums ${active ? 'text-white' : 'text-gray-600'}`}>{chip.count}</span>
           </button>
         );
       })}

@@ -106,6 +106,6 @@ describe('OnlinePaymentPanel — ровно один виджет выбранн
     render(
       <OnlinePaymentPanel pay={makePay()} language="de" t={t} onBack={() => {}} {...noopHandlers} />
     );
-    expect(screen.getByText(/33\.90 €/)).toBeTruthy();
+    expect(screen.getByText(/33,90\s€/)).toBeTruthy();
   });
 });

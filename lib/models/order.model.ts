@@ -5,6 +5,8 @@ import { PENDING_PAYMENT_STATUS } from '../orders/payment-draft';
 
 export interface IOrderItem {
   product: string;
+  /** Служебная строка (не товар): 'min_order_surcharge' — доплата до минимума зоны. */
+  kind?: 'min_order_surcharge';
   name: string;
   quantity: number;
   price: number;

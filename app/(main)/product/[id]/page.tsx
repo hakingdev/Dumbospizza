@@ -21,6 +21,7 @@ import { MiniPizzaBoxBuilder } from '../../../../components/mini-pizza-box/MiniP
 import { MINI_BOX_CATEGORY_SLUG } from '../../../../lib/mini-pizza-box';
 import { SafeImage } from '../../../../components/SafeImage';
 import { NoTranslate } from '../../../../components/NoTranslate';
+import { formatEuro } from '../../../../lib/format-euro';
 
 interface Extra {
   name: string;
@@ -371,11 +372,11 @@ export default function ProductPage() {
 
               <div className="flex items-baseline gap-2 mb-6">
                 <span className="text-4xl font-bold text-primary-600">
-                  <NoTranslate>{totalPrice.toFixed(2)} €</NoTranslate>
+                  <NoTranslate>{formatEuro(totalPrice)}</NoTranslate>
                 </span>
                 {totalPrice > product.basePrice && (
                   <span className="text-lg text-gray-500 line-through">
-                    <NoTranslate>{product.basePrice.toFixed(2)} €</NoTranslate>
+                    <NoTranslate>{formatEuro(product.basePrice)}</NoTranslate>
                   </span>
                 )}
               </div>
@@ -402,7 +403,7 @@ export default function ProductPage() {
                           </div>
                           <div className="flex items-center gap-3 flex-shrink-0">
                             <span className="text-primary-600 font-semibold whitespace-nowrap">
-                              <NoTranslate>{getSizePrice(product, size).toFixed(2)}€</NoTranslate>
+                              <NoTranslate>{formatEuro(getSizePrice(product, size))}</NoTranslate>
                             </span>
                             <span className={`h-5 w-5 rounded-full border-2 flex items-center justify-center ${sel ? 'border-primary-600' : 'border-gray-300'}`}>
                               {sel && <span className="h-2.5 w-2.5 rounded-full bg-primary-600" />}
@@ -449,7 +450,7 @@ export default function ProductPage() {
                             <NoTranslate className="font-medium min-w-0 truncate">{option.name}</NoTranslate>
                             <div className="flex items-center gap-3 flex-shrink-0">
                               {option.price > 0 && (
-                                <NoTranslate className="text-sm text-gray-600 whitespace-nowrap">+{option.price.toFixed(2)}€</NoTranslate>
+                                <NoTranslate className="text-sm text-gray-600 whitespace-nowrap">+{formatEuro(option.price)}</NoTranslate>
                               )}
                               {single ? (
                                 <span className={`h-5 w-5 rounded-full border-2 flex items-center justify-center ${selected ? 'border-primary-600' : 'border-gray-300'}`}>
@@ -489,7 +490,7 @@ export default function ProductPage() {
                         >
                             <NoTranslate className="min-w-0 break-words text-left font-medium">{topping.name}</NoTranslate>
                           <div className="flex shrink-0 items-center gap-2">
-                            <NoTranslate className="whitespace-nowrap text-primary-600">+{topping.price.toFixed(2)}€</NoTranslate>
+                            <NoTranslate className="whitespace-nowrap text-primary-600">+{formatEuro(topping.price)}</NoTranslate>
                             {isSelected && <Check className="h-5 w-5 text-primary-600" />}
                           </div>
                         </button>
@@ -520,7 +521,7 @@ export default function ProductPage() {
                           <NoTranslate className="min-w-0 break-words text-left font-medium">{sauce.name}</NoTranslate>
                           <div className="flex shrink-0 items-center gap-2">
                             {sauce.price > 0 && (
-                              <NoTranslate className="whitespace-nowrap text-primary-600">+{sauce.price.toFixed(2)}€</NoTranslate>
+                              <NoTranslate className="whitespace-nowrap text-primary-600">+{formatEuro(sauce.price)}</NoTranslate>
                             )}
                             {isSelected && <Check className="h-5 w-5 text-primary-600" />}
                           </div>
@@ -551,7 +552,7 @@ export default function ProductPage() {
                         >
                           <NoTranslate className="min-w-0 break-words text-left font-medium">{side.name}</NoTranslate>
                           <div className="flex shrink-0 items-center gap-2">
-                            <NoTranslate className="whitespace-nowrap text-primary-600">+{side.price.toFixed(2)}€</NoTranslate>
+                            <NoTranslate className="whitespace-nowrap text-primary-600">+{formatEuro(side.price)}</NoTranslate>
                             {isSelected && <Check className="h-5 w-5 text-primary-600" />}
                           </div>
                         </button>
@@ -628,7 +629,7 @@ export default function ProductPage() {
                 ) : (
                   <>
                     <ShoppingCart className="h-6 w-6" />
-                    {t('product.add_to_cart', 'In den Warenkorb')} {t('product.for_price', 'für')} <NoTranslate>{(totalPrice * quantity).toFixed(2)} €</NoTranslate>
+                    {t('product.add_to_cart', 'In den Warenkorb')} {t('product.for_price', 'für')} <NoTranslate>{formatEuro(totalPrice * quantity)}</NoTranslate>
                   </>
                 )}
               </button>

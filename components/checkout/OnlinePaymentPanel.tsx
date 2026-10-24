@@ -4,6 +4,7 @@ import SumUpPaymentWidget from './SumUpPaymentWidget'
 import PayPalPaymentButtons from './PayPalPaymentButtons'
 import { NoTranslate } from '../NoTranslate'
 import { METHOD_GROUPS, type OnlineMethodId } from '../../lib/payments/method-groups'
+import { formatEuro } from '../../lib/format-euro'
 
 /** Состояние начатой онлайн-оплаты (draft-заказ создан, платёж не подтверждён). */
 export interface OnlinePaymentState {
@@ -58,7 +59,7 @@ export default function OnlinePaymentPanel({
     <div className="bg-white rounded-lg shadow-md p-6">
       <h2 className="text-xl font-semibold mb-1">{t('checkout.payments.pay_title', 'Bezahlung')}</h2>
       <p className="mb-4 text-sm text-gray-500">
-        {t('checkout.payments.online_amount', 'Zu zahlen')}: <NoTranslate>{pay.amount.toFixed(2)} €</NoTranslate>
+        {t('checkout.payments.online_amount', 'Zu zahlen')}: <NoTranslate>{formatEuro(pay.amount)}</NoTranslate>
       </p>
 
       {errorMessage && <p className="mb-3 text-sm text-red-600">{errorMessage}</p>}

@@ -5,6 +5,8 @@ import { useLanguage } from '../../../lib/contexts/LanguageContext';
 import { loadTranslation } from '../../../lib/i18n';
 import { DEFAULT_STORE_PHONE } from '../../../lib/store-phone';
 import { NoTranslate } from '../../../components/NoTranslate';
+import { useDeliveryFacts } from '../../../lib/delivery/use-delivery-facts';
+import { fillTemplate } from '../../../lib/fill-template';
 
 const DEFAULT_STORE_INFO = {
   address: 'Kurhausstraße 11A, 97688 Bad Kissingen',
@@ -14,6 +16,7 @@ const DEFAULT_STORE_INFO = {
 export default function AboutPage() {
   const { language } = useLanguage();
   const [t, setT] = useState<any>(() => (k: string, fallback?: string) => fallback ?? k);
+  const deliveryFacts = useDeliveryFacts();
   const [storeInfo, setStoreInfo] = useState(DEFAULT_STORE_INFO);
 
   useEffect(() => {
@@ -70,8 +73,12 @@ export default function AboutPage() {
 
           <div className="bg-white rounded-2xl p-6 shadow-sm text-center">
             <div className="text-4xl mb-3">⏱️</div>
-            <h3 className="font-bold text-xl mb-2">{t('about.stats.time_title', '30-60 Minuten')}</h3>
-            <p className="text-gray-600">{t('about.stats.time_text', 'Schnelle Lieferung')}</p>
+            <h3 className="font-bold text-xl mb-2">
+              {deliveryFacts.timeRange
+                ? fillTemplate(t('about.stats.time_title', '{time} Minuten'), { time: deliveryFacts.timeRange })
+                : t('about.stats.time_text', 'Schnelle Lieferung')}
+            </h3>
+            <p className="text-gray-600">{t('about.stats.time_subtitle', 'Durchschnittliche Lieferzeit')}</p>
           </div>
 
           <div className="bg-white rounded-2xl p-6 shadow-sm text-center">

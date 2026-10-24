@@ -4,7 +4,7 @@ import { User } from '../../../../lib/models/user.model';
 import { Order } from '../../../../lib/models/order.model';
 import { Product } from '../../../../lib/models/product.model';
 import { getCustomerSession } from '../../../../lib/customer-auth';
-import { aggregateFavorites } from '../../../../lib/orders/favorites';
+import { aggregateFavorites, normalizeFavoriteName } from '../../../../lib/orders/favorites';
 
 const LIMIT = 6;
 const MIN_FAVORITES = 3; // мало данных → дополняем популярными по сайту
@@ -30,8 +30,13 @@ export async function GET(request: NextRequest) {
 
     const favorites = aggregateFavorites(orders as any[], LIMIT);
 
-    // Подтянуть картинки/доступность товаров.
-    const ids = favorites.map((f) => f.productId).filter(Boolean);
+    // Подтянуть картинки/доступность товаров — по ВСЕМ кандидатам id записи
+    // (каталог держит один товар под несколькими id: дубли имён, QA #12).
+    const ids = Array.from(
+      new Set(
+        favorites.flatMap((f) => (f.productIds?.length ? f.productIds : [f.productId]))
+      )
+    ).filter(Boolean);
     const productsById = new Map<string, any>();
     if (ids.length) {
       const products = await Product.find({ _id: { $in: ids } })
@@ -51,28 +56,38 @@ export async function GET(request: NextRequest) {
     };
 
     const items: FavoriteItem[] = favorites.map((f) => {
-      const p = productsById.get(f.productId);
+      // Из кандидатов берём живой И доступный товар; иначе просто живой;
+      // если все удалены — карточка без ссылки («Nicht verfügbar»).
+      const candidates = (f.productIds?.length ? f.productIds : [f.productId]).filter(Boolean);
+      const availableId = candidates.find((id) => productsById.get(id)?.available !== false && productsById.has(id));
+      const existingId = candidates.find((id) => productsById.has(id));
+      const pickedId = availableId || existingId || '';
+      const p = pickedId ? productsById.get(pickedId) : undefined;
       return {
-        productId: f.productId,
+        productId: pickedId,
         name: p?.name || f.name,
         image: p?.image || '/images/default-product.jpg',
         orderCount: f.orderCount,
         totalQuantity: f.totalQuantity,
-        available: p ? p.available !== false : true,
+        available: p ? p.available !== false : false,
         source: 'history',
       };
     });
 
     // Fallback: данных мало → дополняем популярными (featured) товарами.
+    // Дедуп и по id, и по ИМЕНИ: featured-дубль уже показанной пиццы под другим
+    // id не должен дать вторую неотличимую карточку.
     if (items.length < MIN_FAVORITES) {
       const existing = new Set(items.map((i) => i.productId));
+      const existingNames = new Set(items.map((i) => normalizeFavoriteName(i.name)));
       const popular = await Product.find({ featured: true, available: true })
         .select('name image')
         .limit(LIMIT)
         .lean();
       for (const p of popular) {
         const pid = String((p as any)._id);
-        if (existing.has(pid) || items.length >= LIMIT) continue;
+        const pname = normalizeFavoriteName((p as any).name);
+        if (existing.has(pid) || existingNames.has(pname) || items.length >= LIMIT) continue;
         items.push({
           productId: pid,
           name: (p as any).name,
@@ -83,6 +98,7 @@ export async function GET(request: NextRequest) {
           source: 'popular' as const,
         });
         existing.add(pid);
+        existingNames.add(pname);
       }
     }
 

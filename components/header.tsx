@@ -124,18 +124,26 @@ export function Header() {
                 href="/account"
                 className="hidden h-12 w-12 items-center justify-center rounded-full text-gray-700 transition-colors hover:bg-primary-50 hover:text-primary-600 md:flex"
                 title={t('nav.account', 'Mein Konto')}
+                aria-label={t('nav.account', 'Mein Konto')}
               >
-                <User className="h-6 w-6" />
+                <User className="h-6 w-6" aria-hidden="true" />
               </Link>
               
-              <button 
+              <button
+                type="button"
                 onClick={() => setIsCartModalOpen(true)}
                 className="relative flex items-center justify-center bg-primary-600 text-white rounded-full w-12 h-12 hover:bg-primary-700 transition-colors shadow-md"
                 title={t('nav.cart', 'Warenkorb')}
+                // Без явного имени кнопка читалась как «1» — цифрой бейджа.
+                aria-label={
+                  cartItemsCount > 0
+                    ? `${t('nav.cart', 'Warenkorb')}: ${cartItemsCount}`
+                    : t('nav.cart', 'Warenkorb')
+                }
               >
-                <ShoppingCart className="h-6 w-6" />
+                <ShoppingCart className="h-6 w-6" aria-hidden="true" />
                 {cartItemsCount > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-secondary-600 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">
+                  <span aria-hidden="true" className="absolute -top-1 -right-1 bg-secondary-600 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">
                     {cartItemsCount}
                   </span>
                 )}

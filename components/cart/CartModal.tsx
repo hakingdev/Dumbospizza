@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { Dialog } from '@headlessui/react';
 import { X, ShoppingCart, Minus, Plus, Trash2 } from 'lucide-react';
 import { useCart } from '../../lib/contexts/CartContext';
 import { useKitchenBlocks } from '../../lib/contexts/KitchenBlocksContext';
@@ -10,7 +11,9 @@ import { useLanguage } from '../../lib/contexts/LanguageContext';
 import { loadTranslation } from '../../lib/i18n';
 import OrderSummaryBreakdown from './OrderSummaryBreakdown';
 import BogoRewardLines from '../promotions/BogoRewardLines';
+import { SafeImage } from '../SafeImage';
 import { NoTranslate } from '../NoTranslate';
+import { formatEuro } from '../../lib/format-euro';
 
 interface CartModalProps {
   isOpen: boolean;
@@ -59,16 +62,13 @@ export function CartModal({ isOpen, onClose }: CartModalProps) {
     }
   };
 
+  // Headless UI Dialog: фокус уходит в панель и не выпадает за неё, Esc и клик
+  // по затемнению закрывают, по закрытию фокус возвращается на кнопку корзины.
   return (
-    <>
-      {/* Backdrop */}
-      <div 
-        className="modal-backdrop animate-fadeIn"
-        onClick={onClose}
-      />
-      
-      {/* Modal */}
-      <div className="fixed top-0 right-0 h-full w-full md:w-[450px] bg-white shadow-2xl z-50 flex flex-col animate-slideInRight">
+    <Dialog open onClose={onClose} className="relative z-50">
+      <div className="modal-backdrop animate-fadeIn" aria-hidden="true" />
+
+      <Dialog.Panel className="fixed top-0 right-0 h-full w-full md:w-[450px] bg-white shadow-2xl z-50 flex flex-col animate-slideInRight">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b">
           <div className="flex items-center space-x-3">
@@ -76,15 +76,17 @@ export function CartModal({ isOpen, onClose }: CartModalProps) {
               <ShoppingCart className="h-6 w-6 text-primary-600" />
             </div>
             <div>
-              <h2 className="text-2xl font-bold text-gray-900">{t('cart.title', 'Warenkorb')}</h2>
+              <Dialog.Title as="h2" className="text-2xl font-bold text-gray-900">{t('cart.title', 'Warenkorb')}</Dialog.Title>
               <p className="text-sm text-gray-500">{items.length} {itemLabel}</p>
             </div>
           </div>
-          <button 
+          <button
+            type="button"
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 transition-colors p-2"
+            aria-label={t('common.close', 'Schließen')}
+            className="-mr-2 flex h-11 w-11 items-center justify-center rounded-full text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700"
           >
-            <X className="h-6 w-6" />
+            <X className="h-6 w-6" aria-hidden="true" />
           </button>
         </div>
 
@@ -125,9 +127,17 @@ export function CartModal({ isOpen, onClose }: CartModalProps) {
                     </p>
                   )}
                   <div className="flex items-start space-x-4">
-                    {/* Image placeholder */}
-                    <div className="w-20 h-20 bg-gray-200 rounded-lg flex-shrink-0 flex items-center justify-center">
-                      <span className="text-2xl">🍕</span>
+                    {/* Produktbild (Fallback: Emoji-Platzhalter) */}
+                    <div className="w-20 h-20 bg-gray-200 rounded-lg flex-shrink-0 flex items-center justify-center overflow-hidden">
+                      {item.image ? (
+                        <SafeImage
+                          src={item.image}
+                          alt={item.name}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <span className="text-2xl">🍕</span>
+                      )}
                     </div>
 
                     {/* Details */}
@@ -137,10 +147,12 @@ export function CartModal({ isOpen, onClose }: CartModalProps) {
                           <NoTranslate>{item.name}</NoTranslate>
                         </h3>
                         <button
+                          type="button"
                           onClick={() => removeItem(item.id)}
-                          className="text-gray-400 hover:text-red-500 transition-colors ml-2"
+                          aria-label={`${t('cart.remove', 'Entfernen')}: ${item.name}`}
+                          className="-mr-2 -mt-2 ml-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-gray-500 transition-colors hover:bg-red-50 hover:text-red-600"
                         >
-                          <Trash2 className="h-4 w-4" />
+                          <Trash2 className="h-4 w-4" aria-hidden="true" />
                         </button>
                       </div>
 
@@ -165,21 +177,25 @@ export function CartModal({ isOpen, onClose }: CartModalProps) {
                       <div className="flex items-center justify-between mt-3">
                         <div className="flex items-center border border-gray-300 rounded-lg">
                           <button
+                            type="button"
                             onClick={() => handleUpdateQuantity(item.id, item.quantity - 1)}
-                            className="p-2 hover:bg-gray-100 transition-colors rounded-l-lg"
+                            aria-label={t('cart.decrease', 'Menge verringern')}
+                            className="flex h-10 w-10 items-center justify-center rounded-l-lg transition-colors hover:bg-gray-100"
                           >
-                            <Minus className="h-4 w-4 text-gray-600" />
+                            <Minus className="h-4 w-4 text-gray-600" aria-hidden="true" />
                           </button>
-                          <span className="px-4 py-1 font-medium">{item.quantity}</span>
+                          <span className="min-w-[2rem] px-2 text-center font-medium tabular-nums" aria-live="polite">{item.quantity}</span>
                           <button
+                            type="button"
                             onClick={() => handleUpdateQuantity(item.id, item.quantity + 1)}
-                            className="p-2 hover:bg-gray-100 transition-colors rounded-r-lg"
+                            aria-label={t('cart.increase', 'Menge erhöhen')}
+                            className="flex h-10 w-10 items-center justify-center rounded-r-lg transition-colors hover:bg-gray-100"
                           >
-                            <Plus className="h-4 w-4 text-gray-600" />
+                            <Plus className="h-4 w-4 text-gray-600" aria-hidden="true" />
                           </button>
                         </div>
                         <span className="font-bold text-lg text-primary-600">
-                          <NoTranslate>{(item.price * item.quantity).toFixed(2)} €</NoTranslate>
+                          <NoTranslate>{formatEuro(item.price * item.quantity)}</NoTranslate>
                         </span>
                       </div>
                     </div>
@@ -237,7 +253,7 @@ export function CartModal({ isOpen, onClose }: CartModalProps) {
             </button>
           </div>
         )}
-      </div>
-    </>
+      </Dialog.Panel>
+    </Dialog>
   );
 }

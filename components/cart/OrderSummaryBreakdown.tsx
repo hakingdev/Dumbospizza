@@ -4,6 +4,7 @@ import type { PromotionCalculationResult } from '../../lib/promotions/types';
 import { getBogoPickerMerchandise } from '../../lib/promotions/discount-total';
 import PromotionCartSummary from '../promotions/PromotionCartSummary';
 import { NoTranslate } from '../NoTranslate';
+import { formatEuro } from '../../lib/format-euro';
 
 /**
  * Единый разбор итоговой суммы (subtotal → скидки → Gesamtsumme) для CartModal,
@@ -44,7 +45,7 @@ export default function OrderSummaryBreakdown({
   className = '',
   showDelivery = true,
 }: OrderSummaryBreakdownProps) {
-  const eur = (v: number) => `${v.toFixed(2)} €`;
+  const eur = formatEuro;
   const merchandiseSubtotal = subtotal + getBogoPickerMerchandise(promotionCalculation);
 
   return (
@@ -55,7 +56,7 @@ export default function OrderSummaryBreakdown({
       </div>
 
       {showDelivery && (
-        <div className="flex justify-between text-gray-600">
+        <div data-testid="delivery-fee-line" className="flex justify-between text-gray-600">
           <span>{t('cart.delivery_fee', 'Liefergebühr')}</span>
           <span className="whitespace-nowrap">
             {deliveryFee === 0 ? t('cart.free_delivery', 'Kostenlos') : <NoTranslate>{eur(deliveryFee)}</NoTranslate>}
@@ -90,12 +91,19 @@ export default function OrderSummaryBreakdown({
         t={t}
       />
 
+      {/* Без адреса Liefergebühr ещё неизвестна: «Gesamtsumme» здесь обещала бы
+          итог, а в checkout добавлялись +3 €. Честная подпись — «Summe» и пометка. */}
       <div className="border-t pt-2 flex justify-between font-bold text-lg">
-        <span>{t('cart.total', 'Gesamtsumme')}</span>
+        <span>{showDelivery ? t('cart.total', 'Gesamtsumme') : t('cart.total_without_delivery', 'Summe')}</span>
         <NoTranslate className="text-primary-600 whitespace-nowrap">
           {eur(showDelivery ? total : total - deliveryFee)}
         </NoTranslate>
       </div>
+      {!showDelivery && (
+        <p className="text-right text-xs text-gray-500">
+          {t('cart.delivery_fee_hint', 'zzgl. Liefergebühr je nach Liefergebiet')}
+        </p>
+      )}
     </div>
   );
 }

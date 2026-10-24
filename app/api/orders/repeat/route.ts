@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '../../../../lib/models';
 import { Order } from '../../../../lib/models/order.model';
+import { Product } from '../../../../lib/models/product.model';
 import { User } from '../../../../lib/models/user.model';
 import { getCustomerSession, normalizePhone } from '../../../../lib/customer-auth';
 import { verifyOrderAccessToken } from '../../../../lib/orders/access-token';
+import { isPromoRewardName, stripPromoLabels } from '../../../../lib/orders/gift-label';
+import { isMinOrderSurchargeItem } from '../../../../lib/orders/min-order-surcharge';
 
 // POST /api/orders/repeat - Функция для повторения заказа
 // Ответ содержит PII (адрес, имя, телефон, email). Авторизация: cookie-сессия
@@ -52,19 +55,59 @@ export async function POST(request: NextRequest) {
       }, { status: 401 });
     }
     
-    // Извлекаем только необходимые данные для повторного заказа
-    const repeatOrderData = {
-      items: originalOrder.items.map(item => ({
+    // Позиции-награды акций ([GRATIS]/[AKTION]) НЕ копируем: их выдавала
+    // акция того заказа, и она могла закончиться/измениться. Обычные позиции
+    // сверяем с актуальным каталогом — выключенные/удалённые товары пропускаем,
+    // а productId прокидываем, чтобы ДЕЙСТВУЮЩИЕ акции применились к повтору
+    // (движок матчит по productId; без него повтор был слеп для акций).
+    // Доплату до минимума (Mindermengenzuschlag) тоже не копируем — это не
+    // товар; при нужде новый checkout предложит её заново.
+    const sourceItems = originalOrder.items.filter(
+      (item) => !isPromoRewardName(item.name) && !isMinOrderSurchargeItem(item)
+    );
+    const productIds = Array.from(
+      new Set(
+        sourceItems
+          .map((item) => String((item as any).product || ''))
+          .filter(Boolean)
+      )
+    );
+    const products = productIds.length
+      ? await Product.find({ _id: { $in: productIds } })
+          .select('name available image category')
+          .lean()
+      : [];
+    const productsById = new Map(products.map((p) => [String(p._id), p]));
+
+    const items: any[] = [];
+    const skippedItems: string[] = [];
+    for (const item of sourceItems) {
+      const productId = String((item as any).product || '');
+      const product = productId ? productsById.get(productId) : undefined;
+      if (!product || product.available === false) {
+        skippedItems.push(stripPromoLabels(item.name));
+        continue;
+      }
+      items.push({
+        id: productId,
+        productId,
+        categoryId: product.category ? String(product.category) : undefined,
         name: item.name,
         price: item.price,
-        basePrice: item.basePrice,
+        basePrice: (item as any).basePrice,
         quantity: item.quantity,
-        image: item.image,
+        image: (item as any).image ?? product.image,
         size: item.size,
         extras: item.extras,
         options: item.options,
-        notes: item.notes
-      })),
+        notes: (item as any).notes,
+      });
+    }
+
+    // Извлекаем только необходимые данные для повторного заказа
+    const repeatOrderData = {
+      items,
+      skippedItems,
       customerName: originalOrder.customerName,
       phoneNumber: originalOrder.phoneNumber,
       email: originalOrder.email,

@@ -7,6 +7,7 @@ import { X } from 'lucide-react';
 import { getActivePromotions, trackPromotionEvent } from '../../lib/api-client';
 import { useCart } from '../../lib/contexts/CartContext';
 import { SafeImage } from '../SafeImage';
+import { formatPromoDate } from '../../lib/format-date';
 
 function promoImageUrl(p: { bannerImage?: string; image?: string }): string | null {
   const src = p.bannerImage || p.image;
@@ -20,14 +21,15 @@ function scheduleHint(p: {
   validTo?: string;
   weekdayScheduleEnabled?: boolean;
 }): string {
+  // weekdayLabel уже готовая фраза («Täglich», «Mo–Fr», «Täglich außer Mi»).
   if (p.weekdayScheduleEnabled && p.weekdayLabel) {
-    return `Jeden ${p.weekdayLabel}`;
+    return p.weekdayLabel;
   }
   if (p.scheduleLabel) {
     return p.scheduleLabel;
   }
   if (p.validTo) {
-    return `bis ${new Date(p.validTo).toLocaleDateString('de-DE')}`;
+    return `bis ${formatPromoDate(p.validTo)}`;
   }
   return '';
 }

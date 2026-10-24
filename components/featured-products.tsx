@@ -30,9 +30,9 @@ export function FeaturedProducts() {
 
   if (loading) {
     return (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-6 lg:grid-cols-3 xl:grid-cols-4">
         {[1, 2, 3, 4].map((i) => (
-          <div key={i} className="card h-80 animate-pulse bg-gray-200"></div>
+          <div key={i} className="card h-32 animate-pulse bg-gray-200 md:h-80"></div>
         ))}
       </div>
     );
@@ -40,7 +40,7 @@ export function FeaturedProducts() {
 
   return (
     <PromotionBadgesProvider items={badgeItems}>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-6 lg:grid-cols-3 xl:grid-cols-4">
         {products.map((product: any) => (
           <ProductCard key={product._id} product={{
             id: product._id,

@@ -22,9 +22,9 @@ describe('OrderSummaryBreakdown — объяснимый total', () => {
     );
 
     expect(text).toContain('Rabatt mit Gutscheincode TEAM');
-    expect(text).toContain('-7.74 €');
+    expect(text).toContain('-7,74\u00a0€');
     expect(text).toContain('Gesamtsumme');
-    expect(text).toContain('22.16 €');
+    expect(text).toContain('22,16\u00a0€');
   });
 
   it('если total < subtotal+delivery → есть хотя бы одна discount-строка', () => {
@@ -70,8 +70,23 @@ describe('OrderSummaryBreakdown — объяснимый total', () => {
         showDelivery={false}
       />
     );
-    expect(withoutDelivery).not.toContain('Liefergebühr');
-    expect(withoutDelivery).toContain('15.00 €');
+    const withoutDeliveryMarkup = renderToStaticMarkup(
+      <OrderSummaryBreakdown
+        subtotal={20}
+        deliveryFee={3}
+        total={18}
+        couponCode="X"
+        couponDiscount={5}
+        loyaltyPointsDiscount={0}
+        promotionCalculation={null}
+        showDelivery={false}
+      />
+    );
+    expect(withoutDeliveryMarkup).not.toContain('delivery-fee-line');
+    expect(withoutDelivery).toContain('15,00\u00a0€');
+    // Итог без доставки не выдаёт себя за «Gesamtsumme».
+    expect(withoutDelivery).not.toContain('Gesamtsumme');
+    expect(withoutDelivery).toContain('zzgl. Liefergebühr');
 
     // Standard (showDelivery=true) zeigt die Zeile weiterhin.
     const withDelivery = renderText(
@@ -86,6 +101,7 @@ describe('OrderSummaryBreakdown — объяснимый total', () => {
       />
     );
     expect(withDelivery).toContain('Liefergebühr');
+    expect(withDelivery).toContain('Gesamtsumme');
   });
 
   it('Treuepunkte-скидка отображается', () => {
@@ -100,7 +116,7 @@ describe('OrderSummaryBreakdown — объяснимый total', () => {
       />
     );
     expect(text).toContain('Treuepunkte');
-    expect(text).toContain('-2.00 €');
+    expect(text).toContain('-2,00\u00a0€');
   });
 
   it('суммирует выбранный акционный BOGO-товар в товарной сумме', () => {
@@ -132,7 +148,7 @@ describe('OrderSummaryBreakdown — объяснимый total', () => {
     );
 
     // Был баг: в товарной сумме оставалось 7.90 €, хотя итог уже включал 14.95 €.
-    expect(text.match(/22\.85 €/g) || []).toHaveLength(2);
-    expect(text).not.toContain('7.90 €');
+    expect(text.match(/22,85\u00a0€/g) || []).toHaveLength(2);
+    expect(text).not.toContain('7,90\u00a0€');
   });
 });

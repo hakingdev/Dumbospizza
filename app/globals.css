@@ -2,6 +2,15 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer base {
+  /* Preflight красит плейсхолдеры в gray-400 (2,5:1 на белом) — подсказки
+     в полях должны читаться: gray-500 даёт 4,8:1. */
+  input::placeholder,
+  textarea::placeholder {
+    color: theme('colors.gray.500');
+  }
+}
+
 :root {
   --foreground-rgb: 0, 0, 0;
   --background-start-rgb: 255, 255, 255;
@@ -39,7 +48,7 @@ body {
   }
 
   .input {
-    @apply w-full border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all;
+    @apply w-full border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-primary-600 focus:border-transparent transition-all;
   }
   
   .badge {
