@@ -4,15 +4,18 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ChevronLeft, CreditCard, Truck, Check, Landmark, Loader2, Wallet } from 'lucide-react'
+import { ChevronLeft, CreditCard, Truck, Check, Landmark, Loader2, Minus, Percent, Plus, Trash2, Wallet } from 'lucide-react'
 import { useCart, loyaltyRedeemBaseAmount } from '../../../lib/contexts/CartContext'
 import { storageSet } from '../../../lib/safe-storage'
 import CouponInput from '../../../components/cart/CouponInput'
 import { getConflictingPromotions } from '../../../lib/promotions/coupon-conflict'
 import PromotionCartSummary from '../../../components/promotions/PromotionCartSummary'
 import BogoRewardLines from '../../../components/promotions/BogoRewardLines'
+import BogoHalfPricePickerModal from '../../../components/promotions/BogoHalfPricePickerModal'
 import GratisGiftPickerModal from '../../../components/promotions/GratisGiftPickerModal'
+import type { PromotionCalculationResult } from '../../../lib/promotions/types'
 import LoyaltyRedeem from '../../../components/checkout/LoyaltyRedeem'
+import MinOrderTopUpModal from '../../../components/checkout/MinOrderTopUpModal'
 import { getBogoPickerMerchandise, getVisibleBogoSecondItems } from '../../../lib/promotions/discount-total'
 import { useLanguage } from '../../../lib/contexts/LanguageContext'
 import { loadTranslation } from '../../../lib/i18n'
@@ -112,7 +115,7 @@ function PayPalMark() {
 
 export default function CheckoutPage() {
   const router = useRouter()
-  const { state, setDeliveryType: setCartDeliveryType, setDeliveryZone: setCartDeliveryZone, setDeliveryFee, setFreeDeliveryThreshold, setContactInfo, setDeliveryAddress, setPaymentMethod: setCartPaymentMethod, clearCart, applyCoupon, removeCoupon, setPromotionPromoCode, setLoyaltyPoints, setSelectedFreeGift, declineFreeGift } = useCart()
+  const { state, setDeliveryType: setCartDeliveryType, setDeliveryZone: setCartDeliveryZone, setDeliveryFee, setFreeDeliveryThreshold, setContactInfo, setDeliveryAddress, setPaymentMethod: setCartPaymentMethod, clearCart, applyCoupon, removeCoupon, setPromotionPromoCode, setLoyaltyPoints, setSelectedFreeGift, declineFreeGift, setSelectedBogoSecond, updateItem, removeItem } = useCart()
   const { language } = useLanguage()
   const [t, setT] = useState<any>(() => (k: string, fallback?: string) => fallback ?? k)
   const [step, setStep] = useState(1)
@@ -130,6 +133,23 @@ export default function CheckoutPage() {
   // уже не поправить — поэтому здесь тот же пикер, что и на /cart.
   const [showGiftModal, setShowGiftModal] = useState(false)
   const [giftSlot, setGiftSlot] = useState<Record<string, string>>({})
+  // Выбор награды BOGO (2+1) прямо в оформлении: глобальный авто-попап
+  // (PromotionOfferManager) на /checkout отключён, а добрать пиццу можно и
+  // отсюда (мини-корзина) — без своего пикера гость молча терял акцию:
+  // сообщение о ней есть, окна выбора нет (баг-репорт тестирования).
+  const [showBogoModal, setShowBogoModal] = useState(false)
+  const [bogoSlot, setBogoSlot] = useState<Record<string, string[]>>({})
+  // Не хватает до Mindestbestellwert зоны: гость добирает товар прямо здесь
+  // (MinOrderTopUpModal) или соглашается доплатить разницу (Mindermengenzuschlag).
+  const [acceptMinOrderSurcharge, setAcceptMinOrderSurcharge] = useState(false)
+  // Окно подбора: 'min_order' — добрать до минимума (прогресс + доплата),
+  // 'browse' — просто взять другой товар (гость убрал позицию в оформлении).
+  const [topUpMode, setTopUpMode] = useState<'min_order' | 'browse' | null>(null)
+  const bogoDismissed = useRef<Set<string>>(new Set())
+  const lastBogoCartSig = useRef('')
+  // Расчёт, по которому пользователь уже сделал выбор/отказ, — до прихода
+  // СВЕЖЕГО пересчёта попап не переоткрываем (иначе stale-оффер мигает).
+  const handledBogoCalc = useRef<PromotionCalculationResult | null>(null)
   // Онлайн-оплата: после создания draft-заказа шаг 2 показывает инлайн-панель
   // с РОВНО ОДНИМ виджетом метода, выбранного в списке, — SumUp с whitelist
   // группы (Karte/Apple/Google Pay; позже SEPA) или нативные PayPal-кнопки.
@@ -216,6 +236,69 @@ export default function CheckoutPage() {
     setGiftSlot({})
     setShowGiftModal(false)
   }
+
+  const bogoOffers = state.promotionCalculation?.bogoSecondOffers || []
+  // Изменился состав корзины (добрали пиццу из мини-корзины) — это новое
+  // Angebot-событие: отказ больше не действует, попап можно предложить снова.
+  const bogoCartSig = state.items
+    .map((i) => `${i.productId || i.id}:${i.size?.name || ''}:${i.quantity}`)
+    .join('|')
+  if (bogoCartSig !== lastBogoCartSig.current) {
+    lastBogoCartSig.current = bogoCartSig
+    bogoDismissed.current.clear()
+  }
+  // Сколько наград акции уже ОТРАЖЕНО в текущем расчёте: если пользователь
+  // выбрал награду, а пересчёт (debounce) ещё не пришёл, оффер устаревший —
+  // не переоткрываем окно, ждём свежий расчёт (иначе модалка мигает ~1 с).
+  const bogoReflectedCount = (promotionId: string) =>
+    (state.promotionCalculation?.bogoSecondItems || [])
+      .filter((it) => it.promotionId === promotionId)
+      .reduce((sum, it) => sum + (it.quantity || 1), 0)
+  const pendingBogoOffers = bogoOffers.filter((o) => {
+    if (bogoDismissed.current.has(o.promotionId)) return false
+    const chosen = state.selectedBogoSecond[o.promotionId]?.length || 0
+    return chosen <= bogoReflectedCount(o.promotionId)
+  })
+
+  const openBogoModal = () => {
+    // Фиксированная награда (1 позиция от ресторана) — предвыбираем, модалка = подтверждение.
+    setBogoSlot((s) => {
+      const next = { ...s }
+      for (const o of bogoOffers) {
+        if (o.options.length === 1 && !(next[o.promotionId]?.length)) {
+          next[o.promotionId] = [o.options[0].id || o.options[0].productId]
+        }
+      }
+      return next
+    })
+    setShowBogoModal(true)
+  }
+  const handleBogoConfirm = () => {
+    // применяем все выбранные награды из одного окна (по одной на слот)
+    for (const [promotionId, optionIds] of Object.entries(bogoSlot)) {
+      for (const optionId of optionIds) {
+        if (optionId) setSelectedBogoSecond(promotionId, optionId)
+      }
+    }
+    handledBogoCalc.current = state.promotionCalculation
+    setBogoSlot({})
+    setShowBogoModal(false)
+  }
+  const handleBogoDecline = () => {
+    bogoOffers.forEach((o) => bogoDismissed.current.add(o.promotionId))
+    handledBogoCalc.current = state.promotionCalculation
+    setBogoSlot({})
+    setShowBogoModal(false)
+  }
+
+  // Авто-показ окна награды, как на меню: незаполненный слот 2+1 — всплывает
+  // выбор. Не во время онлайн-оплаты (draft уже создан, суммы зафиксированы).
+  useEffect(() => {
+    if (showBogoModal || showGiftModal || onlinePay) return
+    if (state.promotionCalculation && state.promotionCalculation === handledBogoCalc.current) return
+    if (pendingBogoOffers.length > 0) openBogoModal()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showBogoModal, showGiftModal, onlinePay, pendingBogoOffers.length, state.promotionCalculation])
 
   const [desiredDeliveryTime, setDesiredDeliveryTime] = useState<string>('')
   // Проверка адреса доставки (зона определяется по адресу, не выбором из списка).
@@ -391,6 +474,102 @@ export default function CheckoutPage() {
     }
   }, [paymentMethod, visibleGroups])
 
+  // Префилл контактов (QA #15 «зачем вводить заново?»): сначала прошлый ввод
+  // из корзины (переживает перезагрузку), затем профиль залогиненного клиента
+  // (/api/customer/me) — имя/телефон/email и адрес по умолчанию. Заполняем
+  // ТОЛЬКО пустые поля, пользовательский ввод не перетираем; адрес берём
+  // целиком и лишь пока улица не начата (не смешиваем два адреса).
+  const prefilledRef = useRef(false)
+  useEffect(() => {
+    if (prefilledRef.current) return
+    prefilledRef.current = true
+
+    type ContactPatch = { name?: string; phone?: string; email?: string }
+    type AddressPatch = {
+      street?: string
+      houseNumber?: string
+      postalCode?: string
+      city?: string
+      floor?: string
+      notes?: string
+    }
+    const fillContact = (src: ContactPatch) => {
+      setContactDetails(prev => ({
+        ...prev,
+        name: prev.name.trim() ? prev.name : src.name || prev.name,
+        phone: prev.phone.trim() ? prev.phone : src.phone || prev.phone,
+        email: prev.email.trim() ? prev.email : src.email || prev.email,
+      }))
+    }
+    const fillAddress = (addr: AddressPatch | undefined) => {
+      // Недописанный адрес (только PLZ/Hausnummer) тоже возвращаем: гость ушёл
+      // со страницы посреди ввода и не должен набирать всё заново.
+      if (!addr?.street && !addr?.houseNumber && !addr?.postalCode) return
+      setContactDetails(prev => {
+        if (prev.street.trim() || prev.houseNumber.trim() || prev.postalCode.trim()) return prev
+        return {
+          ...prev,
+          street: addr.street || '',
+          houseNumber: addr.houseNumber || '',
+          postalCode: addr.postalCode || '',
+          city: addr.city || prev.city,
+          floor: addr.floor || '',
+          notes: prev.notes.trim() ? prev.notes : addr.notes || '',
+        }
+      })
+    }
+
+    // 1) прошлый ввод, сохранённый в корзине
+    fillContact({
+      name: state.contactInfo?.name,
+      phone: state.contactInfo?.phoneNumber,
+      email: state.contactInfo?.email,
+    })
+    fillAddress(state.deliveryAddress)
+
+    // 2) профиль залогиненного клиента — добивает оставшиеся пустыми поля
+    fetch('/api/customer/me')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!d?.success || !d.user) return
+        fillContact({
+          name: d.user.name,
+          phone: d.user.phoneNumber,
+          email: d.user.email || undefined,
+        })
+        const addresses = Array.isArray(d.user.addresses) ? d.user.addresses : []
+        fillAddress(addresses.find((a: any) => a?.isDefault) || addresses[0])
+      })
+      .catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Единый канал синхронизации контактов/адреса в корзину — работает и для
+  // ручного ввода, и для программного префилла. Заодно чинит старый баг:
+  // handleContactDetailChange писал ключ `phone`, а поле в contactInfo
+  // называется `phoneNumber` — телефон не доезжал до пересчёта акций.
+  useEffect(() => {
+    const { name, phone, email } = contactDetails
+    if (name || phone || email) setContactInfo({ name, phoneNumber: phone, email })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contactDetails.name, contactDetails.phone, contactDetails.email])
+  useEffect(() => {
+    if (deliveryType !== 'delivery') return
+    const { street, houseNumber, postalCode, city, floor, notes } = contactDetails
+    if (street || houseNumber || postalCode) {
+      setDeliveryAddress({ street, houseNumber, postalCode, city, floor, notes })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    deliveryType,
+    contactDetails.street,
+    contactDetails.houseNumber,
+    contactDetails.postalCode,
+    contactDetails.city,
+    contactDetails.floor,
+    contactDetails.notes,
+  ])
+
   const handleContactDetailChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value, type } = e.target
     const checked = type === 'checkbox' ? (e.target as HTMLInputElement).checked : undefined
@@ -409,14 +588,8 @@ export default function CheckoutPage() {
       })
     }
 
-    // Update cart context
-    if (name === 'name' || name === 'phone' || name === 'email') {
-      setContactInfo({ [name]: value })
-    }
-    
-    if (deliveryType === 'delivery' && (name === 'street' || name === 'houseNumber' || name === 'postalCode' || name === 'city' || name === 'floor' || name === 'notes')) {
-      setDeliveryAddress({ [name]: value })
-    }
+    // Синхронизация контактов/адреса в корзину живёт в эффектах выше —
+    // единый канал и для ручного ввода, и для префилла.
 
     // Изменение адреса сбрасывает предыдущую проверку зоны → Weiter снова блокируется.
     if (name === 'street' || name === 'houseNumber' || name === 'postalCode' || name === 'city') {
@@ -561,7 +734,40 @@ export default function CheckoutPage() {
     canDeliver: zoneCheck?.canDeliver ?? false,
     subtotal: merchandiseSubtotal,
     zoneMinOrderAmount: zoneCheck?.canDeliver ? (zoneCheck.zone?.minOrderAmount ?? null) : null,
+    acceptMinOrderSurcharge,
   })
+  // Сумма доплаты живая: добрал товар — доплата уменьшилась или исчезла.
+  // Итоговую сумму пересчитывает сервер по зоне (здесь — только показ).
+  const minOrderSurcharge =
+    deliveryGate.reason === 'min_order_surcharge' ? (deliveryGate.shortfall ?? 0) : 0
+  const minOrderShortfall =
+    deliveryGate.reason === 'below_min_order' || deliveryGate.reason === 'min_order_surcharge'
+      ? (deliveryGate.shortfall ?? 0)
+      : 0
+  const displayTotal = state.total + minOrderSurcharge
+
+  // Согласие давалось на конкретную зону и сумму: другая зона — спросить заново.
+  const surchargeZoneId = zoneCheck?.zone?.id
+  useEffect(() => {
+    setAcceptMinOrderSurcharge(false)
+  }, [surchargeZoneId])
+
+  const openTopUp = () => setTopUpMode(minOrderShortfall > 0 ? 'min_order' : 'browse')
+
+  // Правка состава прямо в оформлении (передумал — убрал, взял другое).
+  // Пока открыта онлайн-оплата, черновик заказа уже создан с суммой — состав
+  // замораживаем, иначе оплатится старая корзина.
+  const itemsLocked = !!onlinePay || isSubmitting
+  const changeItemQuantity = (itemId: string, quantity: number) => {
+    if (quantity < 1) removeItem(itemId)
+    else updateItem(itemId, { quantity })
+  }
+
+  const chooseMinOrderSurcharge = (accept: boolean) => {
+    setAcceptMinOrderSurcharge(accept)
+    setTopUpMode(null)
+    if (accept) setErrors(prev => { const n = { ...prev }; delete n.zone; return n })
+  }
 
   const handleNextStep = () => {
     // Пауза приёма (весь приём или цех из корзины) — дальше не пускаем ни с
@@ -617,6 +823,19 @@ export default function CheckoutPage() {
   const handlePreviousStep = () => {
     setStep(prev => prev - 1)
   }
+
+  // Новый шаг (и панель онлайн-оплаты) показываем с начала: «Weiter» стоит
+  // внизу длинной формы, и без прокрутки шаг оплаты открывался с низа
+  // страницы — гость видел AGB-галочку, а не выбор способа оплаты.
+  const onlinePayOpen = !!onlinePay
+  const firstStepRenderRef = useRef(true)
+  useEffect(() => {
+    if (firstStepRenderRef.current) {
+      firstStepRenderRef.current = false
+      return
+    }
+    window.scrollTo({ top: 0, behavior: 'auto' })
+  }, [step, onlinePayOpen])
   
   const handleSubmitOrder = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -632,6 +851,16 @@ export default function CheckoutPage() {
 
     if (orderBlocked) {
       setErrors({ submit: orderBlockMessage || t('checkout.errors.closed', 'Derzeit nehmen wir keine Bestellungen an.') })
+      return
+    }
+
+    // Состав можно править и на шаге оплаты — минимум зоны перепроверяем.
+    if (deliveryType === 'delivery' && !deliveryGate.allowed) {
+      setErrors({
+        submit: deliveryGate.reason === 'below_min_order'
+          ? t('checkout.errors.below_min_order', 'Der Mindestbestellwert ist nicht erreicht. Bitte fügen Sie Artikel hinzu oder zahlen Sie die Differenz.')
+          : t('checkout.zone_check_required', 'Bitte geben Sie Ihre vollständige Lieferadresse ein – sie wird automatisch geprüft.'),
+      })
       return
     }
 
@@ -698,7 +927,9 @@ export default function CheckoutPage() {
         // сервер (он же — источник правды по тарифу, см. deliveryZoneId).
         deliveryFee: state.zoneDeliveryFee,
         deliveryZoneId: state.deliveryZone || undefined,
-        total: state.total,
+        // Согласие на Mindermengenzuschlag; сумму сервер считает сам по зоне.
+        acceptMinOrderSurcharge: minOrderSurcharge > 0,
+        total: displayTotal,
         loyaltyPointsToRedeem: state.loyaltyPointsToRedeem || 0,
         couponCode: state.couponCode,
         discount: state.couponDiscount > 0 ? {
@@ -901,6 +1132,64 @@ export default function CheckoutPage() {
   }
 
   const totalItems = state.items.reduce((sum, item) => sum + item.quantity, 0) + bogoItemCount
+
+  // Блок «не хватает до минимума»: на шаге адреса — под проверкой зоны, на
+  // шаге оплаты — сверху (в сводке гость может убрать товар и снова уйти ниже
+  // минимума, а заказ ниже минимума отправлять нельзя).
+  const renderMinOrderBox = (spacing: 'mt-3' | 'mb-4') => {
+    if (minOrderShortfall <= 0) return null
+    return (
+      <div
+        className={`${spacing} rounded-lg border p-4 ${
+          minOrderSurcharge > 0 ? 'border-gray-200 bg-gray-50' : 'border-red-200 bg-red-50'
+        }`}
+      >
+        <p className={`text-sm ${minOrderSurcharge > 0 ? 'text-gray-700' : 'text-red-700'}`}>
+          {t('checkout.min_order_zone', 'Mindestbestellwert für dieses Gebiet')}:{' '}
+          <NoTranslate className="font-semibold">{(zoneCheck?.zone?.minOrderAmount ?? 0).toFixed(2)} €</NoTranslate>.{' '}
+          {t('checkout.min_order_missing', 'Es fehlen')}{' '}
+          <NoTranslate className="font-semibold">{minOrderShortfall.toFixed(2)} €</NoTranslate>.
+        </p>
+        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+          <button
+            type="button"
+            onClick={openTopUp}
+            className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-primary-700"
+          >
+            <Plus className="h-4 w-4 shrink-0" />
+            {t('checkout.topup_open', 'Artikel hinzufügen')}
+          </button>
+          <label
+            className={`flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-semibold transition-colors ${
+              minOrderSurcharge > 0
+                ? 'border-primary-600 bg-primary-50 text-primary-700'
+                : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            <input
+              type="checkbox"
+              className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              checked={acceptMinOrderSurcharge}
+              onChange={(e) => chooseMinOrderSurcharge(e.target.checked)}
+            />
+            <span>
+              {t('checkout.surcharge_pay', 'Differenz zahlen')}{' '}
+              <NoTranslate>(+{minOrderShortfall.toFixed(2)} €)</NoTranslate>
+            </span>
+          </label>
+        </div>
+        {minOrderSurcharge > 0 && (
+          <p className="mt-2 text-xs text-gray-600">
+            {t(
+              'checkout.surcharge_hint',
+              'Der fehlende Betrag wird als Mindermengenzuschlag berechnet. Fügen Sie Artikel hinzu, sinkt der Zuschlag automatisch.'
+            )}
+          </p>
+        )}
+      </div>
+    )
+  }
+
   
   return (
     <div className="container mx-auto px-4 py-8">
@@ -1210,13 +1499,7 @@ export default function CheckoutPage() {
                       <p className="mt-2 text-sm text-red-600">{zoneCheck.message}</p>
                     )}
 
-                    {deliveryGate.reason === 'below_min_order' && (
-                      <p className="mt-2 text-sm text-red-600">
-                        Mindestbestellwert für diese Zone: {(zoneCheck?.zone?.minOrderAmount ?? 0).toFixed(2)} €.
-                        <br />
-                        Es fehlen noch {(deliveryGate.shortfall ?? 0).toFixed(2)} €.
-                      </p>
-                    )}
+                    {renderMinOrderBox('mt-3')}
                   </div>
                 </>
               )}
@@ -1288,6 +1571,8 @@ export default function CheckoutPage() {
           {step === 2 && !onlinePay && (
             <div className="bg-white rounded-lg shadow-md p-6">
               <h2 className="text-xl font-semibold mb-4">{t('checkout.payment_method', 'Zahlungsmethode')}</h2>
+
+              {deliveryType === 'delivery' && renderMinOrderBox('mb-4')}
               
               {errors.paymentMethod && (
                 <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
@@ -1486,7 +1771,7 @@ export default function CheckoutPage() {
                   type="button" 
                   className="btn-primary disabled:opacity-50"
                   onClick={handleSubmitOrder}
-                  disabled={isSubmitting || orderBlocked}
+                  disabled={isSubmitting || orderBlocked || (deliveryType === 'delivery' && !deliveryGate.allowed)}
                 >
                   {isSubmitting ? (
                     <>
@@ -1496,7 +1781,7 @@ export default function CheckoutPage() {
                   ) : isOnlineCheckoutMethod(paymentMethod) ? (
                     <>
                       {t('checkout.pay_now', 'Jetzt bezahlen')}
-                      <NoTranslate>{` · ${state.total.toFixed(2)} €`}</NoTranslate>
+                      <NoTranslate>{` · ${displayTotal.toFixed(2)} €`}</NoTranslate>
                     </>
                   ) : (
                     t('checkout.place_order', 'Bestellung abschicken')
@@ -1515,94 +1800,143 @@ export default function CheckoutPage() {
             
             {/* Cart Items List */}
             {state.items.length > 0 ? (
-              <div className="border-b pb-4 mb-4 max-h-64 overflow-y-auto space-y-3">
-                {state.items.map((item, index) => {
-                  const hasExtras = item.extras && (
-                    (item.extras.toppings && item.extras.toppings.length > 0) ||
-                    (item.extras.sauces && item.extras.sauces.length > 0) ||
-                    (item.extras.sides && item.extras.sides.length > 0)
-                  );
+              <div className="border-b pb-4 mb-4">
+                <div className="max-h-64 overflow-y-auto space-y-3">
+                  {state.items.map((item, index) => {
+                    const hasExtras = item.extras && (
+                      (item.extras.toppings && item.extras.toppings.length > 0) ||
+                      (item.extras.sauces && item.extras.sauces.length > 0) ||
+                      (item.extras.sides && item.extras.sides.length > 0)
+                    );
                   
-                  return (
-                    <div key={`${item.id}-${item.size?.id || 'no-size'}-${index}`} className="bg-gray-50 rounded-lg p-3">
-                      <div className="flex justify-between items-start">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <h4 className="font-semibold text-gray-900"><NoTranslate>{item.name}</NoTranslate></h4>
-                            <span className="text-xs text-gray-500 bg-white px-2 py-0.5 rounded">
-                              ×{item.quantity}
-                            </span>
-                          </div>
+                    return (
+                      <div key={`${item.id}-${item.size?.id || 'no-size'}-${index}`} className="bg-gray-50 rounded-lg p-3">
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1">
+                            <h4 className="font-semibold text-gray-900 mb-1"><NoTranslate>{item.name}</NoTranslate></h4>
                           
-                          {item.size && item.size.name && (
-                            <p className="text-sm text-gray-700 mb-1">
-                              <span className="font-medium">{t('product.size', 'Größe')}:</span> <NoTranslate>{item.size.name}</NoTranslate>
-                            </p>
-                          )}
+                            {item.size && item.size.name && (
+                              <p className="text-sm text-gray-700 mb-1">
+                                <span className="font-medium">{t('product.size', 'Größe')}:</span> <NoTranslate>{item.size.name}</NoTranslate>
+                              </p>
+                            )}
 
-                          {item.options && item.options.length > 0 && (
-                            <p className="text-sm text-gray-700 mb-1">
-                              <NoTranslate>{item.options.map(o => o.name).join(', ')}</NoTranslate>
-                            </p>
-                          )}
+                            {item.options && item.options.length > 0 && (
+                              <p className="text-sm text-gray-700 mb-1">
+                                <NoTranslate>{item.options.map(o => o.name).join(', ')}</NoTranslate>
+                              </p>
+                            )}
 
-                          {hasExtras && (
-                            <div className="text-xs text-gray-600 mt-2 space-y-1">
-                              {item.extras?.toppings && item.extras.toppings.length > 0 && (
-                                <div>
-                                  <span className="font-medium">{t('product.toppings', 'Beläge')}:</span>{' '}
-                                  {item.extras.toppings.map((t, i) => (
-                                    <span key={i}>
-                                      <NoTranslate>{t.name}</NoTranslate>
-                                      {i < item.extras!.toppings!.length - 1 && ', '}
-                                    </span>
-                                  ))}
-                                </div>
-                              )}
-                              {item.extras?.sauces && item.extras.sauces.length > 0 && (
-                                <div>
-                                  <span className="font-medium">{t('product.sauces', 'Saucen')}:</span>{' '}
-                                  {item.extras.sauces.map((s, i) => (
-                                    <span key={i}>
-                                      <NoTranslate>{s.name}</NoTranslate>
-                                      {i < item.extras!.sauces!.length - 1 && ', '}
-                                    </span>
-                                  ))}
-                                </div>
-                              )}
-                              {item.extras?.sides && item.extras.sides.length > 0 && (
-                                <div>
-                                  <span className="font-medium">{t('product.sides', 'Beilagen')}:</span>{' '}
-                                  {item.extras.sides.map((s, i) => (
-                                    <span key={i}>
-                                      <NoTranslate>{s.name}</NoTranslate>
-                                      {i < item.extras!.sides!.length - 1 && ', '}
-                                    </span>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
+                            {hasExtras && (
+                              <div className="text-xs text-gray-600 mt-2 space-y-1">
+                                {item.extras?.toppings && item.extras.toppings.length > 0 && (
+                                  <div>
+                                    <span className="font-medium">{t('product.toppings', 'Beläge')}:</span>{' '}
+                                    {item.extras.toppings.map((t, i) => (
+                                      <span key={i}>
+                                        <NoTranslate>{t.name}</NoTranslate>
+                                        {i < item.extras!.toppings!.length - 1 && ', '}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                                {item.extras?.sauces && item.extras.sauces.length > 0 && (
+                                  <div>
+                                    <span className="font-medium">{t('product.sauces', 'Saucen')}:</span>{' '}
+                                    {item.extras.sauces.map((s, i) => (
+                                      <span key={i}>
+                                        <NoTranslate>{s.name}</NoTranslate>
+                                        {i < item.extras!.sauces!.length - 1 && ', '}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                                {item.extras?.sides && item.extras.sides.length > 0 && (
+                                  <div>
+                                    <span className="font-medium">{t('product.sides', 'Beilagen')}:</span>{' '}
+                                    {item.extras.sides.map((s, i) => (
+                                      <span key={i}>
+                                        <NoTranslate>{s.name}</NoTranslate>
+                                        {i < item.extras!.sides!.length - 1 && ', '}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         
-                        <div className="ml-4 text-right">
-                          <p className="font-semibold text-gray-900">
-                            <NoTranslate>{(item.price * item.quantity).toFixed(2)} €</NoTranslate>
-                          </p>
-                          {item.quantity > 1 && (
-                            <p className="text-xs text-gray-500">
-                              <NoTranslate>{item.price.toFixed(2)} € × {item.quantity}</NoTranslate>
+                          <div className="ml-4 text-right">
+                            <p className="font-semibold text-gray-900">
+                              <NoTranslate>{(item.price * item.quantity).toFixed(2)} €</NoTranslate>
                             </p>
-                          )}
+                            {item.quantity > 1 && (
+                              <p className="text-xs text-gray-500">
+                                <NoTranslate>{item.price.toFixed(2)} € × {item.quantity}</NoTranslate>
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="mt-2 flex items-center justify-between">
+                          <div className="flex items-center rounded-full border border-gray-200 bg-white">
+                            <button
+                              type="button"
+                              onClick={() => changeItemQuantity(item.id, item.quantity - 1)}
+                              disabled={itemsLocked}
+                              className="flex h-8 w-8 items-center justify-center rounded-full text-gray-600 hover:text-primary-700 disabled:opacity-40"
+                              aria-label={t('cart.decrease', 'Menge verringern')}
+                            >
+                              <Minus className="h-4 w-4" />
+                            </button>
+                            <span className="w-6 text-center text-sm font-medium">{item.quantity}</span>
+                            <button
+                              type="button"
+                              onClick={() => changeItemQuantity(item.id, item.quantity + 1)}
+                              disabled={itemsLocked}
+                              className="flex h-8 w-8 items-center justify-center rounded-full text-gray-600 hover:text-primary-700 disabled:opacity-40"
+                              aria-label={t('cart.increase', 'Menge erhöhen')}
+                            >
+                              <Plus className="h-4 w-4" />
+                            </button>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => removeItem(item.id)}
+                            disabled={itemsLocked}
+                            className="flex items-center gap-1 rounded px-1 py-1 text-xs text-gray-500 hover:text-red-600 disabled:opacity-40"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            {t('cart.remove', 'Entfernen')}
+                          </button>
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={openTopUp}
+                  disabled={itemsLocked}
+                  className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-gray-300 py-2 text-sm font-medium text-primary-700 transition-colors hover:border-primary-400 hover:bg-primary-50 disabled:opacity-40"
+                >
+                  <Plus className="h-4 w-4" />
+                  {t('checkout.add_more', 'Weitere Artikel hinzufügen')}
+                </button>
               </div>
             ) : (
               <div className="border-b pb-4 mb-4 text-center py-8 text-gray-500">
                 <p>{t('cart.empty', 'Ihr Warenkorb ist leer')}</p>
+                <button
+                  type="button"
+                  onClick={openTopUp}
+                  disabled={itemsLocked}
+                  className="mt-3 inline-flex items-center gap-2 text-sm font-medium text-primary-700 hover:underline disabled:opacity-40"
+                >
+                  <Plus className="h-4 w-4" />
+                  {t('checkout.add_more', 'Weitere Artikel hinzufügen')}
+                </button>
               </div>
             )}
 
@@ -1610,6 +1944,22 @@ export default function CheckoutPage() {
             <div className="border-b pb-4 mb-4 space-y-2 empty:hidden">
               <BogoRewardLines calculation={state.promotionCalculation} selectedFreeGifts={state.selectedFreeGifts} variant="compact" />
             </div>
+
+            {/* Незаполненный слот 2+1: кнопка выбора остаётся и после отказа в попапе */}
+            {bogoOffers.length > 0 && (
+              <button
+                type="button"
+                onClick={openBogoModal}
+                className="mb-4 flex min-h-[56px] w-full items-center gap-3 rounded-lg border-2 border-orange-400 bg-orange-50 p-3 text-left leading-tight text-orange-800 transition-colors hover:bg-orange-100"
+              >
+                <Percent className="h-5 w-5 shrink-0" />
+                <span className="text-sm font-medium">
+                  {bogoOffers[0]?.bogoMode === 'half_price'
+                    ? t('cart.bogo_half_pick', '2+1 Aktion: 3. Artikel zum halben Preis — jetzt sichern')
+                    : t('cart.bogo_free_pick', '2+1 Aktion: 3. Artikel gratis — jetzt sichern')}
+                </span>
+              </button>
+            )}
 
             {/* Скидки/подарки */}
             <PromotionCartSummary
@@ -1662,7 +2012,14 @@ export default function CheckoutPage() {
                 <span>{t('checkout.delivery', 'Lieferung')}</span>
                 <span>{state.deliveryFee === 0 ? t('cart.free_delivery', 'Kostenlos') : <NoTranslate>{state.deliveryFee.toFixed(2)} €</NoTranslate>}</span>
               </div>
-              
+
+              {minOrderSurcharge > 0 && (
+                <div className="flex justify-between mb-2">
+                  <span>{t('checkout.surcharge_line', 'Mindermengenzuschlag')}</span>
+                  <NoTranslate>{minOrderSurcharge.toFixed(2)} €</NoTranslate>
+                </div>
+              )}
+
               {state.couponDiscount > 0 && (
                 <div className="flex justify-between text-green-600 text-sm mb-2">
                   <span>{t('checkout.discount_coupon', 'Rabatt mit Gutscheincode')} <NoTranslate>{state.couponCode}</NoTranslate></span>
@@ -1680,11 +2037,33 @@ export default function CheckoutPage() {
             
             <div className="flex justify-between font-bold">
               <span>{t('cart.total', 'Gesamt')}</span>
-              <NoTranslate>{state.total.toFixed(2)} €</NoTranslate>
+              <NoTranslate>{displayTotal.toFixed(2)} €</NoTranslate>
             </div>
           </div>
         </div>
       </div>
+
+      {showBogoModal && bogoOffers.length > 0 && (
+        <BogoHalfPricePickerModal
+          offers={bogoOffers}
+          selections={bogoSlot}
+          onChange={(promotionId, optionIds) => setBogoSlot((s) => ({ ...s, [promotionId]: optionIds }))}
+          onConfirm={handleBogoConfirm}
+          onClose={handleBogoDecline}
+          t={t}
+        />
+      )}
+
+      {topUpMode && (
+        <MinOrderTopUpModal
+          shortfall={minOrderShortfall}
+          minOrderAmount={topUpMode === 'min_order' ? (zoneCheck?.zone?.minOrderAmount ?? 0) : undefined}
+          onPaySurcharge={topUpMode === 'min_order' ? () => chooseMinOrderSurcharge(true) : undefined}
+          cartTotal={merchandiseSubtotal}
+          onClose={() => setTopUpMode(null)}
+          t={t}
+        />
+      )}
 
       {showGiftModal && giftOffers.length > 0 && (
         <GratisGiftPickerModal

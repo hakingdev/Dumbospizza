@@ -64,4 +64,55 @@ describe('aggregateFavorites', () => {
   it('пустой ввод → пустой результат', () => {
     expect(aggregateFavorites([])).toEqual([]);
   });
+
+  // QA #12: каталог содержит один товар под несколькими id (квадратная/круглая
+  // «Bayern Pizza», дубли из-за подкатегорий) — в «Избранном» это давало две
+  // неотличимые карточки. Агрегируем по нормализованному имени.
+  it('один товар под разными id (одно имя) → ОДНА запись со всеми кандидатами id', () => {
+    const orders = [
+      { items: [{ product: 'sq1', name: 'Bayern Pizza', quantity: 1 }] },
+      { items: [{ product: 'rd1', name: 'Bayern Pizza', quantity: 2 }] },
+      { items: [{ product: 'sq1', name: 'Bayern Pizza', quantity: 1 }] },
+    ];
+    const fav = aggregateFavorites(orders);
+    expect(fav).toHaveLength(1);
+    expect(fav[0]).toMatchObject({
+      name: 'Bayern Pizza',
+      orderCount: 3,
+      totalQuantity: 4,
+      productId: 'sq1', // самый частый id
+    });
+    expect(fav[0].productIds).toEqual(['sq1', 'rd1']);
+  });
+
+  it('заказ с обоими вариантами (квадратная + круглая) считается ОДНИМ заказом', () => {
+    const orders = [
+      {
+        items: [
+          { product: 'sq1', name: 'Bayern Pizza', quantity: 1 },
+          { product: 'rd1', name: 'Bayern Pizza', quantity: 1 },
+        ],
+      },
+    ];
+    const fav = aggregateFavorites(orders);
+    expect(fav).toHaveLength(1);
+    expect(fav[0].orderCount).toBe(1);
+    expect(fav[0].totalQuantity).toBe(2);
+  });
+
+  it('имя сравнивается без регистра и лишних пробелов', () => {
+    const orders = [
+      { items: [{ product: 'a', name: 'Bayern  Pizza', quantity: 1 }] },
+      { items: [{ product: 'b', name: 'bayern pizza ', quantity: 1 }] },
+    ];
+    expect(aggregateFavorites(orders)).toHaveLength(1);
+  });
+
+  it('разные имена НЕ мержатся', () => {
+    const orders = [
+      { items: [{ product: 'a', name: 'Bayern Pizza', quantity: 1 }] },
+      { items: [{ product: 'b', name: 'Grandma Pizza', quantity: 1 }] },
+    ];
+    expect(aggregateFavorites(orders)).toHaveLength(2);
+  });
 });

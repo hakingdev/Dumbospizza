@@ -10,6 +10,7 @@ import { useLanguage } from '../../lib/contexts/LanguageContext';
 import { loadTranslation } from '../../lib/i18n';
 import OrderSummaryBreakdown from './OrderSummaryBreakdown';
 import BogoRewardLines from '../promotions/BogoRewardLines';
+import { SafeImage } from '../SafeImage';
 import { NoTranslate } from '../NoTranslate';
 
 interface CartModalProps {
@@ -125,9 +126,17 @@ export function CartModal({ isOpen, onClose }: CartModalProps) {
                     </p>
                   )}
                   <div className="flex items-start space-x-4">
-                    {/* Image placeholder */}
-                    <div className="w-20 h-20 bg-gray-200 rounded-lg flex-shrink-0 flex items-center justify-center">
-                      <span className="text-2xl">🍕</span>
+                    {/* Produktbild (Fallback: Emoji-Platzhalter) */}
+                    <div className="w-20 h-20 bg-gray-200 rounded-lg flex-shrink-0 flex items-center justify-center overflow-hidden">
+                      {item.image ? (
+                        <SafeImage
+                          src={item.image}
+                          alt={item.name}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <span className="text-2xl">🍕</span>
+                      )}
                     </div>
 
                     {/* Details */}

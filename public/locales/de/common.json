@@ -122,7 +122,10 @@
     "loyalty_discount": "Treuepunkte",
     "promo_total": "Rabatt Aktionen",
     "no_registration_required": "Keine Registrierung erforderlich",
-    "terms_agreement": "Mit der Bestellung stimmen Sie zu"
+    "terms_agreement": "Mit der Bestellung stimmen Sie zu",
+    "repeat_skipped": "Nicht mehr im Sortiment und daher übersprungen:",
+    "decrease": "Menge verringern",
+    "increase": "Menge erhöhen"
   },
   "checkout": {
     "title": "Kasse",
@@ -204,8 +207,26 @@
       "server_response": "Ungültige Serverantwort",
       "submit_generic": "Beim Absenden der Bestellung ist ein Fehler aufgetreten. Bitte erneut versuchen.",
       "terms_required": "Bitte bestätigen Sie die AGB und die Widerrufsbelehrung",
-      "closed": "Bestellungen werden derzeit nicht angenommen."
-    }
+      "closed": "Bestellungen werden derzeit nicht angenommen.",
+      "below_min_order": "Der Mindestbestellwert ist nicht erreicht. Bitte fügen Sie Artikel hinzu oder zahlen Sie die Differenz."
+    },
+    "bogo_remaining_multi": "{{chosen}} von {{n}} Artikeln ausgewählt",
+    "topup_open": "Artikel hinzufügen",
+    "topup_title": "Artikel hinzufügen",
+    "topup_missing": "Bis zum Mindestbestellwert fehlen noch",
+    "topup_reached_title": "Mindestbestellwert erreicht",
+    "topup_reached_text": "Sie können jetzt mit der Bestellung fortfahren.",
+    "topup_suggested": "Passend",
+    "topup_covers": "reicht aus",
+    "topup_empty": "Keine passenden Artikel gefunden.",
+    "topup_done": "Weiter zur Bestellung",
+    "topup_from": "ab",
+    "surcharge_pay": "Differenz zahlen",
+    "surcharge_line": "Mindermengenzuschlag",
+    "surcharge_hint": "Der fehlende Betrag wird als Mindermengenzuschlag berechnet. Fügen Sie Artikel hinzu, sinkt der Zuschlag automatisch.",
+    "add_more": "Weitere Artikel hinzufügen",
+    "topup_in_cart": "Im Warenkorb",
+    "topup_browse_done": "Fertig"
   },
   "confirmation": {
     "thank_you": "Vielen Dank für Ihre Bestellung!",
@@ -273,7 +294,8 @@
       "login_failed": "Beim Login ist ein Fehler aufgetreten",
       "name_required": "Name darf nicht leer sein",
       "update_failed": "Profil konnte nicht aktualisiert werden"
-    }
+    },
+    "repeat_all_unavailable": "Diese Artikel sind leider nicht mehr verfügbar."
   },
   "track": {
     "title": "Bestellung verfolgen",
@@ -507,7 +529,8 @@
     "back_home": "Zur Startseite",
     "back": "Zurück",
     "next": "Weiter",
-    "not_specified": "Nicht angegeben"
+    "not_specified": "Nicht angegeben",
+    "close": "Schließen"
   },
   "image_upload": {
     "label": "Bild",

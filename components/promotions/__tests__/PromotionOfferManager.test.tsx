@@ -233,3 +233,92 @@ describe('PromotionOfferManager — Gratis-Artikel popup (min order)', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 });
+
+describe('PromotionOfferManager — все награды выбираются в ОДНОМ окне (QA #6)', () => {
+  it('remaining=2: два бесплатных ролла выбираются в одном окне, окно не переоткрывается', async () => {
+    const user = userEvent.setup();
+    // 4 подходящих ролла = 2 незаполненных слота награды.
+    const offer = { ...makeBogoOffer(), bogoMode: 'free' as const, remaining: 2 };
+    setCart(makeCalc([offer]), [
+      { id: 'r1', productId: 'r1', name: 'Crunch Roll', size: { name: '' }, quantity: 4, price: 10 },
+    ]);
+    render(<PromotionOfferManager />);
+    await screen.findByRole('dialog');
+
+    // Мультирежим: радио нет, у каждой опции кнопка «hinzufügen» (+).
+    expect(screen.queryAllByRole('radio')).toHaveLength(0);
+    await user.click(screen.getByRole('button', { name: 'Bayern Pizza hinzufügen' }));
+    await user.click(screen.getByRole('button', { name: 'Salami Pizza hinzufügen' }));
+    // Оба слота заняты — добавить третью награду нельзя.
+    expect(screen.getByRole('button', { name: 'Bayern Pizza hinzufügen' })).toBeDisabled();
+
+    await user.click(screen.getByRole('button', { name: 'Auswahl übernehmen' }));
+    // ОБЕ награды применены из одного окна — раньше окно открывалось на каждый слот.
+    expect(h.setSelectedBogoSecond).toHaveBeenCalledTimes(2);
+    expect(h.setSelectedBogoSecond).toHaveBeenNthCalledWith(1, 'promo1', 'p1');
+    expect(h.setSelectedBogoSecond).toHaveBeenNthCalledWith(2, 'promo1', 'p2');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('remaining=2: одну и ту же награду можно взять дважды (минус убирает одну)', async () => {
+    const user = userEvent.setup();
+    const offer = { ...makeBogoOffer(), bogoMode: 'free' as const, remaining: 2 };
+    setCart(makeCalc([offer]), [
+      { id: 'r1', productId: 'r1', name: 'Crunch Roll', size: { name: '' }, quantity: 4, price: 10 },
+    ]);
+    render(<PromotionOfferManager />);
+    await screen.findByRole('dialog');
+
+    await user.click(screen.getByRole('button', { name: 'Bayern Pizza hinzufügen' }));
+    await user.click(screen.getByRole('button', { name: 'Bayern Pizza hinzufügen' }));
+    // 2× одна опция; минус снимает одну.
+    await user.click(screen.getByRole('button', { name: 'Bayern Pizza entfernen' }));
+    await user.click(screen.getByRole('button', { name: 'Auswahl übernehmen' }));
+    expect(h.setSelectedBogoSecond).toHaveBeenCalledTimes(1);
+    expect(h.setSelectedBogoSecond).toHaveBeenCalledWith('promo1', 'p1');
+  });
+});
+
+describe('PromotionOfferManager — исчезнувший оффер не замораживает попапы (QA #5)', () => {
+  it('gift-оффер исчез при открытом окне → окно закрывается, а последующий BOGO-оффер ОТКРЫВАЕТСЯ', async () => {
+    // 1. Оффер подарка → окно открылось (пользователь его не трогает).
+    setCart(makeCalc([], [makeGiftOffer()]));
+    const { rerender } = render(<PromotionOfferManager />);
+    await screen.findByRole('dialog');
+
+    // 2. Свежий пересчёт БЕЗ оффера (подарок разрешился/акция ушла) —
+    //    окно должно закрыться, а open — сброситься (раньше застревал навсегда).
+    setCart(makeCalc([], []));
+    rerender(<PromotionOfferManager />);
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+
+    // 3. Добавили 2 пиццы → пересчёт с BOGO-оффером. До фикса попап НЕ открывался
+    //    (open='gift' блокировал эффект), и окно 2+1 появлялось только после F5.
+    setCart(makeCalc([makeBogoOffer()]), [
+      { id: 'p1', productId: 'p1', name: 'Bayern', size: { name: '' }, quantity: 2, price: 10 },
+    ]);
+    rerender(<PromotionOfferManager />);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeInTheDocument());
+    expect(screen.getByText('Bayern Pizza')).toBeInTheDocument();
+  });
+
+  it('bogo-оффер исчез при открытом окне → окно закрывается и не блокирует будущие офферы', async () => {
+    setCart(makeCalc([makeBogoOffer()]));
+    const { rerender } = render(<PromotionOfferManager />);
+    await screen.findByRole('dialog');
+
+    // Пересчёт без оффера (пицца удалена из корзины в мини-корзине).
+    setCart(makeCalc([]), [
+      { id: 'p1', productId: 'p1', name: 'Bayern', size: { name: '' }, quantity: 1, price: 10 },
+    ]);
+    rerender(<PromotionOfferManager />);
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+
+    // Пицца снова добавлена → оффер вернулся → попап открывается.
+    setCart(makeCalc([makeBogoOffer()]), [
+      { id: 'p1', productId: 'p1', name: 'Bayern', size: { name: '' }, quantity: 2, price: 10 },
+    ]);
+    rerender(<PromotionOfferManager />);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeInTheDocument());
+  });
+});

@@ -22,6 +22,10 @@ import { validateBogoSecondSelection } from '../../../lib/promotions/bogo';
 import { getAppliedPromotionDiscount, getVisibleBogoSecondItems } from '../../../lib/promotions/discount-total';
 import { finalizeOrderPlacement } from '../../../lib/orders/finalize';
 import {
+  buildMinOrderSurchargeItem,
+  computeMinOrderSurcharge,
+} from '../../../lib/orders/min-order-surcharge';
+import {
   initialOrderPlacementState,
   visibleOrderStatusFilter,
   sweepStaleDraftsThrottled,
@@ -50,17 +54,23 @@ import { hasConfiguredRegularSizes } from '../../../lib/product-pricing';
 /**
  * Тариф доставки заказа. Источник правды — зона в БД (клиент прислал её id),
  * клиентская сумма — только запасной вариант для мобильного приложения и
- * повторов заказа, где id зоны нет.
+ * повторов заказа, где id зоны нет. Минимум зоны — только из БД (для
+ * Mindermengenzuschlag): без зоны доплату не начисляем.
  */
-async function resolveZoneDeliveryFee(
+async function resolveZoneTariff(
   zoneId: unknown,
   clientFee: unknown
-): Promise<number> {
-  const fallback = Number(clientFee) || 0;
+): Promise<{ deliveryFee: number; minOrderAmount: number }> {
+  const fallback = { deliveryFee: Number(clientFee) || 0, minOrderAmount: 0 };
   if (typeof zoneId !== 'string' || !zoneId.trim()) return fallback;
   try {
     const zone = await DeliveryZone.findById(zoneId);
-    if (zone && zone.active) return Number(zone.deliveryFee) || 0;
+    if (zone && zone.active) {
+      return {
+        deliveryFee: Number(zone.deliveryFee) || 0,
+        minOrderAmount: Number(zone.minOrderAmount) || 0,
+      };
+    }
   } catch (error) {
     console.error('Delivery zone lookup failed:', error);
   }
@@ -330,10 +340,11 @@ export async function POST(request: NextRequest) {
 
     // Доставка: тариф берём из зоны в БД (клиенту тут не верим), порог
     // бесплатной доставки — настройка магазина, по умолчанию выключен.
-    const zoneDeliveryFee = await resolveZoneDeliveryFee(
+    const zoneTariff = await resolveZoneTariff(
       orderData.deliveryZoneId,
       orderData.deliveryFee
     );
+    const zoneDeliveryFee = zoneTariff.deliveryFee;
     const freeDeliveryThreshold = normalizeFreeDeliveryThreshold(
       storeSettings?.freeDeliveryThreshold
     );
@@ -525,7 +536,21 @@ export async function POST(request: NextRequest) {
       taxRate: taxRateByProduct.get(String(g.productId || '')),
     }));
 
-    const orderItems = [...transformedItems, ...bogoOrderItems, ...giftOrderItems];
+    // Mindermengenzuschlag: гость согласился доплатить до минимума зоны.
+    // Сумму считаем здесь по зоне из БД; клиентское число не принимаем.
+    const minOrderSurcharge =
+      orderData.acceptMinOrderSurcharge === true && orderData.deliveryType === 'delivery'
+        ? computeMinOrderSurcharge(merchandiseSubtotal, zoneTariff.minOrderAmount)
+        : 0;
+    const surchargeOrderItems =
+      minOrderSurcharge > 0 ? [buildMinOrderSurchargeItem(minOrderSurcharge)] : [];
+
+    const orderItems = [
+      ...transformedItems,
+      ...bogoOrderItems,
+      ...giftOrderItems,
+      ...surchargeOrderItems,
+    ];
 
     // --- Списание баллов лояльности (сервер — источник истины) ---
     // Разрешено только авторизованному клиенту; cap (30%) и минимальная сумма
@@ -550,7 +575,9 @@ export async function POST(request: NextRequest) {
       loyaltyPointsDiscount = loyaltyPointsUsed * loyaltyRules.pointValueEuro;
     }
 
-    const calculatedTotal = Math.max(amountBeforePoints - loyaltyPointsDiscount, 0);
+    // Доплата до минимума не скидочная: добавляется после скидок и баллов.
+    const calculatedTotal =
+      Math.max(amountBeforePoints - loyaltyPointsDiscount, 0) + minOrderSurcharge;
 
     // SMS-Marketing-Einwilligung: текст согласия фиксируем на сервере (не доверяем
     // клиенту), чтобы хранить именно то, под чем подписался клиент.
@@ -572,7 +599,9 @@ export async function POST(request: NextRequest) {
       deliveryAddress: orderData.deliveryAddress,
       deliveryZone: orderData.deliveryZone,
       deliveryFee: effectiveDeliveryFee,
-      subtotal: merchandiseSubtotal,
+      // Zwischensumme = сумма позиций (чеки печатают её под списком позиций),
+      // поэтому строка доплаты в неё входит.
+      subtotal: merchandiseSubtotal + minOrderSurcharge,
       tax: typeof orderData.tax === 'number' ? orderData.tax : 0,
       total: calculatedTotal,
       paymentMethod: orderData.paymentMethod,
