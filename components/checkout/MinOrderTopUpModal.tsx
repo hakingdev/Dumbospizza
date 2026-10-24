@@ -14,6 +14,7 @@ import {
 import { MINI_BOX_CATEGORY_SLUG } from '../../lib/mini-pizza-box';
 import { useKitchenBlocks } from '../../lib/contexts/KitchenBlocksContext';
 import { readCategoryId } from '../promotions/PromotionBadgesContext';
+import { formatEuro } from '../../lib/format-euro';
 
 /**
  * «Artikel hinzufügen» на checkout: гостю не хватает до Mindestbestellwert —
@@ -235,8 +236,8 @@ export default function MinOrderTopUpModal({
                     ) : (
                       <>
                         {t('checkout.topup_missing', 'Bis zum Mindestbestellwert fehlen noch')}{' '}
-                        <NoTranslate className="font-semibold text-gray-900">{shortfall.toFixed(2)} €</NoTranslate>
-                        {' '}(<NoTranslate>{minOrderAmount.toFixed(2)} €</NoTranslate>)
+                        <NoTranslate className="font-semibold text-gray-900">{formatEuro(shortfall)}</NoTranslate>
+                        {' '}(<NoTranslate>{formatEuro(minOrderAmount)}</NoTranslate>)
                       </>
                     )}
                   </p>
@@ -244,7 +245,7 @@ export default function MinOrderTopUpModal({
                 {cartTotal != null && (
                   <p className="mt-1 text-xs text-gray-500">
                     {t('checkout.topup_in_cart', 'Im Warenkorb')}:{' '}
-                    <NoTranslate>{cartTotal.toFixed(2)} €</NoTranslate>
+                    <NoTranslate>{formatEuro(cartTotal)}</NoTranslate>
                   </p>
                 )}
               </div>
@@ -329,7 +330,7 @@ export default function MinOrderTopUpModal({
                             </span>
                           </div>
                           <NoTranslate className="shrink-0 text-sm font-semibold text-gray-900">
-                            {s.hasSizes ? `${t('checkout.topup_from', 'ab')} ` : ''}{s.price.toFixed(2)} €
+                            {s.hasSizes ? `${t('checkout.topup_from', 'ab')} ` : ''}{formatEuro(s.price)}
                           </NoTranslate>
                           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary-600 text-white">
                             <Plus className="h-5 w-5" />
@@ -376,7 +377,7 @@ export default function MinOrderTopUpModal({
                     className="flex-1 rounded-lg border border-primary-600 bg-white px-4 py-3 font-semibold text-primary-700 transition-colors hover:bg-primary-50"
                   >
                     {t('checkout.surcharge_pay', 'Differenz zahlen')}{' '}
-                    <NoTranslate>(+{shortfall.toFixed(2)} €)</NoTranslate>
+                    <NoTranslate>(+{formatEuro(shortfall)})</NoTranslate>
                   </button>
                 )}
               </>

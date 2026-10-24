@@ -139,7 +139,7 @@ describe('formatDeliveryFee', () => {
     expect(formatDeliveryFee(0)).toBe('Kostenlos');
   });
   it('3 → 3.00 €', () => {
-    expect(formatDeliveryFee(3)).toBe('3.00 €');
+    expect(formatDeliveryFee(3)).toBe('3,00\u00a0€');
   });
 });
 

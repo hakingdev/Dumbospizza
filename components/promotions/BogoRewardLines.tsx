@@ -4,6 +4,7 @@ import type { PromotionCalculationResult } from '../../lib/promotions/types';
 import { getVisibleBogoSecondItems } from '../../lib/promotions/discount-total';
 import { resolveDisplayedFreeGifts } from './PromotionCartSummary';
 import { NoTranslate } from '../NoTranslate';
+import { formatEuro } from '../../lib/format-euro';
 
 /**
  * Награды акций как строки В СПИСКЕ корзины (рядом с обычными позициями, не внизу):
@@ -82,11 +83,11 @@ export default function PromoRewardLines({
             </div>
             <div className="text-right flex-shrink-0">
               <span className={`font-bold ${r.free ? 'text-emerald-700' : 'text-orange-700'}`}>
-                <NoTranslate>{(r.price * r.quantity).toFixed(2)} €</NoTranslate>
+                <NoTranslate>{formatEuro(r.price * r.quantity)}</NoTranslate>
               </span>
               {r.original && r.original > r.price && (
                 <span className="block text-xs text-gray-400 line-through">
-                  <NoTranslate>{(r.original * r.quantity).toFixed(2)} €</NoTranslate>
+                  <NoTranslate>{formatEuro(r.original * r.quantity)}</NoTranslate>
                 </span>
               )}
             </div>
@@ -124,11 +125,11 @@ export default function PromoRewardLines({
               </span>
               <div className="mt-2 text-right">
                 <span className={`font-bold ${r.free ? 'text-emerald-700' : 'text-orange-700'}`}>
-                  <NoTranslate>{(r.price * r.quantity).toFixed(2)} €</NoTranslate>
+                  <NoTranslate>{formatEuro(r.price * r.quantity)}</NoTranslate>
                 </span>
                 {r.original && r.original > r.price && (
                   <span className="ml-2 text-sm text-gray-400 line-through">
-                    <NoTranslate>{(r.original * r.quantity).toFixed(2)} €</NoTranslate>
+                    <NoTranslate>{formatEuro(r.original * r.quantity)}</NoTranslate>
                   </span>
                 )}
               </div>

@@ -3,6 +3,8 @@
  * `/api/delivery/check-zone` и тестов (геокодинг и БД — снаружи).
  */
 
+import { formatEuro } from '../format-euro';
+
 export interface DeliveryZoneLike {
   id?: string;
   _id?: string;
@@ -42,10 +44,10 @@ export function roundKm(distance: number): number {
   return Math.round(distance * 100) / 100;
 }
 
-/** Стоимость доставки для UI: 0 → "Kostenlos", иначе "3.00 €". */
+/** Стоимость доставки для UI: 0 → "Kostenlos", иначе "3,00 €". */
 export function formatDeliveryFee(fee: number): string {
   if (!fee || fee <= 0) return 'Kostenlos';
-  return `${fee.toFixed(2)} €`;
+  return formatEuro(fee);
 }
 
 /**

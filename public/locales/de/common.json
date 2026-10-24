@@ -25,14 +25,15 @@
     "all_menu": "Alle Speisen",
     "benefits": {
       "fast_title": "Schnelle Lieferung",
-      "fast_text": "30–60 Minuten, zu Stoßzeiten bis zu 90 Minuten",
+      "fast_text": "In der Regel {time} Minuten",
       "quality_title": "Beste Qualität",
       "quality_text": "Nur frische Zutaten",
       "hours_title": "täglich von {start} bis {end} Uhr",
       "hours_text": "Täglich {start}–{end}",
       "hours_title_weekly": "Öffnungszeiten",
       "safe_title": "Sicherheit",
-      "safe_text": "Garantie für Qualität und Frische"
+      "safe_text": "Garantie für Qualität und Frische",
+      "fast_text_generic": "Frisch zubereitet und direkt zu Ihnen geliefert"
     },
     "loyalty": {
       "title": "Treueprogramm",
@@ -41,11 +42,12 @@
     },
     "info": {
       "delivery_title": "Liefergebiete",
-      "delivery_text": "Wir liefern Pizza in jeden Stadtteil. Der Mindestbestellwert hängt vom Gebiet ab. Kostenlose Lieferung ab 30€.",
+      "delivery_text": "Wir liefern Pizza in jeden Stadtteil. Bis {km} km liefern wir kostenlos, der Mindestbestellwert beginnt bei {min} und hängt vom Liefergebiet ab.",
       "delivery_cta": "Gebiete ansehen",
       "track_title": "Bestellung verfolgen",
       "track_text": "Verfolgen Sie den Status Ihrer Bestellung in Echtzeit. Erhalten Sie Benachrichtigungen zu jedem Schritt der Zubereitung und Lieferung.",
-      "track_cta": "Verfolgen"
+      "track_cta": "Verfolgen",
+      "delivery_text_generic": "Wir liefern Pizza in jeden Stadtteil. Liefergebühr und Mindestbestellwert hängen vom Liefergebiet ab."
     },
     "delivery_areas": "Liefergebiete",
     "min_order_amount": "Min. Bestellwert"
@@ -122,11 +124,17 @@
     "loyalty_discount": "Treuepunkte",
     "promo_total": "Rabatt Aktionen",
     "no_registration_required": "Keine Registrierung erforderlich",
-    "terms_agreement": "Mit der Bestellung stimmen Sie zu",
     "repeat_skipped": "Nicht mehr im Sortiment und daher übersprungen:",
     "decrease": "Menge verringern",
     "increase": "Menge erhöhen",
-    "items": "Artikel im Warenkorb"
+    "items": "Artikel im Warenkorb",
+    "total_without_delivery": "Summe",
+    "delivery_fee_hint": "zzgl. Liefergebühr je nach Liefergebiet",
+    "terms_prefix": "Mit Ihrer Bestellung stimmen Sie unseren",
+    "terms_agb": "AGB",
+    "terms_and_the": "und der",
+    "terms_privacy": "Datenschutzerklärung",
+    "terms_suffix": "zu."
   },
   "checkout": {
     "title": "Kasse",
@@ -139,7 +147,7 @@
     "delivery_type_label": "Lieferart auswählen:",
     "delivery_type": "Bestelltyp",
     "delivery": "Lieferung",
-    "delivery_time": "30–60 Minuten, zu Stoßzeiten bis zu 90 Minuten",
+    "delivery_time": "In der Regel {time} Minuten",
     "pickup": "Abholung",
     "pickup_time": "15–20 Minuten",
     "zone_label": "Liefergebiet auswählen:",
@@ -412,15 +420,16 @@
     "badge": "Beste Pizza & Sushi in der Stadt",
     "title_line1": "Pizza & Sushi",
     "title_line2": "mit Lieferung",
-    "subtitle": "Detroit-Style Pizza und frisches Sushi aus hochwertigen Zutaten – frisch zubereitet und direkt zu dir geliefert.",
+    "subtitle": "Detroit-Style Pizza und frisches Sushi aus hochwertigen Zutaten – frisch zubereitet und direkt zu Ihnen geliefert.",
     "cta_order": "Jetzt bestellen",
     "cta_menu": "Speisekarte ansehen",
     "minutes": "Minuten",
-    "free_from": "ab 30€",
     "image_alt": "Detroit-Style Pizza und Sushi-Rollen von oben",
     "badge_discount": "auf die erste Bestellung",
     "badge_delivery": "Lieferung",
-    "cta_offers": "Angebote ansehen"
+    "cta_offers": "Angebote ansehen",
+    "free_within": "Kostenlose Lieferung bis {km} km",
+    "fee_from": "Lieferung ab {fee}"
   },
   "product_modal": {
     "size_title": "Größe wählen:",
@@ -505,10 +514,11 @@
     "stats": {
       "pizzas_title": "18+ Pizzasorten",
       "pizzas_text": "Für jeden Geschmack",
-      "time_title": "30–60 Minuten",
-      "time_text": "Zu Stoßzeiten bis zu 90 Minuten",
+      "time_title": "{time} Minuten",
+      "time_text": "Schnelle Lieferung",
       "rating_title": "4,8 Bewertung",
-      "rating_text": "Von unseren Kunden"
+      "rating_text": "Von unseren Kunden",
+      "time_subtitle": "Durchschnittliche Lieferzeit"
     },
     "contact_title": "Kontaktieren Sie uns"
   },
@@ -521,8 +531,8 @@
     "up_to": "bis",
     "time_title": "Lieferzeit",
     "time_avg": "Durchschnittliche Lieferzeit",
-    "peak_time_note": "Zu Stoßzeiten bis zu",
-    "free_text": "Kostenlose Lieferung je nach Liefergebiet und Bestellwert."
+    "time_value": "{time} Minuten",
+    "time_note": "Abhängig von Entfernung und Auslastung der Küche."
   },
   "common": {
     "loading": "Wird geladen...",

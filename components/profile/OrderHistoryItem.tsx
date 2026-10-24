@@ -18,6 +18,7 @@ import { downloadOrderInvoice } from '../../lib/orders/download-invoice';
 import { REPEAT_SKIPPED_STORAGE_KEY } from '../../lib/orders/repeat-notice';
 import { storageRemove, storageSet } from '../../lib/safe-storage';
 import { NoTranslate } from '../NoTranslate';
+import { formatEuro } from '../../lib/format-euro';
 
 interface OrderHistoryItemProps {
   order: any;
@@ -170,7 +171,7 @@ export default function OrderHistoryItem({
 
           <div className="shrink-0 sm:text-right">
             <div className="whitespace-nowrap font-medium">
-              <NoTranslate>{order.total.toFixed(2)} €</NoTranslate>
+              <NoTranslate>{formatEuro(order.total)}</NoTranslate>
             </div>
             <div
               className={`mt-1 inline-flex max-w-full items-center rounded-full px-2.5 py-0.5 text-xs font-medium leading-5 sm:max-w-[14rem] ${getStatusClass(order.status)}`}

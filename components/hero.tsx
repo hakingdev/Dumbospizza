@@ -7,10 +7,21 @@ import { useEffect, useState } from 'react';
 import { ArrowRight, Truck } from 'lucide-react';
 import { useLanguage } from '../lib/contexts/LanguageContext';
 import { loadTranslation } from '../lib/i18n';
+import { useDeliveryFacts } from '../lib/delivery/use-delivery-facts';
+import { formatEuro } from '../lib/format-euro';
+import { fillTemplate } from '../lib/fill-template';
 
 export function Hero() {
   const { language } = useLanguage();
   const [t, setT] = useState<any>(() => (k: string, d?: string) => d ?? k);
+  // Обещание по доставке — из зон: зашитое «Lieferung ab 30€» не совпадало
+  // ни с одной зоной (бесплатно возим только в ближнем радиусе).
+  const delivery = useDeliveryFacts();
+  const deliveryClaim = delivery.freeUpToKm
+    ? fillTemplate(t('hero.free_within', 'Kostenlose Lieferung bis {km} km'), { km: delivery.freeUpToKm })
+    : delivery.paidFeeFrom
+      ? fillTemplate(t('hero.fee_from', 'Lieferung ab {fee}'), { fee: formatEuro(delivery.paidFeeFrom) })
+      : null;
 
   useEffect(() => {
     const loadTranslations = async () => {
@@ -63,7 +74,7 @@ export function Hero() {
               <p className="mb-7 max-w-[460px] text-base leading-relaxed text-white/90 md:text-lg">
                 {t(
                   'hero.subtitle',
-                  'Detroit-Style Pizza und frisches Sushi aus hochwertigen Zutaten – frisch zubereitet und direkt zu dir geliefert.'
+                  'Detroit-Style Pizza und frisches Sushi aus hochwertigen Zutaten – frisch zubereitet und direkt zu Ihnen geliefert.'
                 )}
               </p>
 
@@ -85,12 +96,13 @@ export function Hero() {
               </div>
 
               {/* trust */}
-              <div className="mt-6 flex flex-wrap gap-x-[22px] gap-y-3.5 text-sm text-white/85">
-                <span className="inline-flex items-center gap-[7px]">
-                  <Truck className="h-4 w-4" /> {t('hero.badge_delivery', 'Lieferung')}{' '}
-                  {t('hero.free_from', 'ab 30€')}
-                </span>
-              </div>
+              {deliveryClaim && (
+                <div className="mt-6 flex flex-wrap gap-x-[22px] gap-y-3.5 text-sm text-white/85">
+                  <Link href="/delivery" className="inline-flex items-center gap-[7px] underline-offset-4 hover:underline">
+                    <Truck className="h-4 w-4" aria-hidden="true" /> {deliveryClaim}
+                  </Link>
+                </div>
+              )}
             </motion.div>
 
             {/* Картинка: одно фуд-фото сверху — детройт-пицца и суши */}

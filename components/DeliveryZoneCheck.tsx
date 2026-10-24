@@ -6,6 +6,7 @@ import { MapPin, X, AlertCircle, Check } from 'lucide-react';
 import { useLanguage } from '../lib/contexts/LanguageContext';
 import { loadTranslation } from '../lib/i18n';
 import { NoTranslate } from './NoTranslate';
+import { formatEuro } from '../lib/format-euro';
 
 export default function DeliveryZoneCheck() {
   const [isOpen, setIsOpen] = useState(false);
@@ -190,10 +191,10 @@ export default function DeliveryZoneCheck() {
                                       <strong>{t('delivery_check.distance', 'Entfernung')}:</strong> <NoTranslate>{result.distance?.toFixed(1)} {t('delivery_check.km', 'km')}</NoTranslate>
                                     </p>
                                     <p className="mb-2">
-                                      <strong>{t('delivery_check.fee', 'Liefergebühr')}:</strong> <NoTranslate>{result.zone?.deliveryFee?.toFixed(2)} €</NoTranslate>
+                                      <strong>{t('delivery_check.fee', 'Liefergebühr')}:</strong> <NoTranslate>{formatEuro(result.zone?.deliveryFee)}</NoTranslate>
                                     </p>
                                     <p>
-                                      <strong>{t('delivery_check.min_order', 'Mindestbestellwert')}:</strong> <NoTranslate>{result.zone?.minOrderAmount?.toFixed(2)} €</NoTranslate>
+                                      <strong>{t('delivery_check.min_order', 'Mindestbestellwert')}:</strong> <NoTranslate>{formatEuro(result.zone?.minOrderAmount)}</NoTranslate>
                                     </p>
                                   </>
                                 ) : (

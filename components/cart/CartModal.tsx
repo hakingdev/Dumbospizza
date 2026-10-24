@@ -13,6 +13,7 @@ import OrderSummaryBreakdown from './OrderSummaryBreakdown';
 import BogoRewardLines from '../promotions/BogoRewardLines';
 import { SafeImage } from '../SafeImage';
 import { NoTranslate } from '../NoTranslate';
+import { formatEuro } from '../../lib/format-euro';
 
 interface CartModalProps {
   isOpen: boolean;
@@ -194,7 +195,7 @@ export function CartModal({ isOpen, onClose }: CartModalProps) {
                           </button>
                         </div>
                         <span className="font-bold text-lg text-primary-600">
-                          <NoTranslate>{(item.price * item.quantity).toFixed(2)} €</NoTranslate>
+                          <NoTranslate>{formatEuro(item.price * item.quantity)}</NoTranslate>
                         </span>
                       </div>
                     </div>

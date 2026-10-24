@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Star, Loader2 } from 'lucide-react';
 import { NoTranslate } from '../NoTranslate';
 import PromoConflictDialog from '../cart/PromoConflictDialog';
+import { formatEuro } from '../../lib/format-euro';
 
 interface LoyaltyRules {
   redeemMaxShare: number;
@@ -147,7 +148,7 @@ export default function LoyaltyRedeem({
           <div className="flex items-center justify-between rounded-md bg-white px-3 py-2 text-sm">
             <span className="text-green-700">
               <NoTranslate>−{appliedPoints.toFixed(2)}</NoTranslate> {t('checkout.loyalty_points', 'Punkte')} (
-              <NoTranslate>{(appliedPoints * rules.pointValueEuro).toFixed(2)} €</NoTranslate>)
+              <NoTranslate>{formatEuro(appliedPoints * rules.pointValueEuro)}</NoTranslate>)
             </span>
             <button
               type="button"

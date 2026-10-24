@@ -13,6 +13,7 @@ import { resolveRoadDistanceKm, type RoadDistanceResult } from '../../../../lib/
 import { normalizeDetourFactor } from '../../../../lib/delivery/detour';
 import { loadActiveDeliveryZones } from '../../../../lib/delivery/zones-db';
 import { analyzeDeliveryAddress } from '../../../../lib/delivery/ai-zone-analysis';
+import { formatEuro } from '../../../../lib/format-euro';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
@@ -28,7 +29,7 @@ function zonePayload(zone: any) {
 }
 
 function successMessage(zone: any): string {
-  return `Lieferung möglich – ${zone.name}. Liefergebühr: ${formatDeliveryFee(zone.deliveryFee || 0)}, Mindestbestellwert: ${(zone.minOrderAmount || 0).toFixed(2)} €.`;
+  return `Lieferung möglich – ${zone.name}. Liefergebühr: ${formatDeliveryFee(zone.deliveryFee || 0)}, Mindestbestellwert: ${formatEuro(zone.minOrderAmount || 0)}.`;
 }
 
 // POST /api/delivery/analyze-address — AI-проверка адреса: Claude решает, входит

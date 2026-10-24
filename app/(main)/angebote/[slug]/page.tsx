@@ -13,6 +13,8 @@ import {
 } from '../../../../lib/promotions/angebote-page-data';
 import { hydrateSizeVariationStates } from '../../../../lib/size-variation-sync';
 import { NoTranslate } from '../../../../components/NoTranslate';
+import { formatEuro } from '../../../../lib/format-euro';
+import { formatPromoDate } from '../../../../lib/format-date';
 
 // ISR: страница акции кэшируется и ревалидируется (товары/акция меняются редко).
 // Раньше был force-dynamic → каждый заход = 3 запроса к удалённой БД, отсюда долгая загрузка.
@@ -78,8 +80,7 @@ export default async function AngebotDetailPage({ params }: Props) {
         </p>
       )}
       <p className="text-sm text-gray-500 mb-8">
-        Gültig: {new Date(p.validFrom).toLocaleString('de-DE')} –{' '}
-        {new Date(p.validTo).toLocaleString('de-DE')}
+        Gültig: {formatPromoDate(p.validFrom)} – {formatPromoDate(p.validTo)}
       </p>
 
       {participatingProducts.length > 0 && (
@@ -103,7 +104,7 @@ export default async function AngebotDetailPage({ params }: Props) {
                 )}
                 <div>
                   <div className="font-semibold"><NoTranslate>{prod.name}</NoTranslate></div>
-                  <div className="text-primary-600 font-bold mt-1">Preis ab <NoTranslate>{prod.displayPrice.toFixed(2)} €</NoTranslate></div>
+                  <div className="text-primary-600 font-bold mt-1">Preis ab <NoTranslate>{formatEuro(prod.displayPrice)}</NoTranslate></div>
                 </div>
               </Link>
             ))}

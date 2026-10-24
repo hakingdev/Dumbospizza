@@ -5,6 +5,7 @@ import { Promotion } from '../../../lib/models/promotion.model';
 import { toPromotionPublicView } from '../../../lib/promotions/serialize';
 import { isPromotionEffectivelyActive } from '../../../lib/promotions/status';
 import { SITE_URL } from '../../../lib/site-url';
+import { formatPromoDate } from '../../../lib/format-date';
 
 export const dynamic = 'force-dynamic';
 
@@ -70,7 +71,7 @@ export default async function AngebotePage() {
                 </h2>
                 {p.description && <p className="text-gray-700 mb-4">{p.description}</p>}
                 <p className="text-sm text-gray-500 mb-4">
-                  Gültig bis {new Date(p.validTo).toLocaleString('de-DE')}
+                  Gültig bis {formatPromoDate(p.validTo)}
                 </p>
                 <Link
                   href={`/angebote/${p.slug}`}

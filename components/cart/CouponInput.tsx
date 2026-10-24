@@ -5,6 +5,7 @@ import { validateCoupon, validatePromotionCode } from '../../lib/api-client';
 import { Loader2, CheckCircle, XCircle } from 'lucide-react';
 import PromoConflictDialog, { type PromoConflictKind } from './PromoConflictDialog';
 import { NoTranslate } from '../NoTranslate';
+import { formatEuro } from '../../lib/format-euro';
 
 interface CouponInputProps {
   orderAmount: number;
@@ -194,12 +195,12 @@ export default function CouponInput({
     ? t('cart.promo_code_active', 'Aktionscode — Rabatt wird automatisch berechnet')
     : appliedCoupon
       ? appliedCoupon.discountType === 'fixed'
-        ? `${appliedCoupon.discountValue.toFixed(2)} € ${t('cart.discount', 'Rabatt')}`
+        ? `${formatEuro(appliedCoupon.discountValue)} ${t('cart.discount', 'Rabatt')}`
         : `${appliedCoupon.discountValue}% ${t('cart.discount', 'Rabatt')}`
       : appliedDiscountType === 'percentage'
         ? `${appliedDiscount}% ${t('cart.discount', 'Rabatt')}`
         : appliedDiscount > 0
-          ? `${appliedDiscount.toFixed(2)} € ${t('cart.discount', 'Rabatt')}`
+          ? `${formatEuro(appliedDiscount)} ${t('cart.discount', 'Rabatt')}`
           : '';
 
   return (

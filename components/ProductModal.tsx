@@ -18,6 +18,7 @@ import { ProductPromotionsBanner } from './promotions/PromotionBadges';
 import { readCategoryId } from './promotions/PromotionBadgesContext';
 import { SafeImage } from './SafeImage';
 import { NoTranslate } from './NoTranslate';
+import { formatEuro } from '../lib/format-euro';
 
 interface Extra {
   name: string;
@@ -396,7 +397,7 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
                                   </div>
                                   <div className="flex items-center gap-3 flex-shrink-0">
                                     <span className="text-primary-600 font-semibold whitespace-nowrap">
-                                      <NoTranslate>{getSizePrice(product, size).toFixed(2)}€</NoTranslate>
+                                      <NoTranslate>{formatEuro(getSizePrice(product, size))}</NoTranslate>
                                     </span>
                                     <span className={`h-5 w-5 rounded-full border-2 flex items-center justify-center ${sel ? 'border-primary-600' : 'border-gray-300'}`}>
                                       {sel && <span className="h-2.5 w-2.5 rounded-full bg-primary-600" />}
@@ -442,7 +443,7 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
                                     <NoTranslate className="font-medium min-w-0 truncate">{option.name}</NoTranslate>
                                     <div className="flex items-center gap-3 flex-shrink-0">
                                       {option.price > 0 && (
-                                        <NoTranslate className="text-sm text-gray-600 whitespace-nowrap">+{option.price.toFixed(2)}€</NoTranslate>
+                                        <NoTranslate className="text-sm text-gray-600 whitespace-nowrap">+{formatEuro(option.price)}</NoTranslate>
                                       )}
                                       {single ? (
                                         <span className={`h-5 w-5 rounded-full border-2 flex items-center justify-center ${isSelected ? 'border-primary-600' : 'border-gray-300'}`}>
@@ -485,7 +486,7 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
                                   <div className="flex justify-between items-center">
                                     <div>
                                       <NoTranslate className="block font-semibold">{topping.name}</NoTranslate>
-                                      <NoTranslate className="block text-sm text-gray-600">+{topping.price.toFixed(2)}€</NoTranslate>
+                                      <NoTranslate className="block text-sm text-gray-600">+{formatEuro(topping.price)}</NoTranslate>
                                     </div>
                                     {isSelected && (
                                       <div className="text-primary-600 font-bold text-xl">✓</div>
@@ -521,7 +522,7 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
                                   <div className="flex justify-between items-center">
                                     <div>
                                       <NoTranslate className="block font-semibold">{sauce.name}</NoTranslate>
-                                      <NoTranslate className="block text-sm text-gray-600">+{sauce.price.toFixed(2)}€</NoTranslate>
+                                      <NoTranslate className="block text-sm text-gray-600">+{formatEuro(sauce.price)}</NoTranslate>
                                     </div>
                                     {isSelected && (
                                       <div className="text-primary-600 font-bold text-xl">✓</div>
@@ -557,7 +558,7 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
                                   <div className="flex justify-between items-center">
                                     <div>
                                       <NoTranslate className="block font-semibold">{side.name}</NoTranslate>
-                                      <NoTranslate className="block text-sm text-gray-600">+{side.price.toFixed(2)}€</NoTranslate>
+                                      <NoTranslate className="block text-sm text-gray-600">+{formatEuro(side.price)}</NoTranslate>
                                     </div>
                                     {isSelected && (
                                       <div className="text-primary-600 font-bold text-xl">✓</div>
@@ -627,7 +628,7 @@ export default function ProductModal({ isOpen, onClose, productId }: ProductModa
                         ) : (
                           <>
                             <ShoppingCart className="h-6 w-6 shrink-0" />
-                            <span className="min-w-0">{t('product.add_to_cart', 'In den Warenkorb')} — <NoTranslate>{calculateTotal().toFixed(2)}€</NoTranslate></span>
+                            <span className="min-w-0">{t('product.add_to_cart', 'In den Warenkorb')} — <NoTranslate>{formatEuro(calculateTotal())}</NoTranslate></span>
                           </>
                         )}
                       </button>

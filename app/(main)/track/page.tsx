@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useLanguage } from '../../../lib/contexts/LanguageContext';
 import { loadTranslation } from '../../../lib/i18n';
 import { NoTranslate } from '../../../components/NoTranslate';
+import { formatEuro } from '../../../lib/format-euro';
 
 interface OrderStatusStep {
   status: string;
@@ -191,7 +192,7 @@ export default function TrackOrderPage() {
                       {t(`track.order_status.${order.status}`, 'Status')}
                     </span>
                     <p className="mt-2 font-semibold text-xl">
-                      <NoTranslate>{order.total.toFixed(2)} €</NoTranslate>
+                      <NoTranslate>{formatEuro(order.total)}</NoTranslate>
                     </p>
                   </div>
                 </div>
@@ -285,7 +286,7 @@ export default function TrackOrderPage() {
                       </div>
                       <div className="flex items-start">
                         <span className="text-gray-500 mr-2">{item.quantity} ×</span>
-                        <NoTranslate>{(item.price * item.quantity).toFixed(2)} €</NoTranslate>
+                        <NoTranslate>{formatEuro(item.price * item.quantity)}</NoTranslate>
                       </div>
                     </li>
                   ))}
@@ -295,26 +296,26 @@ export default function TrackOrderPage() {
                 <div className="mt-4 border-t pt-4">
                   <div className="flex justify-between py-1">
                     <span className="text-gray-600">{t('cart.subtotal', 'Zwischensumme')}:</span>
-                    <NoTranslate>{order.subtotal.toFixed(2)} €</NoTranslate>
+                    <NoTranslate>{formatEuro(order.subtotal)}</NoTranslate>
                   </div>
                   
                   {order.deliveryFee > 0 && (
                     <div className="flex justify-between py-1">
                       <span className="text-gray-600">{t('cart.delivery_fee', 'Lieferung')}:</span>
-                      <NoTranslate>{order.deliveryFee.toFixed(2)} €</NoTranslate>
+                      <NoTranslate>{formatEuro(order.deliveryFee)}</NoTranslate>
                     </div>
                   )}
                   
                   {order.loyaltyPointsUsed > 0 && (
                     <div className="flex justify-between py-1">
                       <span className="text-gray-600">{t('checkout.discount_points', 'Rabatt (Punkte)')}:</span>
-                      <NoTranslate>-{(order.loyaltyPointsUsed / 100).toFixed(2)} €</NoTranslate>
+                      <NoTranslate>-{formatEuro(order.loyaltyPointsUsed / 100)}</NoTranslate>
                     </div>
                   )}
                   
                   <div className="flex justify-between py-2 font-semibold text-lg border-t mt-2">
                     <span>{t('cart.total', 'Gesamt')}:</span>
-                    <NoTranslate>{order.total.toFixed(2)} €</NoTranslate>
+                    <NoTranslate>{formatEuro(order.total)}</NoTranslate>
                   </div>
                 </div>
               </div>

@@ -10,6 +10,7 @@ import {
   getVisibleBogoSecondItems,
 } from '../../lib/promotions/discount-total';
 import { NoTranslate } from '../NoTranslate';
+import { formatEuro } from '../../lib/format-euro';
 
 function resolveDisplayedFreeGifts(
   calculation: PromotionCalculationResult,
@@ -87,13 +88,13 @@ export default function PromotionCartSummary({
           <span>
             <NoTranslate>{line.name}</NoTranslate>: {line.label}
           </span>
-          <NoTranslate>-{line.discountAmount.toFixed(2)} €</NoTranslate>
+          <NoTranslate>-{formatEuro(line.discountAmount)}</NoTranslate>
         </div>
       ))}
       {calculation.orderDiscountTotal > 0 && (
         <div className="text-sm text-green-700 flex justify-between">
           <span>{t('cart.promo_order_discount', 'Aktion auf Bestellung')}</span>
-          <NoTranslate>-{calculation.orderDiscountTotal.toFixed(2)} €</NoTranslate>
+          <NoTranslate>-{formatEuro(calculation.orderDiscountTotal)}</NoTranslate>
         </div>
       )}
       {pendingOffers.map((offer) =>
@@ -127,7 +128,7 @@ export default function PromotionCartSummary({
       {rabattTotal > 0 && (
         <div className="flex justify-between text-green-600 font-medium border-t pt-2">
           <span>{t('cart.promo_total', 'Rabatt Aktionen')}</span>
-          <NoTranslate>-{rabattTotal.toFixed(2)} €</NoTranslate>
+          <NoTranslate>-{formatEuro(rabattTotal)}</NoTranslate>
         </div>
       )}
     </div>

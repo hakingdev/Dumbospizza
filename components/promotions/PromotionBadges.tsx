@@ -4,6 +4,8 @@ import { useEffect } from 'react';
 import { trackPromotionEvent } from '../../lib/api-client';
 import { computePromoDisplayPrice } from '../../lib/promotions/pricing';
 import { useProductBadges } from './PromotionBadgesContext';
+import { formatEuro } from '../../lib/format-euro';
+import { formatPromoDate } from '../../lib/format-date';
 
 /**
  * Просмотр акции засчитываем ОДИН раз на акцию за загрузку страницы. Раньше
@@ -88,11 +90,11 @@ export function ProductCardPrice({
       <p className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
         <span className="text-base font-bold text-primary-700 md:text-lg">
           {fromLabel}{' '}
-          <span className="whitespace-nowrap tabular-nums" translate="no">{shownPrice.toFixed(2)} €</span>
+          <span className="whitespace-nowrap tabular-nums" translate="no">{formatEuro(shownPrice)}</span>
         </span>
         {hasPromoPrice && (
           <span className="whitespace-nowrap text-sm tabular-nums text-gray-500 line-through" translate="no">
-            {basePrice.toFixed(2)} €
+            {formatEuro(basePrice)}
           </span>
         )}
       </p>
@@ -137,7 +139,7 @@ export function ProductPromotionsBanner({
           )}
           {b.validTo && (
             <span className="block text-xs text-green-600/80 mt-0.5">
-              Gültig bis {new Date(b.validTo).toLocaleDateString('de-DE')}
+              Gültig bis {formatPromoDate(b.validTo)}
             </span>
           )}
         </div>

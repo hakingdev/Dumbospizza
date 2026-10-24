@@ -4,6 +4,7 @@ import type { BogoSecondOffer } from '../../lib/promotions/types';
 import { Gift, Minus, Percent, Plus } from 'lucide-react';
 import { SafeImage } from '../SafeImage';
 import { NoTranslate } from '../NoTranslate';
+import { formatEuro } from '../../lib/format-euro';
 
 interface BogoSecondPickerModalProps {
   offers: BogoSecondOffer[];
@@ -114,7 +115,7 @@ export default function BogoSecondPickerModal({
                     const canAdd = chosen.length < remaining;
                     const priceLabel = isFree
                       ? '0,00 €'
-                      : `${option.effectivePrice.toFixed(2)} €`;
+                      : `${formatEuro(option.effectivePrice)}`;
                     const rowClass = `flex items-center gap-3 p-3 border rounded-lg transition-colors ${
                       selected
                         ? isFree
@@ -132,7 +133,7 @@ export default function BogoSecondPickerModal({
                         <NoTranslate>{priceLabel}</NoTranslate>
                         {!isFree && option.unitPrice > option.effectivePrice && (
                           <span className="block text-xs text-gray-400 line-through text-right">
-                            <NoTranslate>{option.unitPrice.toFixed(2)} €</NoTranslate>
+                            <NoTranslate>{formatEuro(option.unitPrice)}</NoTranslate>
                           </span>
                         )}
                       </span>

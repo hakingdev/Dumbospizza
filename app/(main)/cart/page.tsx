@@ -20,6 +20,7 @@ import { PROMO_CONFLICT_MESSAGE } from '../../../components/cart/PromoConflictDi
 import { REPEAT_SKIPPED_STORAGE_KEY } from '../../../lib/orders/repeat-notice'
 import { storageGet, storageRemove } from '../../../lib/safe-storage'
 import { NoTranslate } from '../../../components/NoTranslate'
+import { formatEuro } from '../../../lib/format-euro'
 
 export default function CartPage() {
   const router = useRouter();
@@ -279,12 +280,12 @@ export default function CartPage() {
                               <Plus className="w-4 h-4" />
                             </button>
                           </div>
-                          <NoTranslate className="font-semibold">{(item.price * item.quantity).toFixed(2)} €</NoTranslate>
+                          <NoTranslate className="font-semibold">{formatEuro(item.price * item.quantity)}</NoTranslate>
                           {state.promotionCalculation?.lineAdjustments
                             .filter((l) => l.productId === (item.productId || item.id))
                             .map((l, idx) => (
                               <div key={idx} className="text-xs text-green-600 text-right">
-                                {l.label}: <NoTranslate>-{l.discountAmount.toFixed(2)} €</NoTranslate>
+                                {l.label}: <NoTranslate>-{formatEuro(l.discountAmount)}</NoTranslate>
                               </div>
                             ))}
                         </div>
@@ -417,7 +418,12 @@ export default function CartPage() {
               </div>
               
               <div className="text-xs text-gray-500 text-center">
-                {t('cart.terms_agreement')} <Link href="/terms" className="text-primary-600 hover:underline">{t('footer.terms')}</Link> {t('common.and', 'und')} <Link href="/datenschutz" className="text-primary-600 hover:underline">{t('footer.privacy')}</Link>.
+                {/* Ссылка вела на несуществующую /terms («Nutzungsbedingungen»); условия — это AGB. */}
+                {t('cart.terms_prefix', 'Mit Ihrer Bestellung stimmen Sie unseren')}{' '}
+                <Link href="/agb" className="text-primary-600 hover:underline">{t('cart.terms_agb', 'AGB')}</Link>{' '}
+                {t('cart.terms_and_the', 'und der')}{' '}
+                <Link href="/datenschutz" className="text-primary-600 hover:underline">{t('cart.terms_privacy', 'Datenschutzerklärung')}</Link>{' '}
+                {t('cart.terms_suffix', 'zu.')}
               </div>
             </div>
           </div>

@@ -7,6 +7,8 @@ import { useLanguage } from '../../../lib/contexts/LanguageContext';
 import { loadTranslation } from '../../../lib/i18n';
 import { sortZonesForList } from '../../../lib/delivery/zone-match';
 import { DEFAULT_DETOUR_FACTOR, normalizeDetourFactor } from '../../../lib/delivery/detour';
+import { useDeliveryFacts } from '../../../lib/delivery/use-delivery-facts';
+import { fillTemplate } from '../../../lib/fill-template';
 
 // Карта — только на клиенте (Leaflet использует window).
 const DeliveryZoneMap = dynamic(() => import('../../../components/delivery/DeliveryZoneMap'), {
@@ -21,6 +23,7 @@ const DeliveryZoneMap = dynamic(() => import('../../../components/delivery/Deliv
 export default function DeliveryPage() {
   const { language } = useLanguage();
   const [t, setT] = useState<any>(() => (k: string, fallback?: string) => fallback ?? k);
+  const deliveryFacts = useDeliveryFacts();
   const [zones, setZones] = useState<any[]>([]);
   const [restaurantCoords, setRestaurantCoords] = useState<{ lat: number; lng: number }>({
     lat: 50.19526,
@@ -199,13 +202,18 @@ export default function DeliveryPage() {
 
       <div className="mt-10 bg-primary-50 rounded-2xl p-8">
         <h2 className="text-2xl font-bold mb-4">{t('delivery_page.time_title', 'Lieferzeit')}</h2>
-        <p className="text-base sm:text-lg text-gray-700 mb-1">
+        {/* Время — из настройки магазина (как на главной и в checkout), а не
+            отдельная цифра: раньше здесь было 30–45, а в checkout 30–60. */}
+        <p className="text-base sm:text-lg text-gray-700">
           {t('delivery_page.time_avg', 'Durchschnittliche Lieferzeit')}:{' '}
-          <strong>30–45 {t('hero.minutes', 'Minuten')}</strong>
+          <strong>
+            {deliveryFacts.timeRange
+              ? fillTemplate(t('delivery_page.time_value', '{time} Minuten'), { time: deliveryFacts.timeRange })
+              : '–'}
+          </strong>
         </p>
-        <p className="text-sm sm:text-base text-gray-600">
-          {t('delivery_page.peak_time_note', 'Zu Stoßzeiten bis zu')}{' '}
-          <strong>90–100 {t('hero.minutes', 'Minuten')}</strong>
+        <p className="mt-1 text-sm sm:text-base text-gray-600">
+          {t('delivery_page.time_note', 'Abhängig von Entfernung und Auslastung der Küche.')}
         </p>
       </div>
     </div>

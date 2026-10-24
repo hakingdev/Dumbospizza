@@ -27,6 +27,8 @@ import {
   type WorkshopId,
 } from '../../../lib/kitchen/workshops'
 import { evaluateDeliveryGate } from '../../../lib/delivery/checkout-gate'
+import { useDeliveryFacts } from '../../../lib/delivery/use-delivery-facts'
+import { fillTemplate } from '../../../lib/fill-template'
 import { normalizeFreeDeliveryThreshold } from '../../../lib/delivery/delivery-fee'
 import { NoTranslate } from '../../../components/NoTranslate'
 import { trackMetaEvent } from '../../../lib/analytics/meta-pixel'
@@ -36,6 +38,7 @@ import {
   type CheckoutPaymentMethod,
   type OnlineMethodId,
 } from '../../../lib/payments/method-groups'
+import { formatEuro } from '../../../lib/format-euro'
 
 // Панель онлайн-оплаты — только на клиенте (SumUp/PayPal SDK используют window).
 const OnlinePaymentPanel = dynamic(
@@ -189,6 +192,7 @@ export default function CheckoutPage() {
   const [orderBlockMessage, setOrderBlockMessage] = useState('')
   // Остановленные цеха (стоп-бот) — общее состояние витрины, одно на всё приложение.
   const { blockedWorkshopsForItems, messageFor: kitchenMessageFor } = useKitchenBlocks()
+  const deliveryFacts = useDeliveryFacts()
 
   // Meta Pixel: начало оформления — один раз, когда корзина гидратирована и не пуста
   const initiateCheckoutSent = useRef(false)
@@ -786,7 +790,7 @@ export default function CheckoutPage() {
           ...prev,
           zone:
             deliveryGate.reason === 'below_min_order'
-              ? `Mindestbestellwert für diese Zone: ${(zoneCheck?.zone?.minOrderAmount ?? 0).toFixed(2)} €. Es fehlen noch ${(deliveryGate.shortfall ?? 0).toFixed(2)} €.`
+              ? `Mindestbestellwert für diese Zone: ${formatEuro(zoneCheck?.zone?.minOrderAmount ?? 0)}. Es fehlen noch ${formatEuro(deliveryGate.shortfall ?? 0)}.`
               : deliveryGate.reason === 'outside_zone'
                 ? t('checkout.zone_outside', 'Ihre Adresse liegt außerhalb des Liefergebiets.')
                 : checkingZone
@@ -1146,9 +1150,9 @@ export default function CheckoutPage() {
       >
         <p className={`text-sm ${minOrderSurcharge > 0 ? 'text-gray-700' : 'text-red-700'}`}>
           {t('checkout.min_order_zone', 'Mindestbestellwert für dieses Gebiet')}:{' '}
-          <NoTranslate className="font-semibold">{(zoneCheck?.zone?.minOrderAmount ?? 0).toFixed(2)} €</NoTranslate>.{' '}
+          <NoTranslate className="font-semibold">{formatEuro(zoneCheck?.zone?.minOrderAmount ?? 0)}</NoTranslate>.{' '}
           {t('checkout.min_order_missing', 'Es fehlen')}{' '}
-          <NoTranslate className="font-semibold">{minOrderShortfall.toFixed(2)} €</NoTranslate>.
+          <NoTranslate className="font-semibold">{formatEuro(minOrderShortfall)}</NoTranslate>.
         </p>
         <div className="mt-3 flex flex-col gap-2 sm:flex-row">
           <button
@@ -1174,7 +1178,7 @@ export default function CheckoutPage() {
             />
             <span>
               {t('checkout.surcharge_pay', 'Differenz zahlen')}{' '}
-              <NoTranslate>(+{minOrderShortfall.toFixed(2)} €)</NoTranslate>
+              <NoTranslate>(+{formatEuro(minOrderShortfall)})</NoTranslate>
             </span>
           </label>
         </div>
@@ -1276,7 +1280,11 @@ export default function CheckoutPage() {
                     <Truck className="h-6 w-6 mr-3 text-primary-600" />
                     <div>
                       <p className="font-medium">{t('checkout.delivery', 'Lieferung')}</p>
-                      <p className="text-sm text-gray-500">{t('checkout.delivery_time', '30-60 Minuten, zu Stoßzeiten bis 90 Minuten')}</p>
+                      {deliveryFacts.timeRange && (
+                        <p className="text-sm text-gray-500">
+                          {fillTemplate(t('checkout.delivery_time', 'In der Regel {time} Minuten'), { time: deliveryFacts.timeRange })}
+                        </p>
+                      )}
                     </div>
                     {deliveryType === 'delivery' && (
                       <Check className="h-5 w-5 ml-auto text-primary-600" />
@@ -1781,7 +1789,7 @@ export default function CheckoutPage() {
                   ) : isOnlineCheckoutMethod(paymentMethod) ? (
                     <>
                       {t('checkout.pay_now', 'Jetzt bezahlen')}
-                      <NoTranslate>{` · ${displayTotal.toFixed(2)} €`}</NoTranslate>
+                      <NoTranslate>{` · ${formatEuro(displayTotal)}`}</NoTranslate>
                     </>
                   ) : (
                     t('checkout.place_order', 'Bestellung abschicken')
@@ -1868,11 +1876,11 @@ export default function CheckoutPage() {
                         
                           <div className="ml-4 text-right">
                             <p className="font-semibold text-gray-900">
-                              <NoTranslate>{(item.price * item.quantity).toFixed(2)} €</NoTranslate>
+                              <NoTranslate>{formatEuro(item.price * item.quantity)}</NoTranslate>
                             </p>
                             {item.quantity > 1 && (
                               <p className="text-xs text-gray-500">
-                                <NoTranslate>{item.price.toFixed(2)} € × {item.quantity}</NoTranslate>
+                                <NoTranslate>{formatEuro(item.price)} × {item.quantity}</NoTranslate>
                               </p>
                             )}
                           </div>
@@ -2005,39 +2013,39 @@ export default function CheckoutPage() {
             <div className="border-b pb-4 mb-4">
               <div className="flex justify-between mb-2">
                 <span>{t('checkout.items', 'Artikel')} ({totalItems})</span>
-                <NoTranslate className="font-medium">{merchandiseSubtotal.toFixed(2)} €</NoTranslate>
+                <NoTranslate className="font-medium">{formatEuro(merchandiseSubtotal)}</NoTranslate>
               </div>
               
               <div className="flex justify-between mb-2">
                 <span>{t('checkout.delivery', 'Lieferung')}</span>
-                <span>{state.deliveryFee === 0 ? t('cart.free_delivery', 'Kostenlos') : <NoTranslate>{state.deliveryFee.toFixed(2)} €</NoTranslate>}</span>
+                <span>{state.deliveryFee === 0 ? t('cart.free_delivery', 'Kostenlos') : <NoTranslate>{formatEuro(state.deliveryFee)}</NoTranslate>}</span>
               </div>
 
               {minOrderSurcharge > 0 && (
                 <div className="flex justify-between mb-2">
                   <span>{t('checkout.surcharge_line', 'Mindermengenzuschlag')}</span>
-                  <NoTranslate>{minOrderSurcharge.toFixed(2)} €</NoTranslate>
+                  <NoTranslate>{formatEuro(minOrderSurcharge)}</NoTranslate>
                 </div>
               )}
 
               {state.couponDiscount > 0 && (
                 <div className="flex justify-between text-green-600 text-sm mb-2">
                   <span>{t('checkout.discount_coupon', 'Rabatt mit Gutscheincode')} <NoTranslate>{state.couponCode}</NoTranslate></span>
-                  <NoTranslate>-{state.couponDiscount.toFixed(2)} €</NoTranslate>
+                  <NoTranslate>-{formatEuro(state.couponDiscount)}</NoTranslate>
                 </div>
               )}
               
               {state.loyaltyPointsDiscount > 0 && (
                 <div className="flex justify-between text-green-600 text-sm mb-2">
                   <span>{t('checkout.discount_points', 'Rabatt (Punkte)')}</span>
-                  <NoTranslate>-{state.loyaltyPointsDiscount.toFixed(2)} €</NoTranslate>
+                  <NoTranslate>-{formatEuro(state.loyaltyPointsDiscount)}</NoTranslate>
                 </div>
               )}
             </div>
             
             <div className="flex justify-between font-bold">
               <span>{t('cart.total', 'Gesamt')}</span>
-              <NoTranslate>{displayTotal.toFixed(2)} €</NoTranslate>
+              <NoTranslate>{formatEuro(displayTotal)}</NoTranslate>
             </div>
           </div>
         </div>
