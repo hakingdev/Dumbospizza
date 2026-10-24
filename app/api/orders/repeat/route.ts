@@ -6,6 +6,7 @@ import { User } from '../../../../lib/models/user.model';
 import { getCustomerSession, normalizePhone } from '../../../../lib/customer-auth';
 import { verifyOrderAccessToken } from '../../../../lib/orders/access-token';
 import { isPromoRewardName, stripPromoLabels } from '../../../../lib/orders/gift-label';
+import { isMinOrderSurchargeItem } from '../../../../lib/orders/min-order-surcharge';
 
 // POST /api/orders/repeat - Функция для повторения заказа
 // Ответ содержит PII (адрес, имя, телефон, email). Авторизация: cookie-сессия
@@ -59,8 +60,10 @@ export async function POST(request: NextRequest) {
     // сверяем с актуальным каталогом — выключенные/удалённые товары пропускаем,
     // а productId прокидываем, чтобы ДЕЙСТВУЮЩИЕ акции применились к повтору
     // (движок матчит по productId; без него повтор был слеп для акций).
+    // Доплату до минимума (Mindermengenzuschlag) тоже не копируем — это не
+    // товар; при нужде новый checkout предложит её заново.
     const sourceItems = originalOrder.items.filter(
-      (item) => !isPromoRewardName(item.name)
+      (item) => !isPromoRewardName(item.name) && !isMinOrderSurchargeItem(item)
     );
     const productIds = Array.from(
       new Set(

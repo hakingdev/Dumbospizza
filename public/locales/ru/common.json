@@ -232,7 +232,20 @@
       "terms_required": "Подтвердите согласие с AGB и Widerrufsbelehrung",
       "closed": "Сейчас заказы не принимаются."
     },
-    "bogo_remaining_multi": "Выбрано {{chosen}} из {{n}}"
+    "bogo_remaining_multi": "Выбрано {{chosen}} из {{n}}",
+    "topup_open": "Добавить товар",
+    "topup_title": "Добавить товар",
+    "topup_missing": "До минимальной суммы заказа не хватает",
+    "topup_reached_title": "Минимальная сумма достигнута",
+    "topup_reached_text": "Можно продолжить оформление заказа.",
+    "topup_suggested": "Подходящие",
+    "topup_covers": "хватит",
+    "topup_empty": "Подходящих товаров не найдено.",
+    "topup_done": "Продолжить оформление",
+    "topup_from": "от",
+    "surcharge_pay": "Доплатить разницу",
+    "surcharge_line": "Доплата до минимальной суммы",
+    "surcharge_hint": "Недостающая сумма добавится к заказу как доплата. Если добавите товары, доплата уменьшится автоматически."
   },
   "confirmation": {
     "thank_you": "Спасибо за ваш заказ!",
@@ -503,7 +516,8 @@
     "back_home": "Вернуться на главную",
     "back": "Назад",
     "next": "Далее",
-    "not_specified": "Не указано"
+    "not_specified": "Не указано",
+    "close": "Закрыть"
   },
   "image_upload": {
     "label": "Изображение",

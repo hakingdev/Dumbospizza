@@ -132,6 +132,8 @@ export const products = pgTable(
 // =====================================================================
 type OrderItem = {
   product: string;
+  /** Служебная строка (не товар): 'min_order_surcharge' — доплата до минимума зоны. */
+  kind?: 'min_order_surcharge';
   name: string;
   quantity: number;
   price: number;

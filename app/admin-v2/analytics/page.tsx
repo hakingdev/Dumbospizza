@@ -15,6 +15,7 @@ import {
 } from '../../../components/admin-v2/hooks';
 import { dateDDMMYYYY, euro } from '../../../components/admin-v2/format';
 import { stripPromoLabels } from '../../../lib/orders/gift-label';
+import { isMinOrderSurchargeItem } from '../../../lib/orders/min-order-surcharge';
 import { Card, DemoTag, KpiCard, LoadError, SectionLabel, btnGhost, btnPrimary } from '../../../components/admin-v2/ui';
 
 const DAY_LABELS = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
@@ -104,6 +105,7 @@ export default function AnalyticsPage() {
       if (order.source === 'lieferando') continue;
       const seen = new Set<string>();
       for (const item of order.items || []) {
+        if (isMinOrderSurchargeItem(item)) continue;
         const name = stripPromoLabels(item.name);
         const entry = map.get(name) || { name, orders: 0, revenue: 0 };
         if (!seen.has(name)) {

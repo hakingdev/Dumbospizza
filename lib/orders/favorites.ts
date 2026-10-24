@@ -9,6 +9,9 @@
  * карточки (QA #12). Все встреченные id складываются в `productIds`, чтобы
  * вызывающий код выбрал живой/доступный для ссылки «Erneut bestellen».
  */
+
+import { isMinOrderSurchargeItem } from './min-order-surcharge';
+
 export interface FavoriteOrderLike {
   items?: Array<{
     product?: string;
@@ -56,7 +59,7 @@ export function aggregateFavorites(
   orders.forEach((order, orderIdx) => {
     const seenInOrder = new Set<string>();
     for (const item of order.items || []) {
-      if (!item || isGiftItem(item)) continue;
+      if (!item || isGiftItem(item) || isMinOrderSurchargeItem(item)) continue;
       const name = item.name || String(item.product || '');
       const key = normalizeFavoriteName(name) || String(item.product || '');
       if (!key) continue;

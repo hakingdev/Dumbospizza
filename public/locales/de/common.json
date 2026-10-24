@@ -207,7 +207,20 @@
       "terms_required": "Bitte bestätigen Sie die AGB und die Widerrufsbelehrung",
       "closed": "Bestellungen werden derzeit nicht angenommen."
     },
-    "bogo_remaining_multi": "{{chosen}} von {{n}} Artikeln ausgewählt"
+    "bogo_remaining_multi": "{{chosen}} von {{n}} Artikeln ausgewählt",
+    "topup_open": "Artikel hinzufügen",
+    "topup_title": "Artikel hinzufügen",
+    "topup_missing": "Bis zum Mindestbestellwert fehlen noch",
+    "topup_reached_title": "Mindestbestellwert erreicht",
+    "topup_reached_text": "Sie können jetzt mit der Bestellung fortfahren.",
+    "topup_suggested": "Passend",
+    "topup_covers": "reicht aus",
+    "topup_empty": "Keine passenden Artikel gefunden.",
+    "topup_done": "Weiter zur Bestellung",
+    "topup_from": "ab",
+    "surcharge_pay": "Differenz zahlen",
+    "surcharge_line": "Mindermengenzuschlag",
+    "surcharge_hint": "Der fehlende Betrag wird als Mindermengenzuschlag berechnet. Fügen Sie Artikel hinzu, sinkt der Zuschlag automatisch."
   },
   "confirmation": {
     "thank_you": "Vielen Dank für Ihre Bestellung!",
@@ -510,7 +523,8 @@
     "back_home": "Zur Startseite",
     "back": "Zurück",
     "next": "Weiter",
-    "not_specified": "Nicht angegeben"
+    "not_specified": "Nicht angegeben",
+    "close": "Schließen"
   },
   "image_upload": {
     "label": "Bild",

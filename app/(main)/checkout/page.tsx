@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ChevronLeft, CreditCard, Truck, Check, Landmark, Loader2, Percent, Wallet } from 'lucide-react'
+import { ChevronLeft, CreditCard, Truck, Check, Landmark, Loader2, Percent, Plus, Wallet } from 'lucide-react'
 import { useCart, loyaltyRedeemBaseAmount } from '../../../lib/contexts/CartContext'
 import { storageSet } from '../../../lib/safe-storage'
 import CouponInput from '../../../components/cart/CouponInput'
@@ -15,6 +15,7 @@ import BogoHalfPricePickerModal from '../../../components/promotions/BogoHalfPri
 import GratisGiftPickerModal from '../../../components/promotions/GratisGiftPickerModal'
 import type { PromotionCalculationResult } from '../../../lib/promotions/types'
 import LoyaltyRedeem from '../../../components/checkout/LoyaltyRedeem'
+import MinOrderTopUpModal from '../../../components/checkout/MinOrderTopUpModal'
 import { getBogoPickerMerchandise, getVisibleBogoSecondItems } from '../../../lib/promotions/discount-total'
 import { useLanguage } from '../../../lib/contexts/LanguageContext'
 import { loadTranslation } from '../../../lib/i18n'
@@ -138,6 +139,10 @@ export default function CheckoutPage() {
   // сообщение о ней есть, окна выбора нет (баг-репорт тестирования).
   const [showBogoModal, setShowBogoModal] = useState(false)
   const [bogoSlot, setBogoSlot] = useState<Record<string, string[]>>({})
+  // Не хватает до Mindestbestellwert зоны: гость добирает товар прямо здесь
+  // (MinOrderTopUpModal) или соглашается доплатить разницу (Mindermengenzuschlag).
+  const [acceptMinOrderSurcharge, setAcceptMinOrderSurcharge] = useState(false)
+  const [showTopUpModal, setShowTopUpModal] = useState(false)
   const bogoDismissed = useRef<Set<string>>(new Set())
   const lastBogoCartSig = useRef('')
   // Расчёт, по которому пользователь уже сделал выбор/отказ, — до прихода
@@ -495,9 +500,11 @@ export default function CheckoutPage() {
       }))
     }
     const fillAddress = (addr: AddressPatch | undefined) => {
-      if (!addr?.street) return
+      // Недописанный адрес (только PLZ/Hausnummer) тоже возвращаем: гость ушёл
+      // со страницы посреди ввода и не должен набирать всё заново.
+      if (!addr?.street && !addr?.houseNumber && !addr?.postalCode) return
       setContactDetails(prev => {
-        if (prev.street.trim()) return prev
+        if (prev.street.trim() || prev.houseNumber.trim() || prev.postalCode.trim()) return prev
         return {
           ...prev,
           street: addr.street || '',
@@ -725,7 +732,29 @@ export default function CheckoutPage() {
     canDeliver: zoneCheck?.canDeliver ?? false,
     subtotal: merchandiseSubtotal,
     zoneMinOrderAmount: zoneCheck?.canDeliver ? (zoneCheck.zone?.minOrderAmount ?? null) : null,
+    acceptMinOrderSurcharge,
   })
+  // Сумма доплаты живая: добрал товар — доплата уменьшилась или исчезла.
+  // Итоговую сумму пересчитывает сервер по зоне (здесь — только показ).
+  const minOrderSurcharge =
+    deliveryGate.reason === 'min_order_surcharge' ? (deliveryGate.shortfall ?? 0) : 0
+  const minOrderShortfall =
+    deliveryGate.reason === 'below_min_order' || deliveryGate.reason === 'min_order_surcharge'
+      ? (deliveryGate.shortfall ?? 0)
+      : 0
+  const displayTotal = state.total + minOrderSurcharge
+
+  // Согласие давалось на конкретную зону и сумму: другая зона — спросить заново.
+  const surchargeZoneId = zoneCheck?.zone?.id
+  useEffect(() => {
+    setAcceptMinOrderSurcharge(false)
+  }, [surchargeZoneId])
+
+  const chooseMinOrderSurcharge = (accept: boolean) => {
+    setAcceptMinOrderSurcharge(accept)
+    setShowTopUpModal(false)
+    if (accept) setErrors(prev => { const n = { ...prev }; delete n.zone; return n })
+  }
 
   const handleNextStep = () => {
     // Пауза приёма (весь приём или цех из корзины) — дальше не пускаем ни с
@@ -862,7 +891,9 @@ export default function CheckoutPage() {
         // сервер (он же — источник правды по тарифу, см. deliveryZoneId).
         deliveryFee: state.zoneDeliveryFee,
         deliveryZoneId: state.deliveryZone || undefined,
-        total: state.total,
+        // Согласие на Mindermengenzuschlag; сумму сервер считает сам по зоне.
+        acceptMinOrderSurcharge: minOrderSurcharge > 0,
+        total: displayTotal,
         loyaltyPointsToRedeem: state.loyaltyPointsToRedeem || 0,
         couponCode: state.couponCode,
         discount: state.couponDiscount > 0 ? {
@@ -1374,12 +1405,55 @@ export default function CheckoutPage() {
                       <p className="mt-2 text-sm text-red-600">{zoneCheck.message}</p>
                     )}
 
-                    {deliveryGate.reason === 'below_min_order' && (
-                      <p className="mt-2 text-sm text-red-600">
-                        Mindestbestellwert für diese Zone: {(zoneCheck?.zone?.minOrderAmount ?? 0).toFixed(2)} €.
-                        <br />
-                        Es fehlen noch {(deliveryGate.shortfall ?? 0).toFixed(2)} €.
-                      </p>
+                    {minOrderShortfall > 0 && (
+                      <div
+                        className={`mt-3 rounded-lg border p-4 ${
+                          minOrderSurcharge > 0 ? 'border-gray-200 bg-gray-50' : 'border-red-200 bg-red-50'
+                        }`}
+                      >
+                        <p className={`text-sm ${minOrderSurcharge > 0 ? 'text-gray-700' : 'text-red-700'}`}>
+                          {t('checkout.min_order_zone', 'Mindestbestellwert für dieses Gebiet')}:{' '}
+                          <NoTranslate className="font-semibold">{(zoneCheck?.zone?.minOrderAmount ?? 0).toFixed(2)} €</NoTranslate>.{' '}
+                          {t('checkout.min_order_missing', 'Es fehlen')}{' '}
+                          <NoTranslate className="font-semibold">{minOrderShortfall.toFixed(2)} €</NoTranslate>.
+                        </p>
+                        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                          <button
+                            type="button"
+                            onClick={() => setShowTopUpModal(true)}
+                            className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-primary-700"
+                          >
+                            <Plus className="h-4 w-4 shrink-0" />
+                            {t('checkout.topup_open', 'Artikel hinzufügen')}
+                          </button>
+                          <label
+                            className={`flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-semibold transition-colors ${
+                              minOrderSurcharge > 0
+                                ? 'border-primary-600 bg-primary-50 text-primary-700'
+                                : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                              checked={acceptMinOrderSurcharge}
+                              onChange={(e) => chooseMinOrderSurcharge(e.target.checked)}
+                            />
+                            <span>
+                              {t('checkout.surcharge_pay', 'Differenz zahlen')}{' '}
+                              <NoTranslate>(+{minOrderShortfall.toFixed(2)} €)</NoTranslate>
+                            </span>
+                          </label>
+                        </div>
+                        {minOrderSurcharge > 0 && (
+                          <p className="mt-2 text-xs text-gray-600">
+                            {t(
+                              'checkout.surcharge_hint',
+                              'Der fehlende Betrag wird als Mindermengenzuschlag berechnet. Fügen Sie Artikel hinzu, sinkt der Zuschlag automatisch.'
+                            )}
+                          </p>
+                        )}
+                      </div>
                     )}
                   </div>
                 </>
@@ -1660,7 +1734,7 @@ export default function CheckoutPage() {
                   ) : isOnlineCheckoutMethod(paymentMethod) ? (
                     <>
                       {t('checkout.pay_now', 'Jetzt bezahlen')}
-                      <NoTranslate>{` · ${state.total.toFixed(2)} €`}</NoTranslate>
+                      <NoTranslate>{` · ${displayTotal.toFixed(2)} €`}</NoTranslate>
                     </>
                   ) : (
                     t('checkout.place_order', 'Bestellung abschicken')
@@ -1842,7 +1916,14 @@ export default function CheckoutPage() {
                 <span>{t('checkout.delivery', 'Lieferung')}</span>
                 <span>{state.deliveryFee === 0 ? t('cart.free_delivery', 'Kostenlos') : <NoTranslate>{state.deliveryFee.toFixed(2)} €</NoTranslate>}</span>
               </div>
-              
+
+              {minOrderSurcharge > 0 && (
+                <div className="flex justify-between mb-2">
+                  <span>{t('checkout.surcharge_line', 'Mindermengenzuschlag')}</span>
+                  <NoTranslate>{minOrderSurcharge.toFixed(2)} €</NoTranslate>
+                </div>
+              )}
+
               {state.couponDiscount > 0 && (
                 <div className="flex justify-between text-green-600 text-sm mb-2">
                   <span>{t('checkout.discount_coupon', 'Rabatt mit Gutscheincode')} <NoTranslate>{state.couponCode}</NoTranslate></span>
@@ -1860,7 +1941,7 @@ export default function CheckoutPage() {
             
             <div className="flex justify-between font-bold">
               <span>{t('cart.total', 'Gesamt')}</span>
-              <NoTranslate>{state.total.toFixed(2)} €</NoTranslate>
+              <NoTranslate>{displayTotal.toFixed(2)} €</NoTranslate>
             </div>
           </div>
         </div>
@@ -1873,6 +1954,16 @@ export default function CheckoutPage() {
           onChange={(promotionId, optionIds) => setBogoSlot((s) => ({ ...s, [promotionId]: optionIds }))}
           onConfirm={handleBogoConfirm}
           onClose={handleBogoDecline}
+          t={t}
+        />
+      )}
+
+      {showTopUpModal && deliveryType === 'delivery' && (
+        <MinOrderTopUpModal
+          shortfall={minOrderShortfall}
+          minOrderAmount={zoneCheck?.zone?.minOrderAmount ?? 0}
+          onPaySurcharge={() => chooseMinOrderSurcharge(true)}
+          onClose={() => setShowTopUpModal(false)}
           t={t}
         />
       )}
