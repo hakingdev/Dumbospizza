@@ -68,88 +68,104 @@ export function ProductCard({ product }: ProductCardProps) {
     setIsModalOpen(true);
   };
 
+  const ctaLabel = blockedWorkshop
+    ? WORKSHOP_BLOCK_HEADLINE
+    : isMiniBox
+      ? t('product_card.build_box', 'Box zusammenstellen')
+      : t('product_card.choose_options', 'Optionen wählen');
+
+  // Карточка: на телефоне — строка «фото слева, текст справа» (плотный список
+  // как у агрегаторов, ~в 3 раза короче ленты), с md — вертикальная карточка.
+  // Цена живёт у кнопки (решение), название с описанием — над ними (что это).
   return (
-    <div 
-      className={`group card relative flex h-full flex-col overflow-hidden rounded-2xl ${product.valentinePromo ? 'bg-rose-100 border-2 border-rose-200 shadow-md' : ''}`}
+    <div
+      className={`group card relative flex h-full flex-row gap-3 overflow-hidden rounded-2xl p-3 md:flex-col md:gap-0 md:p-4 ${product.valentinePromo ? 'bg-rose-100 border-2 border-rose-200 shadow-md' : ''}`}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      {/* Image */}
-      <div className="relative h-56 mb-4 overflow-hidden rounded-xl bg-gray-100">
+      {/* Фото открывает товар — на телефоне это самая крупная цель для пальца */}
+      <button
+        type="button"
+        onClick={handleOpenModal}
+        aria-label={`${product.name}: ${ctaLabel}`}
+        className="relative h-28 w-28 shrink-0 overflow-hidden rounded-xl bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-700 md:mb-4 md:h-56 md:w-full"
+      >
+        {/* На фото бейджи только с md: в 112-px превью телефона длинный текст акции закрывал бы пиццу */}
         <PromotionBadges
           productId={product.id}
           categoryId={categoryId}
-          className="absolute top-3 left-3 z-10"
+          className="absolute left-3 top-3 z-10 hidden md:flex"
         />
         {blockedWorkshop && (
-          <div className="absolute inset-x-0 bottom-0 z-20 bg-gray-900/80 px-3 py-2 text-center text-xs font-semibold text-white">
+          <span className="absolute inset-x-0 bottom-0 z-20 bg-gray-900/80 px-1.5 py-1 text-center text-[11px] font-semibold leading-tight text-white md:px-3 md:py-2 md:text-xs">
             ⏸️ {badgeFor(blockedIds)}
-          </div>
+          </span>
         )}
         {product.image ? (
           <SafeImage
             src={product.image}
-            alt={product.name}
+            alt=""
             className={`absolute inset-0 h-full w-full object-cover ${blockedWorkshop ? 'opacity-50 grayscale' : ''}`}
           />
         ) : (
-          <div className="absolute inset-0 bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center text-gray-400">
-            <div className="text-center">
-              <div className="text-6xl mb-2">🍕</div>
-              <NoTranslate className="text-sm">{product.name}</NoTranslate>
-            </div>
-          </div>
+          <span className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200 text-4xl md:text-6xl" aria-hidden="true">
+            🍕
+          </span>
         )}
-        
-        {/* Quick add button on hover */}
-        <button 
-          className="absolute top-4 right-4 bg-white rounded-full p-3 shadow-lg hover:shadow-xl transition-all opacity-0 group-hover:opacity-100 z-10 hover:bg-primary-50"
-          onClick={handleOpenModal}
+        {/* Hover-подсказка на десктопе; на тач-экранах клик по фото и так открывает товар */}
+        <span
+          aria-hidden="true"
+          className="absolute right-4 top-4 z-10 hidden rounded-full bg-white p-3 shadow-lg transition-all md:block md:opacity-0 md:group-hover:opacity-100"
         >
-          <Plus className="h-5 w-5 text-primary-600" />
-        </button>
-      </div>
-      
-      <div className={`flex flex-1 flex-col px-2 ${product.valentinePromo ? 'pb-2' : ''}`}>
-        <div className="mb-2 flex min-h-[3.25rem] items-start justify-between gap-3">
-          <h3 className="flex min-w-0 flex-1 items-start gap-1 text-lg font-bold leading-tight text-gray-900">
-            <NoTranslate className="min-w-0 break-words hyphens-auto">{product.name}</NoTranslate>
-            {product.valentinePromo && (
-              <span className="shrink-0 text-rose-500" title="Valentinstag Special">❤️</span>
-            )}
-          </h3>
+          <Plus className="h-5 w-5 text-primary-700" />
+        </span>
+      </button>
+
+      <div className="flex min-w-0 flex-1 flex-col md:px-2">
+        <PromotionBadges
+          productId={product.id}
+          categoryId={categoryId}
+          className="mb-1 min-w-0 flex-nowrap md:hidden"
+          compact
+        />
+        <h3 className="flex items-start gap-1 text-base font-bold leading-tight text-gray-900 md:min-h-[2.75rem] md:text-lg">
+          <NoTranslate className="line-clamp-2 min-w-0 break-words hyphens-auto text-balance">{product.name}</NoTranslate>
+          {product.valentinePromo && (
+            <span className="shrink-0 text-rose-500" title="Valentinstag Special">❤️</span>
+          )}
+        </h3>
+
+        <p className="mt-1 line-clamp-2 text-sm leading-5 text-gray-600 text-pretty md:min-h-[2.5rem]">{product.description}</p>
+
+        <div className="mt-auto flex items-end justify-between gap-3 pt-2 md:block md:pt-4">
           <ProductCardPrice
             productId={product.id}
             categoryId={categoryId}
             basePrice={product.price}
             fromLabel={t('product_card.from', 'Preis ab')}
           />
+
+          <button
+            type="button"
+            onClick={handleOpenModal}
+            aria-disabled={!!blockedWorkshop}
+            className={`flex h-11 w-11 shrink-0 items-center justify-center gap-2 rounded-full font-medium leading-tight shadow-md transition-all md:mt-3 md:h-auto md:min-h-[44px] md:w-full md:rounded-lg md:px-4 md:py-3 ${
+              blockedWorkshop
+                ? 'cursor-not-allowed bg-gray-200 text-gray-600'
+                : 'bg-primary-600 text-white hover:bg-primary-700 hover:shadow-lg'
+            }`}
+          >
+            {blockedWorkshop ? (
+              <span className="sr-only md:not-sr-only md:min-w-0">{ctaLabel}</span>
+            ) : (
+              <>
+                <Plus className="h-5 w-5 shrink-0 md:hidden" aria-hidden="true" />
+                <ShoppingCart className="hidden h-5 w-5 shrink-0 md:block" aria-hidden="true" />
+                <span className="sr-only md:not-sr-only md:min-w-0">{ctaLabel}</span>
+              </>
+            )}
+          </button>
         </div>
-        
-        <p className="mb-4 min-h-[2.5rem] text-sm leading-5 text-gray-600 line-clamp-2">{product.description}</p>
-        
-        <button
-          onClick={handleOpenModal}
-          aria-disabled={!!blockedWorkshop}
-          className={`mt-auto flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg px-4 py-3 text-center font-medium leading-tight shadow-md transition-all ${
-            blockedWorkshop
-              ? 'cursor-not-allowed bg-gray-200 text-gray-600'
-              : 'bg-primary-600 text-white hover:bg-primary-700 hover:shadow-lg'
-          }`}
-        >
-          {blockedWorkshop ? (
-            <span className="min-w-0">{WORKSHOP_BLOCK_HEADLINE}</span>
-          ) : (
-            <>
-              <ShoppingCart className="h-5 w-5 shrink-0" />
-              <span className="min-w-0">
-                {isMiniBox
-                  ? t('product_card.build_box', 'Box zusammenstellen')
-                  : t('product_card.choose_options', 'Optionen wählen')}
-              </span>
-            </>
-          )}
-        </button>
       </div>
 
       {isMiniBox ? (

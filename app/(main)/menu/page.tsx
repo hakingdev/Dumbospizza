@@ -310,7 +310,7 @@ export default function MenuPage() {
                   {sub.name && (
                     <h3 className="mb-4 text-lg font-semibold text-gray-700 md:text-xl">{sub.name}</h3>
                   )}
-                  <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-6 lg:grid-cols-3 xl:grid-cols-4">
                     {sub.products.map((product) => (
                       <ProductCard
                         key={product._id}
