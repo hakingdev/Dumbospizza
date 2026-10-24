@@ -123,7 +123,9 @@
     "promo_total": "Rabatt Aktionen",
     "no_registration_required": "Keine Registrierung erforderlich",
     "terms_agreement": "Mit der Bestellung stimmen Sie zu",
-    "repeat_skipped": "Nicht mehr im Sortiment und daher übersprungen:"
+    "repeat_skipped": "Nicht mehr im Sortiment und daher übersprungen:",
+    "decrease": "Menge verringern",
+    "increase": "Menge erhöhen"
   },
   "checkout": {
     "title": "Kasse",
@@ -205,7 +207,8 @@
       "server_response": "Ungültige Serverantwort",
       "submit_generic": "Beim Absenden der Bestellung ist ein Fehler aufgetreten. Bitte erneut versuchen.",
       "terms_required": "Bitte bestätigen Sie die AGB und die Widerrufsbelehrung",
-      "closed": "Bestellungen werden derzeit nicht angenommen."
+      "closed": "Bestellungen werden derzeit nicht angenommen.",
+      "below_min_order": "Der Mindestbestellwert ist nicht erreicht. Bitte fügen Sie Artikel hinzu oder zahlen Sie die Differenz."
     },
     "bogo_remaining_multi": "{{chosen}} von {{n}} Artikeln ausgewählt",
     "topup_open": "Artikel hinzufügen",
@@ -220,7 +223,10 @@
     "topup_from": "ab",
     "surcharge_pay": "Differenz zahlen",
     "surcharge_line": "Mindermengenzuschlag",
-    "surcharge_hint": "Der fehlende Betrag wird als Mindermengenzuschlag berechnet. Fügen Sie Artikel hinzu, sinkt der Zuschlag automatisch."
+    "surcharge_hint": "Der fehlende Betrag wird als Mindermengenzuschlag berechnet. Fügen Sie Artikel hinzu, sinkt der Zuschlag automatisch.",
+    "add_more": "Weitere Artikel hinzufügen",
+    "topup_in_cart": "Im Warenkorb",
+    "topup_browse_done": "Fertig"
   },
   "confirmation": {
     "thank_you": "Vielen Dank für Ihre Bestellung!",

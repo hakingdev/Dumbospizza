@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ChevronLeft, CreditCard, Truck, Check, Landmark, Loader2, Percent, Plus, Wallet } from 'lucide-react'
+import { ChevronLeft, CreditCard, Truck, Check, Landmark, Loader2, Minus, Percent, Plus, Trash2, Wallet } from 'lucide-react'
 import { useCart, loyaltyRedeemBaseAmount } from '../../../lib/contexts/CartContext'
 import { storageSet } from '../../../lib/safe-storage'
 import CouponInput from '../../../components/cart/CouponInput'
@@ -115,7 +115,7 @@ function PayPalMark() {
 
 export default function CheckoutPage() {
   const router = useRouter()
-  const { state, setDeliveryType: setCartDeliveryType, setDeliveryZone: setCartDeliveryZone, setDeliveryFee, setFreeDeliveryThreshold, setContactInfo, setDeliveryAddress, setPaymentMethod: setCartPaymentMethod, clearCart, applyCoupon, removeCoupon, setPromotionPromoCode, setLoyaltyPoints, setSelectedFreeGift, declineFreeGift, setSelectedBogoSecond } = useCart()
+  const { state, setDeliveryType: setCartDeliveryType, setDeliveryZone: setCartDeliveryZone, setDeliveryFee, setFreeDeliveryThreshold, setContactInfo, setDeliveryAddress, setPaymentMethod: setCartPaymentMethod, clearCart, applyCoupon, removeCoupon, setPromotionPromoCode, setLoyaltyPoints, setSelectedFreeGift, declineFreeGift, setSelectedBogoSecond, updateItem, removeItem } = useCart()
   const { language } = useLanguage()
   const [t, setT] = useState<any>(() => (k: string, fallback?: string) => fallback ?? k)
   const [step, setStep] = useState(1)
@@ -142,7 +142,9 @@ export default function CheckoutPage() {
   // Не хватает до Mindestbestellwert зоны: гость добирает товар прямо здесь
   // (MinOrderTopUpModal) или соглашается доплатить разницу (Mindermengenzuschlag).
   const [acceptMinOrderSurcharge, setAcceptMinOrderSurcharge] = useState(false)
-  const [showTopUpModal, setShowTopUpModal] = useState(false)
+  // Окно подбора: 'min_order' — добрать до минимума (прогресс + доплата),
+  // 'browse' — просто взять другой товар (гость убрал позицию в оформлении).
+  const [topUpMode, setTopUpMode] = useState<'min_order' | 'browse' | null>(null)
   const bogoDismissed = useRef<Set<string>>(new Set())
   const lastBogoCartSig = useRef('')
   // Расчёт, по которому пользователь уже сделал выбор/отказ, — до прихода
@@ -750,9 +752,20 @@ export default function CheckoutPage() {
     setAcceptMinOrderSurcharge(false)
   }, [surchargeZoneId])
 
+  const openTopUp = () => setTopUpMode(minOrderShortfall > 0 ? 'min_order' : 'browse')
+
+  // Правка состава прямо в оформлении (передумал — убрал, взял другое).
+  // Пока открыта онлайн-оплата, черновик заказа уже создан с суммой — состав
+  // замораживаем, иначе оплатится старая корзина.
+  const itemsLocked = !!onlinePay || isSubmitting
+  const changeItemQuantity = (itemId: string, quantity: number) => {
+    if (quantity < 1) removeItem(itemId)
+    else updateItem(itemId, { quantity })
+  }
+
   const chooseMinOrderSurcharge = (accept: boolean) => {
     setAcceptMinOrderSurcharge(accept)
-    setShowTopUpModal(false)
+    setTopUpMode(null)
     if (accept) setErrors(prev => { const n = { ...prev }; delete n.zone; return n })
   }
 
@@ -825,6 +838,16 @@ export default function CheckoutPage() {
 
     if (orderBlocked) {
       setErrors({ submit: orderBlockMessage || t('checkout.errors.closed', 'Derzeit nehmen wir keine Bestellungen an.') })
+      return
+    }
+
+    // Состав можно править и на шаге оплаты — минимум зоны перепроверяем.
+    if (deliveryType === 'delivery' && !deliveryGate.allowed) {
+      setErrors({
+        submit: deliveryGate.reason === 'below_min_order'
+          ? t('checkout.errors.below_min_order', 'Der Mindestbestellwert ist nicht erreicht. Bitte fügen Sie Artikel hinzu oder zahlen Sie die Differenz.')
+          : t('checkout.zone_check_required', 'Bitte geben Sie Ihre vollständige Lieferadresse ein – sie wird automatisch geprüft.'),
+      })
       return
     }
 
@@ -1096,6 +1119,64 @@ export default function CheckoutPage() {
   }
 
   const totalItems = state.items.reduce((sum, item) => sum + item.quantity, 0) + bogoItemCount
+
+  // Блок «не хватает до минимума»: на шаге адреса — под проверкой зоны, на
+  // шаге оплаты — сверху (в сводке гость может убрать товар и снова уйти ниже
+  // минимума, а заказ ниже минимума отправлять нельзя).
+  const renderMinOrderBox = (spacing: 'mt-3' | 'mb-4') => {
+    if (minOrderShortfall <= 0) return null
+    return (
+      <div
+        className={`${spacing} rounded-lg border p-4 ${
+          minOrderSurcharge > 0 ? 'border-gray-200 bg-gray-50' : 'border-red-200 bg-red-50'
+        }`}
+      >
+        <p className={`text-sm ${minOrderSurcharge > 0 ? 'text-gray-700' : 'text-red-700'}`}>
+          {t('checkout.min_order_zone', 'Mindestbestellwert für dieses Gebiet')}:{' '}
+          <NoTranslate className="font-semibold">{(zoneCheck?.zone?.minOrderAmount ?? 0).toFixed(2)} €</NoTranslate>.{' '}
+          {t('checkout.min_order_missing', 'Es fehlen')}{' '}
+          <NoTranslate className="font-semibold">{minOrderShortfall.toFixed(2)} €</NoTranslate>.
+        </p>
+        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+          <button
+            type="button"
+            onClick={openTopUp}
+            className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-primary-700"
+          >
+            <Plus className="h-4 w-4 shrink-0" />
+            {t('checkout.topup_open', 'Artikel hinzufügen')}
+          </button>
+          <label
+            className={`flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-semibold transition-colors ${
+              minOrderSurcharge > 0
+                ? 'border-primary-600 bg-primary-50 text-primary-700'
+                : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            <input
+              type="checkbox"
+              className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              checked={acceptMinOrderSurcharge}
+              onChange={(e) => chooseMinOrderSurcharge(e.target.checked)}
+            />
+            <span>
+              {t('checkout.surcharge_pay', 'Differenz zahlen')}{' '}
+              <NoTranslate>(+{minOrderShortfall.toFixed(2)} €)</NoTranslate>
+            </span>
+          </label>
+        </div>
+        {minOrderSurcharge > 0 && (
+          <p className="mt-2 text-xs text-gray-600">
+            {t(
+              'checkout.surcharge_hint',
+              'Der fehlende Betrag wird als Mindermengenzuschlag berechnet. Fügen Sie Artikel hinzu, sinkt der Zuschlag automatisch.'
+            )}
+          </p>
+        )}
+      </div>
+    )
+  }
+
   
   return (
     <div className="container mx-auto px-4 py-8">
@@ -1405,56 +1486,7 @@ export default function CheckoutPage() {
                       <p className="mt-2 text-sm text-red-600">{zoneCheck.message}</p>
                     )}
 
-                    {minOrderShortfall > 0 && (
-                      <div
-                        className={`mt-3 rounded-lg border p-4 ${
-                          minOrderSurcharge > 0 ? 'border-gray-200 bg-gray-50' : 'border-red-200 bg-red-50'
-                        }`}
-                      >
-                        <p className={`text-sm ${minOrderSurcharge > 0 ? 'text-gray-700' : 'text-red-700'}`}>
-                          {t('checkout.min_order_zone', 'Mindestbestellwert für dieses Gebiet')}:{' '}
-                          <NoTranslate className="font-semibold">{(zoneCheck?.zone?.minOrderAmount ?? 0).toFixed(2)} €</NoTranslate>.{' '}
-                          {t('checkout.min_order_missing', 'Es fehlen')}{' '}
-                          <NoTranslate className="font-semibold">{minOrderShortfall.toFixed(2)} €</NoTranslate>.
-                        </p>
-                        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-                          <button
-                            type="button"
-                            onClick={() => setShowTopUpModal(true)}
-                            className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-primary-700"
-                          >
-                            <Plus className="h-4 w-4 shrink-0" />
-                            {t('checkout.topup_open', 'Artikel hinzufügen')}
-                          </button>
-                          <label
-                            className={`flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-semibold transition-colors ${
-                              minOrderSurcharge > 0
-                                ? 'border-primary-600 bg-primary-50 text-primary-700'
-                                : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
-                            }`}
-                          >
-                            <input
-                              type="checkbox"
-                              className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                              checked={acceptMinOrderSurcharge}
-                              onChange={(e) => chooseMinOrderSurcharge(e.target.checked)}
-                            />
-                            <span>
-                              {t('checkout.surcharge_pay', 'Differenz zahlen')}{' '}
-                              <NoTranslate>(+{minOrderShortfall.toFixed(2)} €)</NoTranslate>
-                            </span>
-                          </label>
-                        </div>
-                        {minOrderSurcharge > 0 && (
-                          <p className="mt-2 text-xs text-gray-600">
-                            {t(
-                              'checkout.surcharge_hint',
-                              'Der fehlende Betrag wird als Mindermengenzuschlag berechnet. Fügen Sie Artikel hinzu, sinkt der Zuschlag automatisch.'
-                            )}
-                          </p>
-                        )}
-                      </div>
-                    )}
+                    {renderMinOrderBox('mt-3')}
                   </div>
                 </>
               )}
@@ -1526,6 +1558,8 @@ export default function CheckoutPage() {
           {step === 2 && !onlinePay && (
             <div className="bg-white rounded-lg shadow-md p-6">
               <h2 className="text-xl font-semibold mb-4">{t('checkout.payment_method', 'Zahlungsmethode')}</h2>
+
+              {deliveryType === 'delivery' && renderMinOrderBox('mb-4')}
               
               {errors.paymentMethod && (
                 <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
@@ -1724,7 +1758,7 @@ export default function CheckoutPage() {
                   type="button" 
                   className="btn-primary disabled:opacity-50"
                   onClick={handleSubmitOrder}
-                  disabled={isSubmitting || orderBlocked}
+                  disabled={isSubmitting || orderBlocked || (deliveryType === 'delivery' && !deliveryGate.allowed)}
                 >
                   {isSubmitting ? (
                     <>
@@ -1753,94 +1787,143 @@ export default function CheckoutPage() {
             
             {/* Cart Items List */}
             {state.items.length > 0 ? (
-              <div className="border-b pb-4 mb-4 max-h-64 overflow-y-auto space-y-3">
-                {state.items.map((item, index) => {
-                  const hasExtras = item.extras && (
-                    (item.extras.toppings && item.extras.toppings.length > 0) ||
-                    (item.extras.sauces && item.extras.sauces.length > 0) ||
-                    (item.extras.sides && item.extras.sides.length > 0)
-                  );
+              <div className="border-b pb-4 mb-4">
+                <div className="max-h-64 overflow-y-auto space-y-3">
+                  {state.items.map((item, index) => {
+                    const hasExtras = item.extras && (
+                      (item.extras.toppings && item.extras.toppings.length > 0) ||
+                      (item.extras.sauces && item.extras.sauces.length > 0) ||
+                      (item.extras.sides && item.extras.sides.length > 0)
+                    );
                   
-                  return (
-                    <div key={`${item.id}-${item.size?.id || 'no-size'}-${index}`} className="bg-gray-50 rounded-lg p-3">
-                      <div className="flex justify-between items-start">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <h4 className="font-semibold text-gray-900"><NoTranslate>{item.name}</NoTranslate></h4>
-                            <span className="text-xs text-gray-500 bg-white px-2 py-0.5 rounded">
-                              ×{item.quantity}
-                            </span>
-                          </div>
+                    return (
+                      <div key={`${item.id}-${item.size?.id || 'no-size'}-${index}`} className="bg-gray-50 rounded-lg p-3">
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1">
+                            <h4 className="font-semibold text-gray-900 mb-1"><NoTranslate>{item.name}</NoTranslate></h4>
                           
-                          {item.size && item.size.name && (
-                            <p className="text-sm text-gray-700 mb-1">
-                              <span className="font-medium">{t('product.size', 'Größe')}:</span> <NoTranslate>{item.size.name}</NoTranslate>
-                            </p>
-                          )}
+                            {item.size && item.size.name && (
+                              <p className="text-sm text-gray-700 mb-1">
+                                <span className="font-medium">{t('product.size', 'Größe')}:</span> <NoTranslate>{item.size.name}</NoTranslate>
+                              </p>
+                            )}
 
-                          {item.options && item.options.length > 0 && (
-                            <p className="text-sm text-gray-700 mb-1">
-                              <NoTranslate>{item.options.map(o => o.name).join(', ')}</NoTranslate>
-                            </p>
-                          )}
+                            {item.options && item.options.length > 0 && (
+                              <p className="text-sm text-gray-700 mb-1">
+                                <NoTranslate>{item.options.map(o => o.name).join(', ')}</NoTranslate>
+                              </p>
+                            )}
 
-                          {hasExtras && (
-                            <div className="text-xs text-gray-600 mt-2 space-y-1">
-                              {item.extras?.toppings && item.extras.toppings.length > 0 && (
-                                <div>
-                                  <span className="font-medium">{t('product.toppings', 'Beläge')}:</span>{' '}
-                                  {item.extras.toppings.map((t, i) => (
-                                    <span key={i}>
-                                      <NoTranslate>{t.name}</NoTranslate>
-                                      {i < item.extras!.toppings!.length - 1 && ', '}
-                                    </span>
-                                  ))}
-                                </div>
-                              )}
-                              {item.extras?.sauces && item.extras.sauces.length > 0 && (
-                                <div>
-                                  <span className="font-medium">{t('product.sauces', 'Saucen')}:</span>{' '}
-                                  {item.extras.sauces.map((s, i) => (
-                                    <span key={i}>
-                                      <NoTranslate>{s.name}</NoTranslate>
-                                      {i < item.extras!.sauces!.length - 1 && ', '}
-                                    </span>
-                                  ))}
-                                </div>
-                              )}
-                              {item.extras?.sides && item.extras.sides.length > 0 && (
-                                <div>
-                                  <span className="font-medium">{t('product.sides', 'Beilagen')}:</span>{' '}
-                                  {item.extras.sides.map((s, i) => (
-                                    <span key={i}>
-                                      <NoTranslate>{s.name}</NoTranslate>
-                                      {i < item.extras!.sides!.length - 1 && ', '}
-                                    </span>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
+                            {hasExtras && (
+                              <div className="text-xs text-gray-600 mt-2 space-y-1">
+                                {item.extras?.toppings && item.extras.toppings.length > 0 && (
+                                  <div>
+                                    <span className="font-medium">{t('product.toppings', 'Beläge')}:</span>{' '}
+                                    {item.extras.toppings.map((t, i) => (
+                                      <span key={i}>
+                                        <NoTranslate>{t.name}</NoTranslate>
+                                        {i < item.extras!.toppings!.length - 1 && ', '}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                                {item.extras?.sauces && item.extras.sauces.length > 0 && (
+                                  <div>
+                                    <span className="font-medium">{t('product.sauces', 'Saucen')}:</span>{' '}
+                                    {item.extras.sauces.map((s, i) => (
+                                      <span key={i}>
+                                        <NoTranslate>{s.name}</NoTranslate>
+                                        {i < item.extras!.sauces!.length - 1 && ', '}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                                {item.extras?.sides && item.extras.sides.length > 0 && (
+                                  <div>
+                                    <span className="font-medium">{t('product.sides', 'Beilagen')}:</span>{' '}
+                                    {item.extras.sides.map((s, i) => (
+                                      <span key={i}>
+                                        <NoTranslate>{s.name}</NoTranslate>
+                                        {i < item.extras!.sides!.length - 1 && ', '}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         
-                        <div className="ml-4 text-right">
-                          <p className="font-semibold text-gray-900">
-                            <NoTranslate>{(item.price * item.quantity).toFixed(2)} €</NoTranslate>
-                          </p>
-                          {item.quantity > 1 && (
-                            <p className="text-xs text-gray-500">
-                              <NoTranslate>{item.price.toFixed(2)} € × {item.quantity}</NoTranslate>
+                          <div className="ml-4 text-right">
+                            <p className="font-semibold text-gray-900">
+                              <NoTranslate>{(item.price * item.quantity).toFixed(2)} €</NoTranslate>
                             </p>
-                          )}
+                            {item.quantity > 1 && (
+                              <p className="text-xs text-gray-500">
+                                <NoTranslate>{item.price.toFixed(2)} € × {item.quantity}</NoTranslate>
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="mt-2 flex items-center justify-between">
+                          <div className="flex items-center rounded-full border border-gray-200 bg-white">
+                            <button
+                              type="button"
+                              onClick={() => changeItemQuantity(item.id, item.quantity - 1)}
+                              disabled={itemsLocked}
+                              className="flex h-8 w-8 items-center justify-center rounded-full text-gray-600 hover:text-primary-700 disabled:opacity-40"
+                              aria-label={t('cart.decrease', 'Menge verringern')}
+                            >
+                              <Minus className="h-4 w-4" />
+                            </button>
+                            <span className="w-6 text-center text-sm font-medium">{item.quantity}</span>
+                            <button
+                              type="button"
+                              onClick={() => changeItemQuantity(item.id, item.quantity + 1)}
+                              disabled={itemsLocked}
+                              className="flex h-8 w-8 items-center justify-center rounded-full text-gray-600 hover:text-primary-700 disabled:opacity-40"
+                              aria-label={t('cart.increase', 'Menge erhöhen')}
+                            >
+                              <Plus className="h-4 w-4" />
+                            </button>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => removeItem(item.id)}
+                            disabled={itemsLocked}
+                            className="flex items-center gap-1 rounded px-1 py-1 text-xs text-gray-500 hover:text-red-600 disabled:opacity-40"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            {t('cart.remove', 'Entfernen')}
+                          </button>
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={openTopUp}
+                  disabled={itemsLocked}
+                  className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-gray-300 py-2 text-sm font-medium text-primary-700 transition-colors hover:border-primary-400 hover:bg-primary-50 disabled:opacity-40"
+                >
+                  <Plus className="h-4 w-4" />
+                  {t('checkout.add_more', 'Weitere Artikel hinzufügen')}
+                </button>
               </div>
             ) : (
               <div className="border-b pb-4 mb-4 text-center py-8 text-gray-500">
                 <p>{t('cart.empty', 'Ihr Warenkorb ist leer')}</p>
+                <button
+                  type="button"
+                  onClick={openTopUp}
+                  disabled={itemsLocked}
+                  className="mt-3 inline-flex items-center gap-2 text-sm font-medium text-primary-700 hover:underline disabled:opacity-40"
+                >
+                  <Plus className="h-4 w-4" />
+                  {t('checkout.add_more', 'Weitere Artikel hinzufügen')}
+                </button>
               </div>
             )}
 
@@ -1958,12 +2041,13 @@ export default function CheckoutPage() {
         />
       )}
 
-      {showTopUpModal && deliveryType === 'delivery' && (
+      {topUpMode && (
         <MinOrderTopUpModal
           shortfall={minOrderShortfall}
-          minOrderAmount={zoneCheck?.zone?.minOrderAmount ?? 0}
-          onPaySurcharge={() => chooseMinOrderSurcharge(true)}
-          onClose={() => setShowTopUpModal(false)}
+          minOrderAmount={topUpMode === 'min_order' ? (zoneCheck?.zone?.minOrderAmount ?? 0) : undefined}
+          onPaySurcharge={topUpMode === 'min_order' ? () => chooseMinOrderSurcharge(true) : undefined}
+          cartTotal={merchandiseSubtotal}
+          onClose={() => setTopUpMode(null)}
           t={t}
         />
       )}

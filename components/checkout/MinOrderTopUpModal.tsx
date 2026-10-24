@@ -20,6 +20,9 @@ import { readCategoryId } from '../promotions/PromotionBadgesContext';
  * добираем товар прямо отсюда, не уходя в меню (иначе корзина/форма теряют
  * контекст). Выбор товара — штатный ProductModal (размеры, опции, стоп цеха),
  * недостающая сумма пересчитывается вживую из корзины.
+ *
+ * Без minOrderAmount окно работает как обычный «добавить ещё» (гость убрал
+ * товар в оформлении и хочет взять другой): без прогресса и доплаты.
  */
 
 interface CategoryRef {
@@ -77,25 +80,30 @@ export function rankTopUpSuggestions<T extends { price: number }>(
 
 interface MinOrderTopUpModalProps {
   /** Сколько ещё не хватает (живое значение из корзины). */
-  shortfall: number;
-  minOrderAmount: number;
+  shortfall?: number;
+  /** Минимум зоны; не задан — режим «просто добавить товар». */
+  minOrderAmount?: number;
   /** «Differenz zahlen» — согласие на Mindermengenzuschlag. */
-  onPaySurcharge: () => void;
+  onPaySurcharge?: () => void;
+  /** Живая сумма товаров в корзине — отклик на добавление, пока окно открыто. */
+  cartTotal?: number;
   onClose: () => void;
   t?: (key: string, fallback?: string) => string;
 }
 
 export default function MinOrderTopUpModal({
-  shortfall,
-  minOrderAmount,
+  shortfall = 0,
+  minOrderAmount = 0,
   onPaySurcharge,
+  cartTotal,
   onClose,
   t = (_k, fb) => fb || '',
 }: MinOrderTopUpModalProps) {
   const [products, setProducts] = useState<TopUpProduct[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
-  const [activeTab, setActiveTab] = useState(SUGGESTED_TAB);
+  // null — вкладка по умолчанию (подборка «Passend» или первая категория).
+  const [activeTab, setActiveTab] = useState<string | null>(null);
   const [openProductId, setOpenProductId] = useState<string | null>(null);
   const { blockedWorkshopFor, showNotice } = useKitchenBlocks();
 
@@ -161,17 +169,20 @@ export default function MinOrderTopUpModal({
       .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
   }, [products, suggestions]);
 
+  const browse = !(minOrderAmount > 0);
+  const currentTab = activeTab ?? (browse ? tabs[0]?.slug ?? '' : SUGGESTED_TAB);
+
   const visible = useMemo(() => {
-    if (activeTab === SUGGESTED_TAB) return rankTopUpSuggestions(suggestions, shortfall);
+    if (currentTab === SUGGESTED_TAB) return rankTopUpSuggestions(suggestions, shortfall);
     return suggestions
-      .filter((s) => s.categorySlug === activeTab)
+      .filter((s) => s.categorySlug === currentTab)
       .sort((a, b) => Number(!!b.product.featured) - Number(!!a.product.featured));
     // Подборку не пересортировываем на каждое добавление: shortfall меняется,
     // а прыгающий список под пальцем мешает. Фиксируем при открытии вкладки.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, suggestions]);
+  }, [currentTab, suggestions]);
 
-  const reached = shortfall <= 0;
+  const reached = !browse && shortfall <= 0;
   const progress = minOrderAmount > 0
     ? Math.min(100, Math.max(0, ((minOrderAmount - Math.max(shortfall, 0)) / minOrderAmount) * 100))
     : 100;
@@ -217,17 +228,25 @@ export default function MinOrderTopUpModal({
                     ? t('checkout.topup_reached_title', 'Mindestbestellwert erreicht')
                     : t('checkout.topup_title', 'Artikel hinzufügen')}
                 </h2>
-                <p className="mt-1 text-sm text-gray-600">
-                  {reached ? (
-                    t('checkout.topup_reached_text', 'Sie können jetzt mit der Bestellung fortfahren.')
-                  ) : (
-                    <>
-                      {t('checkout.topup_missing', 'Bis zum Mindestbestellwert fehlen noch')}{' '}
-                      <NoTranslate className="font-semibold text-gray-900">{shortfall.toFixed(2)} €</NoTranslate>
-                      {' '}(<NoTranslate>{minOrderAmount.toFixed(2)} €</NoTranslate>)
-                    </>
-                  )}
-                </p>
+                {!browse && (
+                  <p className="mt-1 text-sm text-gray-600">
+                    {reached ? (
+                      t('checkout.topup_reached_text', 'Sie können jetzt mit der Bestellung fortfahren.')
+                    ) : (
+                      <>
+                        {t('checkout.topup_missing', 'Bis zum Mindestbestellwert fehlen noch')}{' '}
+                        <NoTranslate className="font-semibold text-gray-900">{shortfall.toFixed(2)} €</NoTranslate>
+                        {' '}(<NoTranslate>{minOrderAmount.toFixed(2)} €</NoTranslate>)
+                      </>
+                    )}
+                  </p>
+                )}
+                {cartTotal != null && (
+                  <p className="mt-1 text-xs text-gray-500">
+                    {t('checkout.topup_in_cart', 'Im Warenkorb')}:{' '}
+                    <NoTranslate>{cartTotal.toFixed(2)} €</NoTranslate>
+                  </p>
+                )}
               </div>
               <button
                 type="button"
@@ -238,23 +257,25 @@ export default function MinOrderTopUpModal({
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <div className="mt-4 h-2 overflow-hidden rounded-full bg-gray-100">
-              <div
-                className={`h-full rounded-full transition-all duration-300 ${reached ? 'bg-emerald-500' : 'bg-primary-500'}`}
-                style={{ width: `${progress}%` }}
-              />
-            </div>
+            {!browse && (
+              <div className="mt-4 h-2 overflow-hidden rounded-full bg-gray-100">
+                <div
+                  className={`h-full rounded-full transition-all duration-300 ${reached ? 'bg-emerald-500' : 'bg-primary-500'}`}
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+            )}
           </div>
 
           {!reached && (
             <div className="flex shrink-0 gap-2 overflow-x-auto border-b px-5 py-3 [scrollbar-width:none]">
-              {[{ slug: SUGGESTED_TAB, name: t('checkout.topup_suggested', 'Passend') }, ...tabs].map((tab) => (
+              {(browse ? tabs : [{ slug: SUGGESTED_TAB, name: t('checkout.topup_suggested', 'Passend') }, ...tabs]).map((tab) => (
                 <button
                   key={tab.slug}
                   type="button"
                   onClick={() => setActiveTab(tab.slug)}
                   className={`shrink-0 rounded-full px-3 py-1.5 text-sm font-medium transition-colors ${
-                    activeTab === tab.slug
+                    currentTab === tab.slug
                       ? 'bg-primary-600 text-white'
                       : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                   }`}
@@ -300,7 +321,7 @@ export default function MinOrderTopUpModal({
                             <NoTranslate className="line-clamp-2 font-medium leading-snug text-gray-900">{s.product.name}</NoTranslate>
                             <span className="block truncate text-xs text-gray-500">
                               <NoTranslate>{s.categoryName}</NoTranslate>
-                              {activeTab === SUGGESTED_TAB && covers && (
+                              {currentTab === SUGGESTED_TAB && covers && (
                                 <span className="ml-2 font-medium text-emerald-700">
                                   ✓ {t('checkout.topup_covers', 'reicht aus')}
                                 </span>
@@ -323,7 +344,15 @@ export default function MinOrderTopUpModal({
           )}
 
           <div className="flex shrink-0 flex-col gap-2 border-t bg-gray-50 p-4 sm:flex-row sm:rounded-b-xl">
-            {reached ? (
+            {browse ? (
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex-1 rounded-lg bg-primary-600 px-4 py-3 font-semibold text-white transition-colors hover:bg-primary-700"
+              >
+                {t('checkout.topup_browse_done', 'Fertig')}
+              </button>
+            ) : reached ? (
               <button
                 type="button"
                 onClick={onClose}
@@ -340,14 +369,16 @@ export default function MinOrderTopUpModal({
                 >
                   {t('common.close', 'Schließen')}
                 </button>
-                <button
-                  type="button"
-                  onClick={onPaySurcharge}
-                  className="flex-1 rounded-lg border border-primary-600 bg-white px-4 py-3 font-semibold text-primary-700 transition-colors hover:bg-primary-50"
-                >
-                  {t('checkout.surcharge_pay', 'Differenz zahlen')}{' '}
-                  <NoTranslate>(+{shortfall.toFixed(2)} €)</NoTranslate>
-                </button>
+                {onPaySurcharge && (
+                  <button
+                    type="button"
+                    onClick={onPaySurcharge}
+                    className="flex-1 rounded-lg border border-primary-600 bg-white px-4 py-3 font-semibold text-primary-700 transition-colors hover:bg-primary-50"
+                  >
+                    {t('checkout.surcharge_pay', 'Differenz zahlen')}{' '}
+                    <NoTranslate>(+{shortfall.toFixed(2)} €)</NoTranslate>
+                  </button>
+                )}
               </>
             )}
           </div>
