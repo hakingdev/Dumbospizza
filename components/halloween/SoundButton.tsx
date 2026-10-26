@@ -2,19 +2,25 @@
 
 import { useEffect, useState } from 'react';
 import { Volume2, VolumeX } from 'lucide-react';
-import { isMusicAvailable, isMusicWanted, setMusicWanted, subscribeSound } from './sound';
+import { isMusicActive, isMusicAvailable, isMusicWanted, setMusicWanted, subscribeSound } from './sound';
 
-/** Музыка Halloween в шапке: по умолчанию выключена, выбор запоминается. */
+const playing = () => isMusicWanted() && isMusicActive();
+
+/**
+ * Музыка Halloween в шапке. Вальс включён по умолчанию, кнопка его выключает
+ * (выбор запоминается). Пока браузер ждёт первого клика, кнопка показывает
+ * «выключено» — и клик по ней как раз запускает музыку.
+ */
 export default function SoundButton() {
   const [available, setAvailable] = useState(false);
-  const [on, setOn] = useState(isMusicWanted);
+  const [on, setOn] = useState(playing);
 
   useEffect(() => {
     let alive = true;
     isMusicAvailable().then((ok) => {
       if (alive) setAvailable(ok);
     });
-    const unsubscribe = subscribeSound(() => setOn(isMusicWanted()));
+    const unsubscribe = subscribeSound(() => setOn(playing()));
     return () => {
       alive = false;
       unsubscribe();
@@ -27,6 +33,7 @@ export default function SoundButton() {
   return (
     <button
       type="button"
+      data-hw-sound
       onClick={() => setMusicWanted(!on)}
       aria-pressed={on}
       aria-label={label}

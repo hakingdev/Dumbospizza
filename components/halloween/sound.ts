@@ -1,9 +1,10 @@
 /**
  * Звук Halloween-режима: злодейский смех при поджоге карточки и фоновая музыка.
  *
- * Браузер не даёт сайту играть звук, пока посетитель ни разу не кликнул или
- * не тапнул по странице, поэтому AudioContext создаётся только в обработчике
- * жеста (unlockAudio). Громкость — через GainNode: на iOS audio.volume не работает.
+ * Музыка включена по умолчанию (выключают кнопкой в шапке, выбор запоминается).
+ * Но браузер не даёт сайту звучать, пока посетитель ни разу не кликнул или не
+ * тапнул по странице: при загрузке пробуем (tryAutoplay), иначе вальс стартует
+ * с первого жеста (unlockAudio). Громкость — через GainNode: на iOS audio.volume не работает.
  * Пока файлов в public/sounds нет, всё молча ничего не делает.
  */
 
@@ -22,22 +23,22 @@ const LAUGH_VOLUME = 0.4;
 const MUSIC_VOLUME = 0.3;
 const MUSIC_FADE_IN_S = 2;
 const MUSIC_FADE_OUT_S = 0.6;
-const LAUGH_GAP_MS = 10_000;
-const LAUGHS_PER_VISIT = 3;
 const MUSIC_PREF_KEY = 'hw-music';
-const LAUGH_COUNT_KEY = 'hw-laughs';
 
 let ctx: AudioContext | null = null;
 let unlocked = false;
 let laughBuffers: Promise<(AudioBuffer | null)[]> | null = null;
 let decodedLaughs: (AudioBuffer | null)[] = [];
 let nextLaugh = 0;
-let lastLaughAt = 0;
+/** Пока предыдущий смех звучит, новый не начинаем — иначе сливаются в гул. */
+let laughUntil = 0;
 
 let musicEl: HTMLAudioElement | null = null;
 let musicGain: GainNode | null = null;
 let musicPauseTimer: ReturnType<typeof setTimeout> | null = null;
-let musicWanted = storageGet(MUSIC_PREF_KEY) === 'on';
+let musicWanted = storageGet(MUSIC_PREF_KEY) !== 'off';
+/** Вальс реально играет (а не просто разрешён и ждёт первого клика). */
+let musicActive = false;
 let musicZone = false;
 let musicAvailable: Promise<boolean> | null = null;
 
@@ -56,6 +57,10 @@ export function subscribeSound(fn: () => void) {
 
 export function isMusicWanted() {
   return musicWanted;
+}
+
+export function isMusicActive() {
+  return musicActive;
 }
 
 function audioContext(): AudioContext | null {
@@ -114,38 +119,40 @@ export function unlockAudio(): Promise<boolean> {
     unlocked = true;
     loadLaughs(c);
   }
-  return Promise.resolve(ready).then(() => {
-    const running = c.state === 'running';
-    if (running && musicWanted && musicZone && !document.hidden) startMusic();
-    return running;
-  });
+  // play() — прямо в обработчике жеста: Safari не пускает звук из промиса после него.
+  if (musicWanted && musicZone && !document.hidden && !musicActive) startMusic();
+  return Promise.resolve(ready).then(() => c.state === 'running');
+}
+
+/**
+ * Попытка заиграть без клика (витрина только открылась). Обычно браузер
+ * не пускает — тогда вальс начнётся с первого жеста посетителя.
+ */
+export function tryAutoplay() {
+  if (!musicWanted || !musicZone || unlocked) return;
+  const c = audioContext();
+  if (!c) return;
+  c.resume()
+    .then(() => {
+      if (c.state === 'running' && !unlocked) unlockAudio();
+    })
+    .catch(() => {});
 }
 
 export function isAudioUnlocked() {
   return unlocked;
 }
 
-function laughCount() {
-  return Number(storageGet(LAUGH_COUNT_KEY, 'session')) || 0;
-}
-
-/**
- * Смех при поджоге: не чаще раза в 10 с и не больше 3 раз за визит.
- * force — смех при включении музыки, его посетитель вызвал сам.
- */
-export function playLaugh({ force = false }: { force?: boolean } = {}) {
+/** Смех при поджоге карточки (и при включении музыки) — каждый раз, если прошлый уже отзвучал. */
+export function playLaugh() {
   if (!unlocked || !ctx || ctx.state !== 'running') return;
   const now = Date.now();
-  if (!force) {
-    if (now - lastLaughAt < LAUGH_GAP_MS) return;
-    if (laughCount() >= LAUGHS_PER_VISIT) return;
-  }
+  if (now < laughUntil) return;
   const available = decodedLaughs.filter((b): b is AudioBuffer => !!b);
   if (!available.length) return;
   const buffer = available[nextLaugh % available.length];
   nextLaugh += 1;
-  lastLaughAt = now;
-  if (!force) storageSet(LAUGH_COUNT_KEY, String(laughCount() + 1), 'session');
+  laughUntil = now + buffer.duration * 1000;
   try {
     const source = ctx.createBufferSource();
     const gain = ctx.createGain();
@@ -164,6 +171,14 @@ function ensureMusic(c: AudioContext) {
     musicEl = new Audio(HW_SOUNDS.music);
     musicEl.loop = true;
     musicEl.preload = 'auto';
+    musicEl.addEventListener('playing', () => {
+      musicActive = true;
+      notify();
+    });
+    musicEl.addEventListener('pause', () => {
+      musicActive = false;
+      notify();
+    });
     musicGain = c.createGain();
     musicGain.gain.value = 0;
     c.createMediaElementSource(musicEl).connect(musicGain).connect(c.destination);
@@ -210,7 +225,7 @@ export function setMusicWanted(on: boolean) {
   if (on) {
     unlockAudio();
     if (musicZone) startMusic();
-    if (ctx) loadLaughs(ctx).then(() => playLaugh({ force: true }));
+    if (ctx) loadLaughs(ctx).then(() => playLaugh());
   } else {
     stopMusic();
   }
