@@ -12,7 +12,9 @@ import { playLaugh } from './sound';
  * огнём, из неё вылетают мыши, звучит смех.
  *
  * Компьютер — горит, пока над карточкой мышь. Телефон — короткая вспышка от
- * тапа и у карточки, которая при прокрутке проходит через середину экрана.
+ * тапа и у карточки в середине экрана, когда прокрутка остановилась: во время
+ * самой прокрутки огонь не рисуем — видеокарта телефона занята прокруткой,
+ * и огонь вместе с ней давал подёргивания (замер: без WebGL рывков нет).
  */
 
 const BAT_GAP_MS = 2000;
@@ -20,22 +22,34 @@ const BAT_GAP_MS = 2000;
 const TOUCH_BATS_GAP_MS = 1500;
 const TAP_FLARE_MS = 2000;
 const SCROLL_FLARE_MS = 1600;
-// Вспыхивает только то, что проехало середину экрана именно от прокрутки.
-const SCROLL_RECENT_MS = 600;
+// Столько без событий scroll — и прокрутка считается остановившейся.
+const SCROLL_IDLE_MS = 160;
+const HW_SCROLL_START = 'hw:scrollstart';
+const HW_SCROLL_END = 'hw:scrollend';
 
 let lastTouchBatsAt = 0;
 // Телефон: горит одна карточка — новая вспышка гасит предыдущую.
 let stopActiveFlare: (() => void) | null = null;
-let lastScrollAt = 0;
 let scrollTracking = false;
+let scrolling = false;
+let scrollIdleTimer: ReturnType<typeof setTimeout> | undefined;
 
+/** Один слушатель scroll на страницу: сообщает карточкам о начале и конце прокрутки. */
 function trackScroll() {
   if (scrollTracking) return;
   scrollTracking = true;
   window.addEventListener(
     'scroll',
     () => {
-      lastScrollAt = Date.now();
+      if (!scrolling) {
+        scrolling = true;
+        window.dispatchEvent(new Event(HW_SCROLL_START));
+      }
+      clearTimeout(scrollIdleTimer);
+      scrollIdleTimer = setTimeout(() => {
+        scrolling = false;
+        window.dispatchEvent(new Event(HW_SCROLL_END));
+      }, SCROLL_IDLE_MS);
     },
     { passive: true }
   );
@@ -71,6 +85,8 @@ export default function CardFire({ suppressed = false }: { suppressed?: boolean 
   const reduce = useReducedMotion();
   const lastBatsAt = useRef(0);
   const wasLit = useRef(false);
+  // Погасить без затухания (снова началась прокрутка) — чтобы не рисовать огонь во время неё.
+  const instantOut = useRef(false);
   const lit = !suppressed && (hoverable ? hovered : flaring);
 
   // Компьютер: поджигаем по настоящему движению мыши, а не по pointerenter —
@@ -91,17 +107,21 @@ export default function CardFire({ suppressed = false }: { suppressed?: boolean 
     };
   }, [hoverable]);
 
-  // Телефон: вспышка от тапа и при прокрутке через середину экрана.
+  // Телефон: вспышка от тапа и у карточки в середине экрана, когда прокрутка остановилась.
   useEffect(() => {
     const card = rootRef.current?.parentElement;
     if (!card || hoverable) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let burning = false;
+    let inBand = false;
     const stop = () => {
       clearTimeout(timer);
+      burning = false;
       setFlaring(false);
       if (stopActiveFlare === stop) stopActiveFlare = null;
     };
     const flare = (ms: number) => {
+      burning = true;
       if (stopActiveFlare && stopActiveFlare !== stop) stopActiveFlare();
       stopActiveFlare = stop;
       clearTimeout(timer);
@@ -117,13 +137,21 @@ export default function CardFire({ suppressed = false }: { suppressed?: boolean 
     card.addEventListener('click', onClick);
 
     trackScroll();
+    const onScrollStart = () => {
+      if (!burning) return;
+      instantOut.current = true;
+      stop();
+    };
+    const onScrollEnd = () => {
+      if (inBand) flare(SCROLL_FLARE_MS);
+    };
+    window.addEventListener(HW_SCROLL_START, onScrollStart);
+    window.addEventListener(HW_SCROLL_END, onScrollEnd);
     let io: IntersectionObserver | undefined;
     if (typeof IntersectionObserver !== 'undefined') {
       io = new IntersectionObserver(
         (entries) => {
-          if (entries.some((en) => en.isIntersecting) && Date.now() - lastScrollAt < SCROLL_RECENT_MS) {
-            flare(SCROLL_FLARE_MS);
-          }
+          inBand = entries[entries.length - 1].isIntersecting;
         },
         { rootMargin: '-45% 0px -45% 0px' }
       );
@@ -133,6 +161,8 @@ export default function CardFire({ suppressed = false }: { suppressed?: boolean 
       clearTimeout(timer);
       if (stopActiveFlare === stop) stopActiveFlare = null;
       io?.disconnect();
+      window.removeEventListener(HW_SCROLL_START, onScrollStart);
+      window.removeEventListener(HW_SCROLL_END, onScrollEnd);
       card.removeEventListener(HW_FLARE, onFlare);
       card.removeEventListener('click', onClick);
       extinguishCard(card);
@@ -161,7 +191,8 @@ export default function CardFire({ suppressed = false }: { suppressed?: boolean 
       playLaugh();
     }
     // Открылся товар — гасим сразу, без затухания: телефон нужен окну товара.
-    if (!lit && wasLit.current) extinguishCard(card, { instant: suppressed });
+    if (!lit && wasLit.current) extinguishCard(card, { instant: suppressed || instantOut.current });
+    instantOut.current = false;
     wasLit.current = lit;
   }, [lit, reduce, hoverable, suppressed]);
 

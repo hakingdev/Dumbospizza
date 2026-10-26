@@ -173,6 +173,8 @@ type Fire = {
   highp: boolean;
   /** Положение карточки в координатах документа и когда его снимали. */
   rect: { x: number; y: number; w: number; h: number; at: number } | null;
+  /** Последний записанный transform холста — не трогаем стили, если он не изменился. */
+  transform: string;
   radius: number;
   lastDraw: number;
   /** Курсор на карточке: рисуем, даже пока amt ещё не успел подрасти. */
@@ -262,6 +264,7 @@ function createFire(): Fire | null {
     front: false,
     highp,
     rect: null,
+    transform: '',
     radius: 16,
     lastDraw: 0,
     burning: false,
@@ -301,7 +304,11 @@ function draw(fire: Fire) {
     canvas.style.width = `${w}px`;
     canvas.style.height = `${h}px`;
   }
-  canvas.style.transform = `translate(${r.x - PAD.side}px, ${r.y - PAD.top}px)`;
+  const transform = `translate(${r.x - PAD.side}px, ${r.y - PAD.top}px)`;
+  if (transform !== fire.transform) {
+    fire.transform = transform;
+    canvas.style.transform = transform;
+  }
 
   gl.viewport(0, 0, bw, bh);
   gl.clearColor(0, 0, 0, 0);
@@ -446,4 +453,68 @@ export function extinguishAll() {
     fire.amt = 0;
     fire.smoke = 0;
   });
+}
+
+export type FireDiagnosis = {
+  webgl: boolean;
+  renderer?: string;
+  highp?: boolean;
+  /** Доля строки над карточкой, где есть пламя. */
+  coverage?: number;
+  /** Разброс прозрачности по этой строке: у ровной полосы без языков ≈ 0. */
+  variation?: number;
+  /** Насколько кадр меняется за полсекунды: 0 — пламя застыло. */
+  motion?: number;
+};
+
+function flameRow(fire: Fire, time: number, w: number, h: number) {
+  const { gl, u } = fire;
+  gl.viewport(0, 0, w, h);
+  gl.clearColor(0, 0, 0, 0);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.uniform2f(u.res, w, h);
+  gl.uniform4f(u.rect, 80, 40, 200, 120);
+  gl.uniform1f(u.radius, 16);
+  gl.uniform1f(u.scale, 1);
+  gl.uniform1f(u.time, time);
+  gl.uniform1f(u.amt, 1);
+  gl.uniform1f(u.smoke, 0);
+  gl.uniform1f(u.front, 1);
+  gl.uniform1f(u.oct, 3);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  // Строка в 30 px над верхним краем «карточки» (ось Y снизу вверх), по её ширине.
+  const row = new Uint8Array(200 * 4);
+  gl.readPixels(80, 190, 200, 1, gl.RGBA, gl.UNSIGNED_BYTE, row);
+  const alpha: number[] = [];
+  for (let i = 3; i < row.length; i += 4) alpha.push(row[i] / 255);
+  return alpha;
+}
+
+/**
+ * Самопроверка огня на этом устройстве (?hwdebug=1): рисует тестовый кадр
+ * тем же шейдером и смотрит, есть ли языки пламени и двигаются ли они.
+ */
+export function diagnoseFire(): FireDiagnosis {
+  const fire = createFire();
+  if (!fire) return { webgl: false };
+  const { gl, canvas } = fire;
+  const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+  const renderer = String(dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
+  canvas.width = 360;
+  canvas.height = 360;
+  const a = flameRow(fire, 12.34, 360, 360);
+  const b = flameRow(fire, 12.84, 360, 360);
+  const mean = a.reduce((s, v) => s + v, 0) / a.length;
+  const variation = Math.sqrt(a.reduce((s, v) => s + (v - mean) ** 2, 0) / a.length);
+  const motion = a.reduce((s, v, i) => s + Math.abs(v - b[i]), 0) / a.length;
+  canvas.remove();
+  gl.getExtension('WEBGL_lose_context')?.loseContext();
+  return {
+    webgl: true,
+    renderer,
+    highp: fire.highp,
+    coverage: a.filter((v) => v > 0.1).length / a.length,
+    variation,
+    motion,
+  };
 }
