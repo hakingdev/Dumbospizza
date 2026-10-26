@@ -49,14 +49,16 @@ export default function CardFire({ suppressed = false }: { suppressed?: boolean 
   useEffect(() => {
     const card = rootRef.current?.parentElement;
     if (!card) return;
-    const enter = (e: PointerEvent) => {
-      if (e.pointerType === 'mouse') setHovered(true);
+    // Поджигаем по настоящему движению мыши, а не по pointerenter: при прокрутке
+    // колесом карточки сами проезжают под курсором и вспыхивали бы случайно.
+    const move = (e: PointerEvent) => {
+      if (e.pointerType === 'mouse' && (e.movementX || e.movementY)) setHovered(true);
     };
     const leave = () => setHovered(false);
-    card.addEventListener('pointerenter', enter);
+    card.addEventListener('pointermove', move);
     card.addEventListener('pointerleave', leave);
     return () => {
-      card.removeEventListener('pointerenter', enter);
+      card.removeEventListener('pointermove', move);
       card.removeEventListener('pointerleave', leave);
       extinguishCard(card);
     };
