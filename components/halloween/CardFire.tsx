@@ -150,9 +150,10 @@ export default function CardFire({ suppressed = false }: { suppressed?: boolean 
       }
       playLaugh();
     }
-    if (!lit && wasLit.current) extinguishCard(card);
+    // Открылся товар — гасим сразу, без затухания: телефон нужен окну товара.
+    if (!lit && wasLit.current) extinguishCard(card, { instant: suppressed });
     wasLit.current = lit;
-  }, [lit, reduce, hoverable]);
+  }, [lit, reduce, hoverable, suppressed]);
 
   return (
     <div ref={rootRef} aria-hidden="true" className="pointer-events-none absolute inset-0 z-20 overflow-hidden rounded-[inherit]">

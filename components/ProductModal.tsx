@@ -23,6 +23,7 @@ import { SafeImage } from './SafeImage';
 import { NoTranslate } from './NoTranslate';
 import { formatEuro } from '../lib/format-euro';
 import { emitHalloweenDrip, HW_DRIP_HOLD_MS } from './halloween/bus';
+import { loadProduct } from '../lib/products/prefetch';
 
 interface Extra {
   name: string;
@@ -117,8 +118,8 @@ export default function ProductModal({ isOpen, onClose, productId, origin, previ
     const fetchProduct = async () => {
       try {
         setLoading(true);
-        const response = await fetch(`/api/products/${productId}`);
-        const data = await response.json();
+        // Обычно уже в пути: карточка начинает грузить товар при касании.
+        const data: any = await loadProduct(productId);
         
         if (data.success) {
           // Mini-Größe (18 cm) ist nur in der 4er Mini Pizza Box bestellbar — hier ausblenden.

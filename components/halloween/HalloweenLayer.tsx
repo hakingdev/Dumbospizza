@@ -3,9 +3,9 @@
 import { useEffect, useState } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { Bat } from './Bat';
-import { HW_BATS, HW_DRIP, type HalloweenRect } from './bus';
+import { HW_BATS, HW_DRIP, HW_PAUSE, isHalloweenPaused, type HalloweenRect } from './bus';
 import { handleVisibility, setMusicZone, tryAutoplay, unlockAudio } from './sound';
-import { extinguishAll } from './fire-gl';
+import { extinguishAll, prewarmFire } from './fire-gl';
 
 /**
  * Слой эффектов ночной витрины: фоновая стайка мышей, мыши из горящей
@@ -108,19 +108,26 @@ function Bats() {
     if (reduce) return;
     let timer: ReturnType<typeof setTimeout>;
     const launch = () => {
-      if (!document.hidden) setFlights((list) => [...list, ...makeFlock()]);
+      if (!document.hidden && !isHalloweenPaused()) setFlights((list) => [...list, ...makeFlock()]);
       timer = setTimeout(launch, FLOCK_EVERY_MS + rand(-4000, 4000));
     };
     timer = setTimeout(launch, FLOCK_FIRST_MS);
 
     const onBats = (e: Event) => {
+      if (isHalloweenPaused()) return;
       const burst = makeBurst((e as CustomEvent<HalloweenRect>).detail).map((f) => ({ ...f, burst: true }));
       setFlights((list) => [...list, ...burst]);
     };
+    // Открылся товар — уже летящие мыши убираем, новые не запускаем.
+    const onPause = (e: Event) => {
+      if ((e as CustomEvent<boolean>).detail) setFlights([]);
+    };
     window.addEventListener(HW_BATS, onBats);
+    window.addEventListener(HW_PAUSE, onPause);
     return () => {
       clearTimeout(timer);
       window.removeEventListener(HW_BATS, onBats);
+      window.removeEventListener(HW_PAUSE, onPause);
     };
   }, [reduce]);
 
@@ -256,8 +263,27 @@ function useAudioLifecycle() {
   }, []);
 }
 
+// Шейдер огня компилируем, пока витрина простаивает, а не на первом поджоге.
+function usePrewarmFire() {
+  const reduce = useReducedMotion();
+  useEffect(() => {
+    if (reduce) return;
+    const w = window as Window & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+      cancelIdleCallback?: (id: number) => void;
+    };
+    if (w.requestIdleCallback) {
+      const id = w.requestIdleCallback(prewarmFire, { timeout: 4000 });
+      return () => w.cancelIdleCallback?.(id);
+    }
+    const timer = setTimeout(prewarmFire, 1500);
+    return () => clearTimeout(timer);
+  }, [reduce]);
+}
+
 export default function HalloweenLayer() {
   useAudioLifecycle();
+  usePrewarmFire();
   return (
     <>
       <Bats />
