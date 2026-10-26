@@ -5,7 +5,7 @@ import { motion, useReducedMotion } from 'motion/react';
 import { Bat } from './Bat';
 import { HW_BATS, HW_DRIP, HW_PAUSE, isHalloweenPaused, type HalloweenRect } from './bus';
 import { handleVisibility, setMusicZone, tryAutoplay, unlockAudio } from './sound';
-import { diagnoseFire, extinguishAll, prewarmFire, type FireDiagnosis } from './fire-gl';
+import { extinguishAll, prewarmFire } from './fire-gl';
 
 /**
  * Слой эффектов ночной витрины: фоновая стайка мышей, мыши из горящей
@@ -281,63 +281,13 @@ function usePrewarmFire() {
   }, [reduce]);
 }
 
-const pct = (v?: number) => (v == null ? '—' : `${Math.round(v * 100)}%`);
-const media = (q: string) => {
-  try {
-    return window.matchMedia(q).matches;
-  } catch {
-    return false;
-  }
-};
-
-/** ?hwdebug=1 — плашка с видеокартой и самопроверкой огня: скриншот с телефона заменяет удалённую отладку. */
-function HalloweenDebug() {
-  const [diag, setDiag] = useState<FireDiagnosis | null>(null);
-  const [open, setOpen] = useState(true);
-  useEffect(() => {
-    try {
-      setDiag(diagnoseFire());
-    } catch (e) {
-      setDiag({ webgl: false, renderer: String(e) });
-    }
-  }, []);
-  if (!open || !diag) return null;
-  const flamesOk = diag.webgl && (diag.coverage ?? 0) > 0.2 && (diag.variation ?? 0) > 0.08;
-  const moving = (diag.motion ?? 0) > 0.02;
-  const rows: [string, string][] = [
-    ['Сборка', (process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA || 'local').slice(0, 7)],
-    ['WebGL', diag.webgl ? 'да' : 'нет'],
-    ['Видеокарта', diag.renderer || '—'],
-    ['highp', diag.highp ? 'да' : 'нет (16 бит)'],
-    ['Пламя', diag.webgl ? `${flamesOk ? 'языки ✓' : 'ПЛОСКОЕ ✗'} (покрытие ${pct(diag.coverage)}, разброс ${pct(diag.variation)})` : '—'],
-    ['Движение', diag.webgl ? `${moving ? 'есть ✓' : 'СТОИТ ✗'} (${pct(diag.motion)})` : '—'],
-    ['Мышь/наведение', media('(hover: hover) and (pointer: fine)') ? 'да' : 'нет'],
-    ['Уменьшить движение', media('(prefers-reduced-motion: reduce)') ? 'ВКЛ' : 'выкл'],
-  ];
-  return (
-    <div className="fixed inset-x-2 bottom-2 z-[9999] max-h-[60vh] overflow-auto rounded-xl bg-black p-3 font-mono text-[11px] leading-4 text-white shadow-2xl">
-      <button type="button" onClick={() => setOpen(false)} className="absolute right-2 top-1 px-2 text-base" aria-label="Schließen">
-        ×
-      </button>
-      {rows.map(([k, v]) => (
-        <div key={k} className="flex gap-2">
-          <span className="w-36 shrink-0 text-white/60">{k}</span>
-          <span className="min-w-0 break-words">{v}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 export default function HalloweenLayer() {
   useAudioLifecycle();
   usePrewarmFire();
-  const [debug] = useState(() => typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('hwdebug'));
   return (
     <>
       <Bats />
       <Drips />
-      {debug && <HalloweenDebug />}
     </>
   );
 }

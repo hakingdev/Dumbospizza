@@ -217,6 +217,7 @@ html[data-hw-zone='night'] [data-hw-footer]::before {
 .hw-bat {
   display: block;
   overflow: visible;
+  filter: drop-shadow(0 0 1.5px rgba(251, 146, 60, 0.85)) drop-shadow(0 0 5px rgba(251, 146, 60, 0.3));
 }
 .hw-wing {
   transform-box: fill-box;

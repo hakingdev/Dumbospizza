@@ -1,8 +1,4 @@
-/**
- * Силуэт летучей мыши с машущими крыльями (взмахи — CSS, см. halloween.css).
- * Оранжевый отсвет по краю — обводкой в самом SVG: CSS drop-shadow на телефонах
- * перерисовывался каждый кадр взмаха и был заметно дороже.
- */
+/** Силуэт летучей мыши с машущими крыльями (взмахи — CSS, см. halloween.css). */
 export function Bat({ size, flap = 0.22 }: { size: number; flap?: number }) {
   return (
     <svg
@@ -10,9 +6,6 @@ export function Bat({ size, flap = 0.22 }: { size: number; flap?: number }) {
       height={size * 0.375}
       viewBox="0 0 64 24"
       fill="#140c1d"
-      stroke="#fb923c"
-      strokeWidth={0.9}
-      strokeOpacity={0.85}
       className="hw-bat"
       style={{ ['--hw-flap' as any]: `${flap}s` }}
       aria-hidden="true"
