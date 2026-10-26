@@ -24,6 +24,8 @@ const SCROLL_FLARE_MS = 1600;
 const SCROLL_RECENT_MS = 600;
 
 let lastTouchBatsAt = 0;
+// Телефон: горит одна карточка — новая вспышка гасит предыдущую.
+let stopActiveFlare: (() => void) | null = null;
 let lastScrollAt = 0;
 let scrollTracking = false;
 
@@ -94,10 +96,17 @@ export default function CardFire({ suppressed = false }: { suppressed?: boolean 
     const card = rootRef.current?.parentElement;
     if (!card || hoverable) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    const stop = () => {
+      clearTimeout(timer);
+      setFlaring(false);
+      if (stopActiveFlare === stop) stopActiveFlare = null;
+    };
     const flare = (ms: number) => {
+      if (stopActiveFlare && stopActiveFlare !== stop) stopActiveFlare();
+      stopActiveFlare = stop;
       clearTimeout(timer);
       setFlaring(true);
-      timer = setTimeout(() => setFlaring(false), ms);
+      timer = setTimeout(stop, ms);
     };
     // Тап по фото и «+» поджигает карточка-родитель (с паузой перед товаром).
     const onFlare = (e: Event) => flare((e as CustomEvent<number>).detail || TAP_FLARE_MS);
@@ -122,6 +131,7 @@ export default function CardFire({ suppressed = false }: { suppressed?: boolean 
     }
     return () => {
       clearTimeout(timer);
+      if (stopActiveFlare === stop) stopActiveFlare = null;
       io?.disconnect();
       card.removeEventListener(HW_FLARE, onFlare);
       card.removeEventListener('click', onClick);

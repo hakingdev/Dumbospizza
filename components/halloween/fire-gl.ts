@@ -16,8 +16,8 @@ attribute vec2 a_pos;
 void main() { gl_Position = vec4(a_pos, 0.0, 1.0); }
 `;
 
+// Точность (highp/mediump) дописывается перед компиляцией — см. createFire.
 const FRAG = `
-precision mediump float;
 uniform vec2 u_res;
 uniform vec4 u_rect;
 uniform float u_radius;
@@ -27,8 +27,11 @@ uniform float u_amt;
 uniform float u_smoke;
 uniform float u_front;
 uniform float u_oct;
+uniform sampler2D u_noise;
 
-float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+// Случайные числа — из текстуры 64×64 (NEAREST, REPEAT). Формула fract(sin(…)*43758)
+// на 16-битных видеокартах Android даёт одни нули: шум плоский, языков пламени нет.
+float hash(vec2 p) { return texture2D(u_noise, (floor(p) + 0.5) / 64.0).r; }
 float noise(vec2 p) {
   vec2 i = floor(p);
   vec2 f = fract(p);
@@ -146,11 +149,16 @@ const EXTINGUISH_S = 0.55;
 const SMOKE_S = 1.6;
 // Телефон: 30 кадров/с вместо 60 и меньше пикселей — на маленьком экране разницы не видно.
 const LITE_FRAME_MS = 32;
+const NOISE_SIZE = 64;
+// Время для шейдера держим маленьким: в 16 битах (mediump) после пары минут
+// секунды идут ступеньками, а через полчаса время стоит. Скачок раз в период незаметен.
+const TIME_WRAP_HIGHP_S = 600;
+const TIME_WRAP_MEDIUMP_S = 30;
 // Положение карточки перечитываем не каждый кадр, а раз в 300 мс.
 const RECT_TTL_MS = 300;
 
 type Uniforms = Record<
-  'res' | 'rect' | 'radius' | 'scale' | 'time' | 'amt' | 'smoke' | 'front' | 'oct',
+  'res' | 'rect' | 'radius' | 'scale' | 'time' | 'amt' | 'smoke' | 'front' | 'oct' | 'noise',
   WebGLUniformLocation | null
 >;
 
@@ -161,6 +169,8 @@ type Fire = {
   card: HTMLElement | null;
   /** Холст поверх страницы и облегчённый огонь (телефон) или под ней (компьютер). */
   front: boolean;
+  /** Видеокарта считает фрагменты в highp; иначе время заворачиваем чаще. */
+  highp: boolean;
   /** Положение карточки в координатах документа и когда его снимали. */
   rect: { x: number; y: number; w: number; h: number; at: number } | null;
   radius: number;
@@ -180,7 +190,9 @@ let unsupported = false;
 function compile(gl: WebGLRenderingContext, type: number, src: string) {
   const sh = gl.createShader(type);
   if (!sh) return null;
-  gl.shaderSource(sh, src);
+  // Исходник GLSL — только ASCII: строгие драйверы (старые Android) не компилируют
+  // шейдер с кириллицей даже в комментариях, поэтому комментарии вырезаем.
+  gl.shaderSource(sh, src.replace(/\/\/[^\n]*/g, ''));
   gl.compileShader(sh);
   return gl.getShaderParameter(sh, gl.COMPILE_STATUS) ? sh : null;
 }
@@ -198,8 +210,11 @@ function createFire(): Fire | null {
   });
   const gl = canvas.getContext('webgl', { alpha: true, premultipliedAlpha: true, antialias: false });
   if (!gl) return null;
+  // highp, где он есть: на многих Android mediump — честные 16 бит.
+  const hp = gl.getShaderPrecisionFormat(gl.FRAGMENT_SHADER, gl.HIGH_FLOAT);
+  const highp = !!hp && hp.precision > 0;
   const vs = compile(gl, gl.VERTEX_SHADER, VERT);
-  const fs = compile(gl, gl.FRAGMENT_SHADER, FRAG);
+  const fs = compile(gl, gl.FRAGMENT_SHADER, `precision ${highp ? 'highp' : 'mediump'} float;\n${FRAG}`);
   const prog = gl.createProgram();
   if (!vs || !fs || !prog) return null;
   gl.attachShader(prog, vs);
@@ -214,6 +229,19 @@ function createFire(): Fire | null {
   gl.enableVertexAttribArray(loc);
   gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
   const u = (name: string) => gl.getUniformLocation(prog, name);
+
+  const noise = new Uint8Array(NOISE_SIZE * NOISE_SIZE);
+  for (let i = 0; i < noise.length; i++) noise[i] = Math.floor(Math.random() * 256);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, gl.createTexture());
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, NOISE_SIZE, NOISE_SIZE, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, noise);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+  gl.uniform1i(u('u_noise'), 0);
+
   document.body.appendChild(canvas);
   return {
     canvas,
@@ -228,9 +256,11 @@ function createFire(): Fire | null {
       smoke: u('u_smoke'),
       front: u('u_front'),
       oct: u('u_oct'),
+      noise: u('u_noise'),
     },
     card: null,
     front: false,
+    highp,
     rect: null,
     radius: 16,
     lastDraw: 0,
@@ -281,7 +311,7 @@ function draw(fire: Fire) {
   gl.uniform4f(u.rect, PAD.side, PAD.bottom, r.w, r.h);
   gl.uniform1f(u.radius, fire.radius);
   gl.uniform1f(u.scale, scale);
-  gl.uniform1f(u.time, performance.now() / 1000);
+  gl.uniform1f(u.time, (performance.now() / 1000) % (fire.highp ? TIME_WRAP_HIGHP_S : TIME_WRAP_MEDIUMP_S));
   gl.uniform1f(u.amt, fire.amt);
   gl.uniform1f(u.smoke, fire.smoke);
   gl.uniform1f(u.front, fire.front ? 1 : 0);
