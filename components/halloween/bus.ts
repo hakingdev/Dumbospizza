@@ -7,6 +7,7 @@ export type HalloweenRect = { left: number; top: number; right: number; bottom: 
 
 export const HW_DRIP = 'hw:drip';
 export const HW_BATS = 'hw:bats';
+export const HW_FLARE = 'hw:flare';
 
 function emit(name: string, el: Element | null | undefined): boolean {
   if (typeof window === 'undefined' || !el) return false;
@@ -31,4 +32,28 @@ export function emitHalloweenDrip(button: Element | null | undefined): boolean {
 /** Карточка вспыхнула — из неё вылетают мыши. */
 export function emitHalloweenBats(card: Element | null | undefined) {
   emit(HW_BATS, card);
+}
+
+/** Телефон: тап по фото/«+» — сначала вспышка, товар открывается через эту паузу. */
+export const HW_TAP_OPEN_DELAY_MS = 600;
+
+function matches(query: string) {
+  try {
+    return !!window.matchMedia?.(query)?.matches;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Телефон (без наведения мышью): поджечь карточку по тапу.
+ * true — вспышка с огнём будет, открытие товара стоит отложить на HW_TAP_OPEN_DELAY_MS.
+ */
+export function flareHalloweenCard(card: Element | null | undefined, ms: number): boolean {
+  if (typeof window === 'undefined' || !card) return false;
+  if (document.documentElement.getAttribute('data-hw-zone') !== 'night') return false;
+  if (matches('(hover: hover) and (pointer: fine)')) return false;
+  card.dispatchEvent(new CustomEvent<number>(HW_FLARE, { detail: ms }));
+  // «Уменьшить движение»: карточка просто светится — ждать нечего.
+  return !matches('(prefers-reduced-motion: reduce)');
 }
