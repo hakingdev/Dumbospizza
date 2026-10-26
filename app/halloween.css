@@ -140,8 +140,8 @@ html[data-hw-zone='night'] .bg-primary-100 {
 html[data-hw-zone='night'] [data-hw-hero] {
   isolation: isolate;
   background:
-    radial-gradient(55% 65% at 85% 15%, rgba(251, 146, 60, 0.22) 0%, rgba(251, 146, 60, 0) 60%),
-    linear-gradient(160deg, #2a1340 0%, #170b24 55%, #0c0612 100%) !important;
+    radial-gradient(80% 90% at 50% 0%, rgba(124, 58, 237, 0.16) 0%, rgba(124, 58, 237, 0) 70%),
+    linear-gradient(160deg, #2a1340 0%, #1b0e2b 55%, #110820 100%) !important;
 }
 html[data-hw-zone='night'] [data-hw-hero] h1 .bg-clip-text {
   background-image: linear-gradient(90deg, #fed7aa, #fb923c);

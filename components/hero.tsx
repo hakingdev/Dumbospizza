@@ -108,11 +108,6 @@ export function Hero() {
 
             {/* Картинка: одно фуд-фото сверху — детройт-пицца и суши */}
             <div className="relative order-1 flex items-center justify-center px-5 py-8 md:px-10 md:py-12 lg:order-2 lg:px-8">
-              <div
-                className="pointer-events-none absolute inset-0"
-                style={{ background: 'linear-gradient(180deg, rgba(0,0,0,.04), rgba(0,0,0,.22))' }}
-                aria-hidden="true"
-              />
               <div className="relative z-10 w-full max-w-[600px]">
                 {/* Maße = echte Bildmaße: eine falsche Ratio reserviert den
                     falschen Platz und verschiebt den Hero beim Laden. */}
@@ -122,7 +117,7 @@ export function Hero() {
                   height={941}
                   sizes="(max-width: 1024px) 94vw, 600px"
                   alt={t('hero.image_alt', 'Detroit-Style Pizza und Sushi-Rollen von oben')}
-                  className="w-full rounded-[22px] ring-1 ring-white/20 shadow-[0_26px_50px_rgba(0,0,0,.5)]"
+                  className="w-full rounded-[22px] ring-1 ring-white/20 shadow-[0_10px_24px_rgba(0,0,0,.18)]"
                   priority
                 />
               </div>
