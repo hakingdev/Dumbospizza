@@ -1,7 +1,9 @@
 /**
  * Реалистичное пламя вокруг карточки (Halloween): WebGL-шейдер с турбулентным
- * шумом, рисуется на холсте ПОД страницей (z-index: -1). Карточка непрозрачна
- * и закрывает середину — видно только то, что вырывается из-за её краёв.
+ * шумом. На компьютере холст лежит ПОД страницей (z-index: -1): карточка
+ * непрозрачна и закрывает середину — видно то, что вырывается из-за её краёв.
+ * На телефоне карточки во всю ширину и «за» ними огня не видно, поэтому холст
+ * поверх страницы (front), а саму карточку шейдер вырезает из пламени.
  *
  * Холстов максимум два: один горит, второй догорает и дымит, пока мышь уже
  * на соседней карточке. Без WebGL — тихо ничего не делаем.
@@ -23,6 +25,7 @@ uniform float u_scale;
 uniform float u_time;
 uniform float u_amt;
 uniform float u_smoke;
+uniform float u_front;
 
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float noise(vec2 p) {
@@ -83,7 +86,7 @@ void main() {
     alpha = sa;
   }
 
-  float L = 120.0 * u_amt;
+  float L = (u_front > 0.5 ? 95.0 : 120.0) * u_amt;
   if (L > 0.5) {
     float reach = L * dirMul * (0.18 + 1.25 * pow(n1, 1.6));
     float v = 1.0 - smoothstep(0.0, max(reach, 1.0), max(d, 0.0));
@@ -117,7 +120,9 @@ void main() {
     alpha = max(alpha, spark);
   }
 
-  gl_FragColor = vec4(col, clamp(alpha, 0.0, 1.0));
+  // Поверх страницы (телефон): сама карточка остаётся чистой.
+  float keep = u_front > 0.5 ? smoothstep(-0.5, 1.5, d0) : 1.0;
+  gl_FragColor = vec4(col * keep, clamp(alpha, 0.0, 1.0) * keep);
 }
 `;
 
@@ -127,13 +132,15 @@ const IGNITE_S = 0.45;
 const EXTINGUISH_S = 0.55;
 const SMOKE_S = 1.6;
 
-type Uniforms = Record<'res' | 'rect' | 'radius' | 'scale' | 'time' | 'amt' | 'smoke', WebGLUniformLocation | null>;
+type Uniforms = Record<'res' | 'rect' | 'radius' | 'scale' | 'time' | 'amt' | 'smoke' | 'front', WebGLUniformLocation | null>;
 
 type Fire = {
   canvas: HTMLCanvasElement;
   gl: WebGLRenderingContext;
   u: Uniforms;
   card: HTMLElement | null;
+  /** Холст поверх страницы (телефон) или под ней (компьютер). */
+  front: boolean;
   /** Курсор на карточке: рисуем, даже пока amt ещё не успел подрасти. */
   burning: boolean;
   amt: number;
@@ -195,8 +202,10 @@ function createFire(): Fire | null {
       time: u('u_time'),
       amt: u('u_amt'),
       smoke: u('u_smoke'),
+      front: u('u_front'),
     },
     card: null,
+    front: false,
     burning: false,
     amt: 0,
     smoke: 0,
@@ -240,6 +249,7 @@ function draw(fire: Fire) {
   gl.uniform1f(u.time, performance.now() / 1000);
   gl.uniform1f(u.amt, fire.amt);
   gl.uniform1f(u.smoke, fire.smoke);
+  gl.uniform1f(u.front, fire.front ? 1 : 0);
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   return true;
 }
@@ -301,10 +311,14 @@ function acquire(card: HTMLElement): Fire | null {
   return fire;
 }
 
-export function igniteCard(card: HTMLElement) {
+/** front — холст поверх страницы (телефон), иначе под ней (компьютер). */
+export function igniteCard(card: HTMLElement, { front = false }: { front?: boolean } = {}) {
   const fire = acquire(card);
   if (!fire) return;
   fire.lastUsed = performance.now();
+  fire.front = front;
+  // Ниже шапки (z-50) и модалок, выше контента и липкой ленты категорий.
+  fire.canvas.style.zIndex = front ? '41' : '-1';
   fire.burning = true;
   stopTweens(fire);
   tween(fire, 'smoke', 0, 0.2);

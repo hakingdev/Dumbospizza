@@ -143,9 +143,30 @@ export function isAudioUnlocked() {
   return unlocked;
 }
 
-/** Смех при поджоге карточки (и при включении музыки) — каждый раз, если прошлый уже отзвучал. */
+const LAUGH_WAIT_MS = 1500;
+
+/**
+ * Смех при поджоге карточки (и при включении музыки) — каждый раз, если прошлый уже отзвучал.
+ * Первый тап на телефоне и поджигает, и разблокирует звук: тогда ждём, пока
+ * AudioContext оживёт и смехи загрузятся, но не дольше 1,5 с — потом уже не к месту.
+ */
 export function playLaugh() {
-  if (!unlocked || !ctx || ctx.state !== 'running') return;
+  if (!unlocked || !ctx) return;
+  if (ctx.state !== 'running' || !decodedLaughs.length) {
+    const c = ctx;
+    const requestedAt = Date.now();
+    Promise.all([c.resume().catch(() => {}), laughBuffers])
+      .then(() => {
+        if (c.state === 'running' && decodedLaughs.length && Date.now() - requestedAt < LAUGH_WAIT_MS) playLaughNow();
+      })
+      .catch(() => {});
+    return;
+  }
+  playLaughNow();
+}
+
+function playLaughNow() {
+  if (!ctx) return;
   const now = Date.now();
   if (now < laughUntil) return;
   const available = decodedLaughs.filter((b): b is AudioBuffer => !!b);

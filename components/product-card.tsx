@@ -16,6 +16,7 @@ import { NoTranslate } from './NoTranslate'
 import { MiniPizzaBoxBuilder } from './mini-pizza-box/MiniPizzaBoxBuilder'
 import { MINI_BOX_CATEGORY_SLUG } from '../lib/mini-pizza-box'
 import { useHalloween } from './halloween/HalloweenProvider'
+import { flareHalloweenCard, HW_TAP_OPEN_DELAY_MS } from './halloween/bus'
 
 // Halloween: огонь при наведении. Чанк грузится, только когда режим включён.
 const HalloweenCardFire = dynamic(() => import('./halloween/CardFire'), { ssr: false })
@@ -41,6 +42,9 @@ export function ProductCard({ product }: ProductCardProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   // Модалка раскрывается из фото карточки — центр фото в координатах окна.
   const imageRef = useRef<HTMLButtonElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
+  // Halloween на телефоне: товар открывается после вспышки — второй тап в эту паузу не считаем.
+  const flarePendingRef = useRef(false);
   const [modalOrigin, setModalOrigin] = useState<{ x: number; y: number } | null>(null);
   const { language } = useLanguage();
   const halloween = useHalloween();
@@ -76,9 +80,19 @@ export function ProductCard({ product }: ProductCardProps) {
       showNotice(blockedIds);
       return;
     }
-    const rect = imageRef.current?.getBoundingClientRect();
-    setModalOrigin(rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null);
-    setIsModalOpen(true);
+    if (flarePendingRef.current) return;
+    const open = () => {
+      flarePendingRef.current = false;
+      const rect = imageRef.current?.getBoundingClientRect();
+      setModalOrigin(rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null);
+      setIsModalOpen(true);
+    };
+    if (halloween.night && flareHalloweenCard(cardRef.current, 2000)) {
+      flarePendingRef.current = true;
+      setTimeout(open, HW_TAP_OPEN_DELAY_MS);
+      return;
+    }
+    open();
   };
 
   const ctaLabel = blockedWorkshop
@@ -92,6 +106,7 @@ export function ProductCard({ product }: ProductCardProps) {
   // Цена живёт у кнопки (решение), название с описанием — над ними (что это).
   return (
     <div
+      ref={cardRef}
       className={`group card relative flex h-full flex-row gap-3 overflow-hidden rounded-2xl p-3 md:flex-col md:gap-0 md:p-4 ${valentine ? 'bg-rose-100 border-2 border-rose-200 shadow-md' : ''}`}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
