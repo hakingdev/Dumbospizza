@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { Bat } from './Bat';
 import { HW_BATS, HW_DRIP, type HalloweenRect } from './bus';
-import { handleVisibility, setMusicZone, unlockAudio } from './sound';
+import { handleVisibility, setMusicZone, tryAutoplay, unlockAudio } from './sound';
 import { extinguishAll } from './fire-gl';
 
 /**
@@ -231,8 +231,10 @@ function useAudioLifecycle() {
     const events = ['pointerdown', 'touchend', 'click', 'keydown'] as const;
     let done = false;
     const remove = () => events.forEach((ev) => window.removeEventListener(ev, unlock, true));
-    function unlock() {
-      if (done) return;
+    function unlock(e: Event) {
+      // Клик по кнопке музыки она обрабатывает сама: иначе первый же клик
+      // «включить» сначала запустил бы вальс, а потом кнопка его выключила.
+      if (done || (e.target as Element | null)?.closest?.('[data-hw-sound]')) return;
       unlockAudio().then((running) => {
         if (running && !done) {
           done = true;
@@ -242,6 +244,7 @@ function useAudioLifecycle() {
     }
     events.forEach((ev) => window.addEventListener(ev, unlock, { capture: true, passive: true }));
     setMusicZone(true);
+    tryAutoplay();
     document.addEventListener('visibilitychange', handleVisibility);
     return () => {
       done = true;

@@ -1,9 +1,10 @@
 /**
  * Звук Halloween-режима: злодейский смех при поджоге карточки и фоновая музыка.
  *
- * Браузер не даёт сайту играть звук, пока посетитель ни разу не кликнул или
- * не тапнул по странице, поэтому AudioContext создаётся только в обработчике
- * жеста (unlockAudio). Громкость — через GainNode: на iOS audio.volume не работает.
+ * Музыка включена по умолчанию (выключают кнопкой в шапке, выбор запоминается).
+ * Но браузер не даёт сайту звучать, пока посетитель ни разу не кликнул или не
+ * тапнул по странице: при загрузке пробуем (tryAutoplay), иначе вальс стартует
+ * с первого жеста (unlockAudio). Громкость — через GainNode: на iOS audio.volume не работает.
  * Пока файлов в public/sounds нет, всё молча ничего не делает.
  */
 
@@ -37,7 +38,9 @@ let lastLaughAt = 0;
 let musicEl: HTMLAudioElement | null = null;
 let musicGain: GainNode | null = null;
 let musicPauseTimer: ReturnType<typeof setTimeout> | null = null;
-let musicWanted = storageGet(MUSIC_PREF_KEY) === 'on';
+let musicWanted = storageGet(MUSIC_PREF_KEY) !== 'off';
+/** Вальс реально играет (а не просто разрешён и ждёт первого клика). */
+let musicActive = false;
 let musicZone = false;
 let musicAvailable: Promise<boolean> | null = null;
 
@@ -56,6 +59,10 @@ export function subscribeSound(fn: () => void) {
 
 export function isMusicWanted() {
   return musicWanted;
+}
+
+export function isMusicActive() {
+  return musicActive;
 }
 
 function audioContext(): AudioContext | null {
@@ -114,11 +121,24 @@ export function unlockAudio(): Promise<boolean> {
     unlocked = true;
     loadLaughs(c);
   }
-  return Promise.resolve(ready).then(() => {
-    const running = c.state === 'running';
-    if (running && musicWanted && musicZone && !document.hidden) startMusic();
-    return running;
-  });
+  // play() — прямо в обработчике жеста: Safari не пускает звук из промиса после него.
+  if (musicWanted && musicZone && !document.hidden && !musicActive) startMusic();
+  return Promise.resolve(ready).then(() => c.state === 'running');
+}
+
+/**
+ * Попытка заиграть без клика (витрина только открылась). Обычно браузер
+ * не пускает — тогда вальс начнётся с первого жеста посетителя.
+ */
+export function tryAutoplay() {
+  if (!musicWanted || !musicZone || unlocked) return;
+  const c = audioContext();
+  if (!c) return;
+  c.resume()
+    .then(() => {
+      if (c.state === 'running' && !unlocked) unlockAudio();
+    })
+    .catch(() => {});
 }
 
 export function isAudioUnlocked() {
@@ -164,6 +184,14 @@ function ensureMusic(c: AudioContext) {
     musicEl = new Audio(HW_SOUNDS.music);
     musicEl.loop = true;
     musicEl.preload = 'auto';
+    musicEl.addEventListener('playing', () => {
+      musicActive = true;
+      notify();
+    });
+    musicEl.addEventListener('pause', () => {
+      musicActive = false;
+      notify();
+    });
     musicGain = c.createGain();
     musicGain.gain.value = 0;
     c.createMediaElementSource(musicEl).connect(musicGain).connect(c.destination);
