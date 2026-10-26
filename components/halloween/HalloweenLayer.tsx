@@ -5,6 +5,7 @@ import { motion, useReducedMotion } from 'motion/react';
 import { Bat } from './Bat';
 import { HW_BATS, HW_DRIP, type HalloweenRect } from './bus';
 import { handleVisibility, setMusicZone, unlockAudio } from './sound';
+import { extinguishAll } from './fire-gl';
 
 /**
  * Слой эффектов ночной витрины: фоновая стайка мышей, мыши из горящей
@@ -246,6 +247,7 @@ function useAudioLifecycle() {
       done = true;
       remove();
       setMusicZone(false);
+      extinguishAll();
       document.removeEventListener('visibilitychange', handleVisibility);
     };
   }, []);
