@@ -13,6 +13,7 @@ import { formatOrderHoursTemplate } from '../lib/order-acceptance-hours'
 import { resolveWeeklySchedule, uniformDailyRange, weeklyHoursLines } from '../lib/opening-schedule'
 import { openConsentSettings } from '../lib/consent'
 import { cachedJson } from '../lib/client-cache'
+import { useHalloween } from './halloween/HalloweenProvider'
 
 const DEFAULT_STORE_INFO = {
   address: 'Kurhausstraße 11A, 97688 Bad Kissingen',
@@ -26,6 +27,7 @@ const DEFAULT_STORE_INFO = {
 const STORE_MAPS_URL = 'https://maps.app.goo.gl/FTASQjHEaMaQn9Lz7'
 
 export function Footer() {
+  const halloween = useHalloween()
   const { language } = useLanguage()
   const [t, setT] = useState<any>(() => (k: string, fallback?: string) => fallback ?? k)
   const cookieLang = getCookie(cookieName) as string | undefined
@@ -85,7 +87,7 @@ export function Footer() {
   const uniformHours = uniformDailyRange(schedule);
 
   return (
-    <footer className="bg-gray-900 text-gray-300">
+    <footer data-hw-footer={halloween.enabled ? '' : undefined} className="bg-gray-900 text-gray-300">
       <div className="container mx-auto px-4 py-12">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
           {/* Company Info */}

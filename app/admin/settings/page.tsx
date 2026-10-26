@@ -11,6 +11,7 @@ import {
 } from '../../../lib/opening-schedule';
 import { WeeklyScheduleEditor } from '../../../components/admin-v2/weekly-schedule-editor';
 import { DEFAULT_WORKSHOP_BLOCK_MESSAGE } from '../../../lib/kitchen/workshops';
+import { patchStoreSettings } from '../../../components/admin-v2/hooks';
 
 export default function SettingsPage() {
   const [mewsPosEnabled, setMewsPosEnabled] = useState(false);
@@ -90,8 +91,13 @@ export default function SettingsPage() {
     // Social media
     facebook: '',
     instagram: '',
-    telegram: ''
+    telegram: '',
+
+    // Halloween-оформление витрины (мыши, огонь на карточках, звук)
+    halloweenMode: false
   });
+  const [halloweenSaving, setHalloweenSaving] = useState(false);
+  const [halloweenError, setHalloweenError] = useState<string | null>(null);
 
   useEffect(() => {
     const loadMewsSetting = async () => {
@@ -136,6 +142,20 @@ export default function SettingsPage() {
 
     loadStoreSettings();
   }, []);
+
+  // Сохраняется сразу, не дожидаясь общей кнопки «Сохранить»: patch берёт
+  // свежую копию с сервера, поэтому несохранённые правки формы не уходят.
+  const updateHalloweenMode = async (enabled: boolean) => {
+    setHalloweenSaving(true);
+    setHalloweenError(null);
+    const ok = await patchStoreSettings({ halloweenMode: enabled });
+    setHalloweenSaving(false);
+    if (!ok) {
+      setHalloweenError('Не удалось переключить Halloween-режим (нужны права администратора)');
+      return;
+    }
+    setSettings((prev) => ({ ...prev, halloweenMode: enabled }));
+  };
 
   const updateMewsSetting = async (enabled: boolean) => {
     try {
@@ -277,6 +297,49 @@ export default function SettingsPage() {
               <p className="text-sm text-red-600 mt-3">{mewsError}</p>
             )}
             {mewsSaving && (
+              <p className="text-sm text-gray-500 mt-2">Сохраняю...</p>
+            )}
+          </div>
+        </div>
+
+        {/* Halloween Toggle */}
+        <div className="col-span-12">
+          <div className="bg-white rounded-lg shadow-sm p-6">
+            <div className="flex items-center mb-6">
+              <span className="mr-3 text-2xl leading-none" aria-hidden="true">🎃</span>
+              <h2 className="text-xl font-bold">Halloween-режим</h2>
+            </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">Оформление витрины</p>
+                <p className="text-sm text-gray-500">
+                  {settings.halloweenMode
+                    ? 'Включён: ночная витрина, мыши, огонь на карточках, звук'
+                    : 'Выключен: обычный дизайн'}
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={halloweenSaving}
+                onClick={() => updateHalloweenMode(!settings.halloweenMode)}
+                className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors ${
+                  settings.halloweenMode ? 'bg-primary-600' : 'bg-gray-300'
+                } ${halloweenSaving ? 'opacity-60 cursor-not-allowed' : ''}`}
+                role="switch"
+                aria-checked={!!settings.halloweenMode}
+                aria-label="Halloween-режим"
+              >
+                <span
+                  className={`inline-block h-6 w-6 transform rounded-full bg-white transition-transform ${
+                    settings.halloweenMode ? 'translate-x-7' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
+            {halloweenError && (
+              <p className="text-sm text-red-600 mt-3">{halloweenError}</p>
+            )}
+            {halloweenSaving && (
               <p className="text-sm text-gray-500 mt-2">Сохраняю...</p>
             )}
           </div>

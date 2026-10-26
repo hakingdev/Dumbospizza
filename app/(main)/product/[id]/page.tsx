@@ -22,6 +22,7 @@ import { MINI_BOX_CATEGORY_SLUG } from '../../../../lib/mini-pizza-box';
 import { SafeImage } from '../../../../components/SafeImage';
 import { NoTranslate } from '../../../../components/NoTranslate';
 import { formatEuro } from '../../../../lib/format-euro';
+import { emitHalloweenDrip } from '../../../../components/halloween/bus';
 
 interface Extra {
   name: string;
@@ -235,8 +236,9 @@ export default function ProductPage() {
     ? blockedWorkshopFor({ categoryId: readCategoryId(product.category), name: product.name })
     : null;
 
-  const handleAddToCart = () => {
+  const handleAddToCart = (e: React.MouseEvent<HTMLButtonElement>) => {
     if (!product) return;
+    const addButton = e.currentTarget;
 
     // Цех позиции остановлен — в корзину не кладём, объясняем почему.
     if (blockedWorkshop) {
@@ -282,6 +284,7 @@ export default function ProductPage() {
       image: product.image,
       notes
     });
+    emitHalloweenDrip(addButton);
     
     // Show success feedback
     setTimeout(() => {

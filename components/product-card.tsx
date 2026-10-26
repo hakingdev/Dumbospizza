@@ -1,6 +1,7 @@
 "use client";
 
 import Link from 'next/link'
+import dynamic from 'next/dynamic'
 import { useEffect, useRef, useState } from 'react'
 import { Plus, ShoppingCart } from 'lucide-react'
 import ProductModal from './ProductModal'
@@ -14,6 +15,10 @@ import { SafeImage } from './SafeImage'
 import { NoTranslate } from './NoTranslate'
 import { MiniPizzaBoxBuilder } from './mini-pizza-box/MiniPizzaBoxBuilder'
 import { MINI_BOX_CATEGORY_SLUG } from '../lib/mini-pizza-box'
+import { useHalloween } from './halloween/HalloweenProvider'
+
+// Halloween: огонь при наведении. Чанк грузится, только когда режим включён.
+const HalloweenCardFire = dynamic(() => import('./halloween/CardFire'), { ssr: false })
 
 interface Product {
   id: string;
@@ -38,6 +43,9 @@ export function ProductCard({ product }: ProductCardProps) {
   const imageRef = useRef<HTMLButtonElement>(null);
   const [modalOrigin, setModalOrigin] = useState<{ x: number; y: number } | null>(null);
   const { language } = useLanguage();
+  const halloween = useHalloween();
+  // Halloween прячет валентинскую подсветку: розовое на ночной витрине не к месту.
+  const valentine = !!product.valentinePromo && !halloween.enabled;
   const [t, setT] = useState<any>(() => (k: string, fallback?: string) => fallback ?? k);
 
   useEffect(() => {
@@ -84,7 +92,7 @@ export function ProductCard({ product }: ProductCardProps) {
   // Цена живёт у кнопки (решение), название с описанием — над ними (что это).
   return (
     <div
-      className={`group card relative flex h-full flex-row gap-3 overflow-hidden rounded-2xl p-3 md:flex-col md:gap-0 md:p-4 ${product.valentinePromo ? 'bg-rose-100 border-2 border-rose-200 shadow-md' : ''}`}
+      className={`group card relative flex h-full flex-row gap-3 overflow-hidden rounded-2xl p-3 md:flex-col md:gap-0 md:p-4 ${valentine ? 'bg-rose-100 border-2 border-rose-200 shadow-md' : ''}`}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
@@ -138,7 +146,7 @@ export function ProductCard({ product }: ProductCardProps) {
         />
         <h3 className="flex items-start gap-1 text-base font-bold leading-tight text-gray-900 md:min-h-[2.75rem] md:text-lg">
           <NoTranslate className="line-clamp-2 min-w-0 break-words hyphens-auto text-balance">{product.name}</NoTranslate>
-          {product.valentinePromo && (
+          {valentine && (
             <span className="shrink-0 text-rose-500" title="Valentinstag Special">❤️</span>
           )}
         </h3>
@@ -175,6 +183,8 @@ export function ProductCard({ product }: ProductCardProps) {
           </button>
         </div>
       </div>
+
+      {halloween.night && <HalloweenCardFire suppressed={isModalOpen} />}
 
       {isMiniBox ? (
         <MiniPizzaBoxBuilder

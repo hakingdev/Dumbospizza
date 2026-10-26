@@ -4,6 +4,8 @@ import Link from 'next/link'
 import { useState, useEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import { ShoppingCart, Menu, X, User, Phone } from 'lucide-react'
+import dynamic from 'next/dynamic'
+import { useHalloween } from './halloween/HalloweenProvider'
 import { useLanguage } from '../lib/contexts/LanguageContext'
 import { loadTranslation } from '../lib/i18n'
 import { useCart } from '../lib/contexts/CartContext'
@@ -12,7 +14,10 @@ import { DEFAULT_STORE_PHONE, phoneToTelHref } from '../lib/store-phone'
 import { trackGoogleAdsPhoneCall } from '../lib/analytics/google-ads'
 import { headerHoursText, resolveWeeklySchedule } from '../lib/opening-schedule'
 
+const HalloweenSoundButton = dynamic(() => import('./halloween/SoundButton'), { ssr: false })
+
 export function Header() {
+  const halloween = useHalloween();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isCartModalOpen, setIsCartModalOpen] = useState(false);
   const [storeInfo, setStoreInfo] = useState({
@@ -75,7 +80,7 @@ export function Header() {
 
   return (
     <>
-      <header className="bg-white shadow-md sticky top-0 z-50">
+      <header data-hw-header={halloween.enabled ? '' : undefined} className="bg-white shadow-md sticky top-0 z-50">
         {/* Top bar */}
         <div className="bg-primary-600 text-white py-2">
           <div className="container mx-auto px-4">
@@ -97,7 +102,7 @@ export function Header() {
             {/* Logo */}
             <Link href="/" className="flex min-w-0 items-center">
               <div className="truncate text-xl font-bold text-primary-600 sm:text-2xl" translate="no">
-                🍕 <span className="text-gray-900">Dumbos</span>
+                {halloween.enabled ? '🎃' : '🍕'} <span className="text-gray-900">Dumbos</span>
                 <span className="text-primary-600">Pizza</span>
               </div>
             </Link>
@@ -120,6 +125,7 @@ export function Header() {
             
             {/* Action Buttons */}
             <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+              {halloween.night && <HalloweenSoundButton />}
               <Link
                 href="/account"
                 className="hidden h-12 w-12 items-center justify-center rounded-full text-gray-700 transition-colors hover:bg-primary-50 hover:text-primary-600 md:flex"

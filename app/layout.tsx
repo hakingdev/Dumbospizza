@@ -13,9 +13,15 @@ import { SITE_URL } from '../lib/site-url'
 import { connectToDatabase } from '../lib/models'
 import { getSetting } from '../lib/settings'
 import { resolveWeeklySchedule, toOpeningHoursSpecification } from '../lib/opening-schedule'
+import { halloweenZoneScript, isHalloweenMode } from '../lib/halloween/config'
+import './halloween.css'
 
 const inter = Inter({ subsets: ['latin', 'cyrillic'] })
 const siteUrl = SITE_URL
+
+// Страницы витрины статические: без этого флаг Halloween из админки застыл бы
+// до следующего деплоя. Сохранение настроек ещё и сбрасывает кэш сразу.
+export const revalidate = 60
 
 export const viewport = {
   width: 'device-width',
@@ -58,18 +64,22 @@ export default async function RootLayout({
 }) {
   // Часы приёма заказов для JSON-LD — недельный график из админки; при ошибке — дефолт.
   let schedule = resolveWeeklySchedule(null)
+  let halloween = isHalloweenMode(null)
   try {
     await connectToDatabase()
     const storeSettings = await getSetting<Record<string, any>>('storeSettings', {})
     schedule = resolveWeeklySchedule(storeSettings)
+    halloween = isHalloweenMode(storeSettings)
   } catch (error) {
     console.error('Error loading store settings for structured data:', error)
   }
 
   return (
-    <html lang="de">
+    // suppressHydrationWarning: data-hw-zone ставит скрипт ниже до гидрации.
+    <html lang="de" data-hw={halloween ? 'on' : undefined} suppressHydrationWarning>
       <head>
         <link rel="alternate" hrefLang="de" href={siteUrl} />
+        {halloween && <script dangerouslySetInnerHTML={{ __html: halloweenZoneScript() }} />}
       </head>
       <body className={inter.className}>
         {/*
@@ -83,7 +93,7 @@ export default async function RootLayout({
           dangerouslySetInnerHTML={{ __html: consentBootstrapScript() }}
         />
         <ConsentScripts />
-        <Providers>
+        <Providers halloween={halloween}>
           <TranslationProvider>
             {children}
           </TranslationProvider>

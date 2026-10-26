@@ -9,6 +9,7 @@ import { normalizeObjectId } from '../../lib/normalize-id';
 import { MINI_BOX_SLOTS, isMiniSize } from '../../lib/mini-pizza-box';
 import { SafeImage } from '../SafeImage';
 import { NoTranslate } from '../NoTranslate';
+import { emitHalloweenDrip } from '../halloween/bus';
 
 /**
  * 4er Mini Pizza Box — Vollbild-Konfigurator im «Reels»-Format (9:16-Spalte).
@@ -212,8 +213,9 @@ export function MiniPizzaBoxBuilder({ isOpen, onClose, product }: MiniPizzaBoxBu
     setAdded(false);
   };
 
-  const handleAddToCart = () => {
+  const handleAddToCart = (e: React.MouseEvent<HTMLButtonElement>) => {
     if (!complete || added) return;
+    const addButton = e.currentTarget;
     const boxId = `minibox-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     addItem({
       id: boxId,
@@ -230,6 +232,7 @@ export function MiniPizzaBoxBuilder({ isOpen, onClose, product }: MiniPizzaBoxBu
         price: s.sort.price,
       })),
     });
+    emitHalloweenDrip(addButton);
     setAdded(true);
   };
 

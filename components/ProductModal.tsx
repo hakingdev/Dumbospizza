@@ -22,6 +22,7 @@ import { readCategoryId } from './promotions/PromotionBadgesContext';
 import { SafeImage } from './SafeImage';
 import { NoTranslate } from './NoTranslate';
 import { formatEuro } from '../lib/format-euro';
+import { emitHalloweenDrip, HW_DRIP_HOLD_MS } from './halloween/bus';
 
 interface Extra {
   name: string;
@@ -301,8 +302,15 @@ export default function ProductModal({ isOpen, onClose, productId, origin, previ
     ? blockedWorkshopFor({ categoryId: readCategoryId(product.category), name: product.name })
     : null;
 
-  const handleAddToCart = () => {
-    if (!product) return;
+  // Halloween: модалка закрывается после капли крови — повторный клик в эту паузу не кладёт товар дважды.
+  const dripCloseRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (dripCloseRef.current) clearTimeout(dripCloseRef.current);
+  }, []);
+
+  const handleAddToCart = (e: React.MouseEvent<HTMLButtonElement>) => {
+    if (!product || dripCloseRef.current) return;
+    const addButton = e.currentTarget;
 
     // Цех остановлен — в корзину не кладём, показываем объяснение с минутами.
     if (blockedWorkshop) {
@@ -346,12 +354,20 @@ export default function ProductModal({ isOpen, onClose, productId, origin, previ
     });
 
     // Reset and close
-    setQuantity(1);
-    setSelectedToppings([]);
-    setSelectedSauces([]);
-    setSelectedSides([]);
-    setSelectedOptions({});
-    onClose();
+    const resetAndClose = () => {
+      dripCloseRef.current = null;
+      setQuantity(1);
+      setSelectedToppings([]);
+      setSelectedSauces([]);
+      setSelectedSides([]);
+      setSelectedOptions({});
+      onClose();
+    };
+    if (emitHalloweenDrip(addButton)) {
+      dripCloseRef.current = setTimeout(resetAndClose, HW_DRIP_HOLD_MS);
+    } else {
+      resetAndClose();
+    }
   };
 
   return (
