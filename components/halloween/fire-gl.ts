@@ -26,6 +26,7 @@ uniform float u_time;
 uniform float u_amt;
 uniform float u_smoke;
 uniform float u_front;
+uniform float u_oct;
 
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float noise(vec2 p) {
@@ -35,15 +36,19 @@ float noise(vec2 p) {
   return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x),
              mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
 }
+// u_oct слоёв шума: 5 на компьютере, 3 на телефоне (нормируем, чтобы длина языков не менялась).
 float fbm(vec2 p) {
   float v = 0.0;
   float a = 0.5;
+  float sum = 0.0;
   for (int i = 0; i < 5; i++) {
+    if (float(i) >= u_oct) break;
     v += a * noise(p);
+    sum += a;
     p = p * 2.03 + vec2(1.7, 9.2);
     a *= 0.5;
   }
-  return v;
+  return v / sum * 0.97;
 }
 float sdRound(vec2 p, vec2 b, float r) {
   vec2 q = abs(p) - b + r;
@@ -57,6 +62,14 @@ void main() {
   vec2 hs = u_rect.zw * 0.5;
   float t = u_time;
   float d0 = sdRound(px - c, hs, u_radius);
+
+  // Дорогой шум не считаем там, где огня быть не может: под самой карточкой
+  // (её всё равно не видно — она непрозрачна или вырезана) и вдали от неё.
+  float reachMax = (u_front > 0.5 ? 95.0 : 120.0) * 1.5 * u_amt + 40.0 + (u_smoke > 0.001 ? 170.0 : 0.0);
+  if (d0 < -3.0 || d0 > reachMax) {
+    gl_FragColor = vec4(0.0);
+    return;
+  }
 
   // Шум, вытянутый по вертикали и бегущий вверх, — из него языки пламени.
   float n1 = fbm(vec2(px.x * 0.022, px.y * 0.011 - t * 1.35));
@@ -131,16 +144,27 @@ const PAD = { top: 170, side: 80, bottom: 36 };
 const IGNITE_S = 0.45;
 const EXTINGUISH_S = 0.55;
 const SMOKE_S = 1.6;
+// Телефон: 30 кадров/с вместо 60 и меньше пикселей — на маленьком экране разницы не видно.
+const LITE_FRAME_MS = 32;
+// Положение карточки перечитываем не каждый кадр, а раз в 300 мс.
+const RECT_TTL_MS = 300;
 
-type Uniforms = Record<'res' | 'rect' | 'radius' | 'scale' | 'time' | 'amt' | 'smoke' | 'front', WebGLUniformLocation | null>;
+type Uniforms = Record<
+  'res' | 'rect' | 'radius' | 'scale' | 'time' | 'amt' | 'smoke' | 'front' | 'oct',
+  WebGLUniformLocation | null
+>;
 
 type Fire = {
   canvas: HTMLCanvasElement;
   gl: WebGLRenderingContext;
   u: Uniforms;
   card: HTMLElement | null;
-  /** Холст поверх страницы (телефон) или под ней (компьютер). */
+  /** Холст поверх страницы и облегчённый огонь (телефон) или под ней (компьютер). */
   front: boolean;
+  /** Положение карточки в координатах документа и когда его снимали. */
+  rect: { x: number; y: number; w: number; h: number; at: number } | null;
+  radius: number;
+  lastDraw: number;
   /** Курсор на карточке: рисуем, даже пока amt ещё не успел подрасти. */
   burning: boolean;
   amt: number;
@@ -203,9 +227,13 @@ function createFire(): Fire | null {
       amt: u('u_amt'),
       smoke: u('u_smoke'),
       front: u('u_front'),
+      oct: u('u_oct'),
     },
     card: null,
     front: false,
+    rect: null,
+    radius: 16,
+    lastDraw: 0,
     burning: false,
     amt: 0,
     smoke: 0,
@@ -215,18 +243,26 @@ function createFire(): Fire | null {
   };
 }
 
-function renderScale() {
-  // Пламя размыто по природе: хватает ~1.2 пикселя на CSS-пиксель даже на retina.
-  return Math.min(window.devicePixelRatio || 1, 2) * 0.6;
+function renderScale(lite: boolean) {
+  // Пламя размыто по природе: хватает ~1.2 пикселя на CSS-пиксель даже на retina, телефону — 0.8.
+  return Math.min(window.devicePixelRatio || 1, 2) * (lite ? 0.4 : 0.6);
+}
+
+function measure(fire: Fire, card: HTMLElement) {
+  const r = card.getBoundingClientRect();
+  fire.rect = { x: r.left + window.scrollX, y: r.top + window.scrollY, w: r.width, h: r.height, at: performance.now() };
 }
 
 function draw(fire: Fire) {
   const { canvas, gl, u, card } = fire;
   if (!card || !card.isConnected) return false;
-  const r = card.getBoundingClientRect();
-  const w = r.width + PAD.side * 2;
-  const h = r.height + PAD.top + PAD.bottom;
-  const scale = renderScale();
+  // Холст в координатах документа сам едет со страницей при прокрутке —
+  // перемерять карточку (это пересчёт раскладки) нужно лишь изредка.
+  if (!fire.rect || performance.now() - fire.rect.at > RECT_TTL_MS) measure(fire, card);
+  const r = fire.rect!;
+  const w = r.w + PAD.side * 2;
+  const h = r.h + PAD.top + PAD.bottom;
+  const scale = renderScale(fire.front);
   const bw = Math.round(w * scale);
   const bh = Math.round(h * scale);
   if (canvas.width !== bw || canvas.height !== bh) {
@@ -235,21 +271,21 @@ function draw(fire: Fire) {
     canvas.style.width = `${w}px`;
     canvas.style.height = `${h}px`;
   }
-  canvas.style.transform = `translate(${r.left + window.scrollX - PAD.side}px, ${r.top + window.scrollY - PAD.top}px)`;
-  const radius = parseFloat(getComputedStyle(card).borderTopLeftRadius) || 16;
+  canvas.style.transform = `translate(${r.x - PAD.side}px, ${r.y - PAD.top}px)`;
 
   gl.viewport(0, 0, bw, bh);
   gl.clearColor(0, 0, 0, 0);
   gl.clear(gl.COLOR_BUFFER_BIT);
   gl.uniform2f(u.res, bw, bh);
   // В шейдере ось Y смотрит вверх: прямоугольник карточки от нижнего края холста.
-  gl.uniform4f(u.rect, PAD.side, PAD.bottom, r.width, r.height);
-  gl.uniform1f(u.radius, radius);
+  gl.uniform4f(u.rect, PAD.side, PAD.bottom, r.w, r.h);
+  gl.uniform1f(u.radius, fire.radius);
   gl.uniform1f(u.scale, scale);
   gl.uniform1f(u.time, performance.now() / 1000);
   gl.uniform1f(u.amt, fire.amt);
   gl.uniform1f(u.smoke, fire.smoke);
   gl.uniform1f(u.front, fire.front ? 1 : 0);
+  gl.uniform1f(u.oct, fire.front ? 3 : 5);
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   return true;
 }
@@ -257,8 +293,11 @@ function draw(fire: Fire) {
 function loop(fire: Fire) {
   if (fire.raf) return;
   fire.canvas.style.display = 'block';
-  const tick = () => {
-    const alive = (fire.burning || fire.amt > 0.001 || fire.smoke > 0.001) && draw(fire);
+  const tick = (now: number) => {
+    const active = fire.burning || fire.amt > 0.001 || fire.smoke > 0.001;
+    const skip = active && fire.front && now - fire.lastDraw < LITE_FRAME_MS;
+    const alive = active && (skip || draw(fire));
+    if (!skip) fire.lastDraw = now;
     if (!alive) {
       fire.raf = 0;
       fire.card = null;
@@ -308,7 +347,30 @@ function acquire(card: HTMLElement): Fire | null {
   fire.amt = 0;
   fire.smoke = 0;
   fire.card = card;
+  fire.rect = null;
+  fire.radius = parseFloat(getComputedStyle(card).borderTopLeftRadius) || 16;
   return fire;
+}
+
+/**
+ * Компиляция шейдера блокирует страницу на 0,15–0,25 с. Делаем её заранее,
+ * пока витрина простаивает, — тогда первое возгорание не подвисает.
+ */
+export function prewarmFire() {
+  if (unsupported || pool.length) return;
+  for (let i = 0; i < 2; i++) {
+    const fire = createFire();
+    if (!fire) {
+      unsupported = true;
+      return;
+    }
+    // Один крошечный кадр — драйвер доделывает компиляцию на первой отрисовке.
+    fire.canvas.width = 1;
+    fire.canvas.height = 1;
+    fire.gl.viewport(0, 0, 1, 1);
+    fire.gl.drawArrays(fire.gl.TRIANGLE_STRIP, 0, 4);
+    pool.push(fire);
+  }
 }
 
 /** front — холст поверх страницы (телефон), иначе под ней (компьютер). */
@@ -326,14 +388,23 @@ export function igniteCard(card: HTMLElement, { front = false }: { front?: boole
   loop(fire);
 }
 
-export function extinguishCard(card: HTMLElement) {
+/**
+ * instant — открылся товар: гасим сразу, без затухания и дыма, чтобы окно
+ * товара открывалось на свободном телефоне. На телефоне дыма нет вообще.
+ */
+export function extinguishCard(card: HTMLElement, { instant = false }: { instant?: boolean } = {}) {
   const fire = pool.find((f) => f.card === card);
   if (!fire) return;
   fire.burning = false;
   stopTweens(fire);
-  fire.smoke = Math.max(fire.smoke, fire.amt);
+  if (instant) {
+    fire.amt = 0;
+    fire.smoke = 0;
+    return;
+  }
+  if (!fire.front) fire.smoke = Math.max(fire.smoke, fire.amt);
   tween(fire, 'amt', 0, EXTINGUISH_S);
-  tween(fire, 'smoke', 0, SMOKE_S, 0.15);
+  if (!fire.front) tween(fire, 'smoke', 0, SMOKE_S, 0.15);
   loop(fire);
 }
 

@@ -16,7 +16,8 @@ import { NoTranslate } from './NoTranslate'
 import { MiniPizzaBoxBuilder } from './mini-pizza-box/MiniPizzaBoxBuilder'
 import { MINI_BOX_CATEGORY_SLUG } from '../lib/mini-pizza-box'
 import { useHalloween } from './halloween/HalloweenProvider'
-import { flareHalloweenCard, HW_TAP_OPEN_DELAY_MS } from './halloween/bus'
+import { flareHalloweenCard, HW_TAP_OPEN_DELAY_MS, setHalloweenProductOpen } from './halloween/bus'
+import { prefetchProduct } from '../lib/products/prefetch'
 
 // Halloween: огонь при наведении. Чанк грузится, только когда режим включён.
 const HalloweenCardFire = dynamic(() => import('./halloween/CardFire'), { ssr: false })
@@ -73,6 +74,18 @@ export function ProductCard({ product }: ProductCardProps) {
   const blockedWorkshop = blockedWorkshopFor({ categoryId, name: product.name });
   const blockedIds = blockedWorkshop ? [blockedWorkshop] : [];
 
+  // Пока товар открыт, Halloween-эффекты на паузе.
+  useEffect(() => {
+    if (!halloween.night || !isModalOpen) return;
+    setHalloweenProductOpen(true);
+    return () => setHalloweenProductOpen(false);
+  }, [halloween.night, isModalOpen]);
+
+  // Товар начинает грузиться с касания, а не после открытия модалки (и паузы на вспышку).
+  const prefetch = () => {
+    if (!isMiniBox && !blockedWorkshop) prefetchProduct(product.id);
+  };
+
   const handleOpenModal = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -81,6 +94,7 @@ export function ProductCard({ product }: ProductCardProps) {
       return;
     }
     if (flarePendingRef.current) return;
+    prefetch();
     const open = () => {
       flarePendingRef.current = false;
       const rect = imageRef.current?.getBoundingClientRect();
@@ -115,6 +129,7 @@ export function ProductCard({ product }: ProductCardProps) {
       <button
         type="button"
         onClick={handleOpenModal}
+        onPointerDown={prefetch}
         aria-label={`${product.name}: ${ctaLabel}`}
         ref={imageRef}
         className="relative h-28 w-28 shrink-0 overflow-hidden rounded-xl bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-700 md:mb-4 md:h-56 md:w-full"
@@ -179,6 +194,7 @@ export function ProductCard({ product }: ProductCardProps) {
           <button
             type="button"
             onClick={handleOpenModal}
+            onPointerDown={prefetch}
             aria-disabled={!!blockedWorkshop}
             className={`flex h-11 w-11 shrink-0 items-center justify-center gap-2 rounded-full font-medium leading-tight shadow-md transition-all md:mt-3 md:h-auto md:min-h-[44px] md:w-full md:rounded-lg md:px-4 md:py-3 ${
               blockedWorkshop

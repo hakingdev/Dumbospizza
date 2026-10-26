@@ -8,6 +8,23 @@ export type HalloweenRect = { left: number; top: number; right: number; bottom: 
 export const HW_DRIP = 'hw:drip';
 export const HW_BATS = 'hw:bats';
 export const HW_FLARE = 'hw:flare';
+export const HW_PAUSE = 'hw:pause';
+
+let openProducts = 0;
+
+/**
+ * Открыт товар (модалка или конструктор Mini Box): мыши не летают, пока он
+ * открыт, — телефон занят открытием окна и загрузкой товара.
+ */
+export function setHalloweenProductOpen(open: boolean) {
+  if (typeof window === 'undefined') return;
+  openProducts = Math.max(0, openProducts + (open ? 1 : -1));
+  window.dispatchEvent(new CustomEvent<boolean>(HW_PAUSE, { detail: openProducts > 0 }));
+}
+
+export function isHalloweenPaused() {
+  return openProducts > 0;
+}
 
 function emit(name: string, el: Element | null | undefined): boolean {
   if (typeof window === 'undefined' || !el) return false;
@@ -35,7 +52,7 @@ export function emitHalloweenBats(card: Element | null | undefined) {
 }
 
 /** Телефон: тап по фото/«+» — сначала вспышка, товар открывается через эту паузу. */
-export const HW_TAP_OPEN_DELAY_MS = 600;
+export const HW_TAP_OPEN_DELAY_MS = 250;
 
 function matches(query: string) {
   try {
