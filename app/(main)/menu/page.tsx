@@ -243,6 +243,7 @@ export default function MenuPage() {
       {/* Klebrige Kategorie-Leiste — top wird per JS auf die Header-Höhe gesetzt */}
       <div
         ref={barWrapRef}
+        data-hw-bar
         className="sticky z-40 border-b border-gray-200 bg-white/95 backdrop-blur-sm"
         style={{ top: headerH }}
       >

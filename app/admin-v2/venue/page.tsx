@@ -98,6 +98,7 @@ export default function VenuePage() {
   const [busyZone, setBusyZone] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [pauseBusy, setPauseBusy] = useState(false);
+  const [halloweenBusy, setHalloweenBusy] = useState(false);
   /* Режимы «Изменить» карточек (D4): в покое — тихие списки значений */
   const [editHours, setEditHours] = useState(false);
   const [editInfo, setEditInfo] = useState(false);
@@ -206,6 +207,17 @@ export default function VenuePage() {
     setPauseBusy(false);
     if (!ok) {
       alert('Не удалось изменить приём заказов (нужны права администратора)');
+      return;
+    }
+    store.reload();
+  };
+
+  const handleHalloweenToggle = async (next: boolean) => {
+    setHalloweenBusy(true);
+    const ok = await patchStoreSettings({ halloweenMode: next });
+    setHalloweenBusy(false);
+    if (!ok) {
+      alert('Не удалось переключить Halloween-режим (нужны права администратора)');
       return;
     }
     store.reload();
@@ -331,6 +343,25 @@ export default function VenuePage() {
           {isBlocked ? 'Возобновить приём' : 'Приостановить приём'}
         </button>
       </div>
+
+      {/* Halloween-оформление витрины: переключается сразу, без кнопки «Сохранить» */}
+      <Card className="flex items-center gap-3 p-4 lg:px-6 lg:py-5">
+        <span className="flex-none text-2xl leading-none" aria-hidden="true">🎃</span>
+        <div className="min-w-0 flex-1">
+          <div className="text-base font-bold leading-6 text-gray-900 lg:text-lg">Halloween-режим</div>
+          <div className="text-sm leading-5 text-gray-600">
+            {store.settings?.halloweenMode
+              ? 'Включён: ночная витрина, мыши, огонь на карточках, звук'
+              : 'Выключен: обычный дизайн витрины'}
+          </div>
+        </div>
+        <Toggle
+          on={!!store.settings?.halloweenMode}
+          busy={halloweenBusy}
+          label={store.settings?.halloweenMode ? 'Выключить Halloween-режим' : 'Включить Halloween-режим'}
+          onChange={handleHalloweenToggle}
+        />
+      </Card>
 
       <div className="flex flex-col items-start gap-4 lg:gap-6 xl:flex-row">
         {/* Часы работы */}

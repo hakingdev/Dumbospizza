@@ -1,0 +1,300 @@
+/*
+ * Halloween-режим витрины. Всё здесь спит, пока на <html> нет data-hw="on"
+ * (флаг в админке); data-hw-zone="night" — только страницы витрины
+ * (главная, меню, категории, товар). Карточки, модалки и корзина
+ * остаются светлыми: «ночь снаружи».
+ */
+
+:root {
+  --hw-night: #120b1a;
+  --hw-night-2: #1c1029;
+  --hw-ink: #f4ead9;
+  --hw-ink-muted: #d6cae4;
+  --hw-pumpkin: #c2410c;
+  --hw-pumpkin-dark: #9a3412;
+  --hw-pumpkin-light: #fdba74;
+  --hw-web: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' fill='none' stroke='white' stroke-width='1.3' stroke-linecap='round'%3E%3Cpath d='M0 0L100.0 0.0 M0 0L96.1 27.6 M0 0L81.9 57.4 M0 0L55.9 82.9 M0 0L24.2 97.0 M0 0L0.0 100.0 M22.0 0.0Q17.9 2.5 21.1 6.1Q16.3 7.8 18.0 12.6Q12.6 12.9 12.3 18.2Q7.3 16.5 5.3 21.3Q2.2 17.9 0.0 22.0 M44.0 0.0Q35.7 5.0 42.3 12.1Q32.6 15.5 36.0 25.2Q25.3 25.7 24.6 36.5Q14.7 33.0 10.6 42.7Q4.4 35.8 0.0 44.0 M66.0 0.0Q53.6 7.5 63.4 18.2Q48.8 23.3 54.1 37.9Q37.9 38.6 36.9 54.7Q22.0 49.4 16.0 64.0Q6.6 53.7 0.0 66.0 M90.0 0.0Q73.1 10.3 86.5 24.8Q66.6 31.8 73.7 51.6Q51.7 52.6 50.3 74.6Q30.0 67.4 21.8 87.3Q9.0 73.2 0.0 90.0'/%3E%3C/svg%3E");
+  --hw-bat: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 24' fill='%23140c1d' stroke='%23fb923c' stroke-width='0.9' stroke-opacity='0.8'%3E%3Cpath d='M30 11C26 7 18 5.5 4 8c4 1.6 6 4.4 6 8 2.6-1.6 5.8-1.2 7.4.8 1.2-2 4.2-2.4 6-1.2.8-2 3.2-2.6 4.6-1.6L30 17Z M34 11c4-4 12-5.5 26-3-4 1.6-6 4.4-6 8-2.6-1.6-5.8-1.2-7.4.8-1.2-2-4.2-2.4-6-1.2-.8-2-3.2-2.6-4.6-1.6L34 17Z M29.6 9.5 30.4 5.5 31.6 8.8Z M34.4 9.5 33.6 5.5 32.4 8.8Z'/%3E%3Cellipse cx='32' cy='13.5' rx='3.2' ry='5.5'/%3E%3C/svg%3E");
+}
+
+/* ---------- Шапка и подвал: ночные на всём сайте ---------- */
+
+html[data-hw='on'] [data-hw-header] {
+  background-color: var(--hw-night);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+}
+html[data-hw='on'] [data-hw-header] .bg-primary-600 {
+  background-color: var(--hw-pumpkin);
+}
+html[data-hw='on'] [data-hw-header] .hover\:bg-primary-700:hover {
+  background-color: var(--hw-pumpkin-dark);
+}
+html[data-hw='on'] [data-hw-header] :is(.text-gray-700, .text-gray-900) {
+  color: var(--hw-ink);
+}
+html[data-hw='on'] [data-hw-header] .text-primary-600,
+html[data-hw='on'] [data-hw-header] :is(.hover\:text-primary-600, .hover\:text-primary-700):hover {
+  color: var(--hw-pumpkin-light);
+}
+html[data-hw='on'] [data-hw-header] .hover\:bg-primary-50:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+html[data-hw='on'] [data-hw-header] #mobile-menu {
+  background-color: var(--hw-night);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+/* Паутина в верхних углах шапки */
+html[data-hw='on'] [data-hw-header]::before,
+html[data-hw='on'] [data-hw-header]::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  width: 46px;
+  height: 46px;
+  background: var(--hw-web) no-repeat center / contain;
+  opacity: 0.45;
+  pointer-events: none;
+  z-index: 1;
+}
+html[data-hw='on'] [data-hw-header]::before {
+  left: 0;
+}
+html[data-hw='on'] [data-hw-header]::after {
+  right: 0;
+  transform: scaleX(-1);
+}
+
+html[data-hw='on'] [data-hw-footer] {
+  background-color: #0b0710;
+}
+
+/* ---------- Ночная витрина ---------- */
+
+html[data-hw-zone='night'] body {
+  background:
+    radial-gradient(90% 60% at 80% 0%, rgba(124, 58, 237, 0.22) 0%, rgba(124, 58, 237, 0) 60%),
+    radial-gradient(70% 50% at 10% 100%, rgba(194, 65, 12, 0.14) 0%, rgba(194, 65, 12, 0) 60%),
+    var(--hw-night);
+}
+html[data-hw-zone='night'] main :is(main.bg-gray-50, section.bg-white, section.bg-rose-50\/50, .min-h-screen.bg-gray-50) {
+  background: transparent;
+}
+
+/* Тексты прямо на ночном фоне (не внутри светлых карточек и панелей) */
+html[data-hw-zone='night'] main :is(h1, h2):not(.card *, .bg-white:not(section) *, [class*='bg-gradient'] *) {
+  color: var(--hw-ink);
+}
+html[data-hw-zone='night'] main :is(h2, h3).text-gray-700:not(.card *, .bg-white:not(section) *) {
+  color: var(--hw-ink-muted);
+}
+html[data-hw-zone='night'] main p:is(.text-gray-500, .text-gray-600):not(.card *, .bg-white:not(section) *, [class*='bg-gradient'] *) {
+  color: var(--hw-ink-muted);
+}
+html[data-hw-zone='night'] main a.text-primary-600:not(.card *, .bg-white:not(section) *) {
+  color: var(--hw-pumpkin-light);
+}
+html[data-hw-zone='night'] main a.text-primary-600:not(.card *, .bg-white:not(section) *):hover {
+  color: #fed7aa;
+}
+
+/* Липкая лента категорий в меню */
+html[data-hw-zone='night'] [data-hw-bar] {
+  background-color: rgba(18, 11, 26, 0.92);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+html[data-hw-zone='night'] [data-hw-bar] .bg-gray-100 {
+  background-color: rgba(255, 255, 255, 0.08);
+  color: var(--hw-ink);
+}
+html[data-hw-zone='night'] [data-hw-bar] .bg-gray-100 .text-gray-600 {
+  color: var(--hw-ink-muted);
+}
+html[data-hw-zone='night'] [data-hw-bar] .hover\:bg-gray-200:hover {
+  background-color: rgba(255, 255, 255, 0.16);
+}
+
+/* Тыквенные основные кнопки и акценты (и в модалках витрины) */
+html[data-hw-zone='night'] :is(.bg-primary-600, .btn-primary) {
+  background-color: var(--hw-pumpkin);
+}
+html[data-hw-zone='night'] :is(.hover\:bg-primary-700:hover, .btn-primary:hover) {
+  background-color: var(--hw-pumpkin-dark);
+}
+html[data-hw-zone='night'] .text-primary-600 {
+  color: var(--hw-pumpkin);
+}
+html[data-hw-zone='night'] :is(.text-primary-700, .hover\:text-primary-700:hover) {
+  color: var(--hw-pumpkin-dark);
+}
+html[data-hw-zone='night'] .border-primary-600 {
+  border-color: var(--hw-pumpkin);
+}
+html[data-hw-zone='night'] :is(.bg-primary-50, .hover\:bg-primary-50:hover) {
+  background-color: #fff7ed;
+}
+html[data-hw-zone='night'] .bg-primary-100 {
+  background-color: #ffedd5;
+}
+
+/* Hero: ночное небо, луна с мышами и туман */
+html[data-hw-zone='night'] [data-hw-hero] {
+  isolation: isolate;
+  background:
+    radial-gradient(55% 65% at 85% 15%, rgba(251, 146, 60, 0.22) 0%, rgba(251, 146, 60, 0) 60%),
+    linear-gradient(160deg, #2a1340 0%, #170b24 55%, #0c0612 100%) !important;
+}
+html[data-hw-zone='night'] [data-hw-hero] h1 .bg-clip-text {
+  background-image: linear-gradient(90deg, #fed7aa, #fb923c);
+}
+/* Луна выглядывает из-за фото: на телефоне — у правого верхнего угла,
+   на десктопе — между текстом и фото. */
+html[data-hw-zone='night'] [data-hw-hero]::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  top: 0;
+  right: -4%;
+  width: clamp(150px, 24vw, 260px);
+  aspect-ratio: 11 / 8;
+  pointer-events: none;
+  background:
+    var(--hw-bat) 4% 18% / 22% auto no-repeat,
+    var(--hw-bat) 88% 82% / 15% auto no-repeat,
+    var(--hw-bat) 26% 92% / 11% auto no-repeat,
+    radial-gradient(circle at 58% 42%, #fffbeb 0, #fde68a 20%, rgba(253, 230, 138, 0) 21%),
+    radial-gradient(circle at 58% 42%, rgba(253, 230, 138, 0.35) 0, rgba(253, 230, 138, 0) 46%);
+}
+html[data-hw-zone='night'] [data-hw-hero]::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: auto -20% 0 -20%;
+  height: 45%;
+  pointer-events: none;
+  background:
+    radial-gradient(40% 60% at 20% 100%, rgba(214, 202, 228, 0.22), rgba(214, 202, 228, 0) 70%),
+    radial-gradient(35% 55% at 55% 100%, rgba(214, 202, 228, 0.18), rgba(214, 202, 228, 0) 70%),
+    radial-gradient(40% 60% at 85% 100%, rgba(214, 202, 228, 0.2), rgba(214, 202, 228, 0) 70%);
+  animation: hw-fog-drift 26s ease-in-out infinite alternate;
+}
+
+/* Туман над подвалом */
+html[data-hw-zone='night'] [data-hw-footer] {
+  position: relative;
+}
+html[data-hw-zone='night'] [data-hw-footer]::before {
+  content: '';
+  position: absolute;
+  inset: -56px -10% auto -10%;
+  height: 56px;
+  pointer-events: none;
+  background:
+    radial-gradient(30% 100% at 15% 100%, rgba(214, 202, 228, 0.16), rgba(214, 202, 228, 0) 70%),
+    radial-gradient(30% 100% at 50% 100%, rgba(214, 202, 228, 0.12), rgba(214, 202, 228, 0) 70%),
+    radial-gradient(30% 100% at 85% 100%, rgba(214, 202, 228, 0.15), rgba(214, 202, 228, 0) 70%);
+  animation: hw-fog-drift 30s ease-in-out infinite alternate-reverse;
+}
+
+@media (min-width: 1024px) {
+  html[data-hw-zone='night'] [data-hw-hero]::before {
+    right: auto;
+    top: 2%;
+    left: 38%;
+  }
+}
+
+@keyframes hw-fog-drift {
+  from {
+    transform: translateX(-6%);
+  }
+  to {
+    transform: translateX(6%);
+  }
+}
+
+/* ---------- Мыши, огонь, искры (элементы слоя эффектов) ---------- */
+
+.hw-bat {
+  display: block;
+  overflow: visible;
+  filter: drop-shadow(0 0 1.5px rgba(251, 146, 60, 0.85)) drop-shadow(0 0 5px rgba(251, 146, 60, 0.3));
+}
+.hw-wing {
+  transform-box: fill-box;
+  animation: hw-flap var(--hw-flap, 0.22s) ease-in-out infinite alternate;
+}
+.hw-wing-l {
+  transform-origin: 100% 45%;
+}
+.hw-wing-r {
+  transform-origin: 0% 45%;
+}
+@keyframes hw-flap {
+  from {
+    transform: scaleY(1);
+  }
+  to {
+    transform: scaleY(-0.5);
+  }
+}
+
+.hw-flame {
+  position: absolute;
+  transform-origin: 50% 100%;
+  animation: hw-flicker var(--hw-dur, 0.9s) ease-in-out infinite alternate;
+  animation-delay: var(--hw-delay, 0s);
+}
+@keyframes hw-flicker {
+  0% {
+    transform: scale(1, 1) skewX(0deg);
+  }
+  35% {
+    transform: scale(0.9, 1.14) skewX(-5deg);
+  }
+  70% {
+    transform: scale(1.06, 0.9) skewX(4deg);
+  }
+  100% {
+    transform: scale(0.95, 1.07) skewX(-2deg);
+  }
+}
+
+.hw-ember {
+  position: absolute;
+  bottom: 10px;
+  width: 3px;
+  height: 3px;
+  border-radius: 9999px;
+  background: #ffd27a;
+  box-shadow: 0 0 6px 2px rgba(255, 138, 31, 0.8);
+  opacity: 0;
+  animation: hw-ember var(--hw-dur, 1.6s) ease-out infinite;
+  animation-delay: var(--hw-delay, 0s);
+}
+@keyframes hw-ember {
+  0% {
+    transform: translate(0, 0);
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--hw-dx, 10px), -160px);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hw-wing,
+  .hw-flame {
+    animation: none;
+  }
+  .hw-ember {
+    display: none;
+  }
+  html[data-hw-zone='night'] :is([data-hw-hero], [data-hw-footer])::after,
+  html[data-hw-zone='night'] [data-hw-footer]::before {
+    animation: none;
+  }
+}

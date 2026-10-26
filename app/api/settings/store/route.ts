@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { revalidatePath } from 'next/cache';
 import { connectToDatabase } from '../../../../lib/models';
 import { getSetting, setSetting } from '../../../../lib/settings';
 import { getServerSession } from 'next-auth';
@@ -97,6 +98,9 @@ export async function POST(request: NextRequest) {
       data.ordersWeeklySchedule = schedule;
     }
     await setSetting('storeSettings', data || {});
+    // Root layout читает настройки (Halloween-режим, часы в JSON-LD) при пререндере —
+    // сбрасываем кэш, чтобы витрина подхватила их сразу, а не через revalidate.
+    revalidatePath('/', 'layout');
     return NextResponse.json({ success: true });
   } catch (error: any) {
     console.error('Error saving store settings:', error);

@@ -35,6 +35,7 @@ export function Hero() {
     <section className="relative overflow-hidden">
       <div className="container mx-auto px-0 md:px-4 md:py-10">
         <div
+          data-hw-hero
           className="relative overflow-hidden shadow-2xl md:rounded-[28px]"
           style={{
             background:
