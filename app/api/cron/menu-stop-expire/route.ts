@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '../../../../lib/models';
-import { expireMenuStops } from '../../../../lib/menu-stop/service';
+import { expireMenuStops, resetMenuStopMode } from '../../../../lib/menu-stop/service';
 import { sendControlMessage } from '../../../../lib/telegram-control';
 
 /**
@@ -10,6 +10,11 @@ import { sendControlMessage } from '../../../../lib/telegram-control';
  * заведомо после закрытия и до открытия, с запасом на перевод часов.
  * Те же записи снимают и сами экраны бота при открытии, так что крон —
  * страховка на ночи, когда панель никто не открывал.
+ *
+ * Бессрочные записи (until = null) крон НЕ трогает — их включают только
+ * кнопкой; на Lieferando их заново выключает утренний крон menu-stop-reapply.
+ * Заодно режим кнопок бота возвращается на «до конца дня», чтобы случайный
+ * тап назавтра не выключил позицию навсегда.
  *
  * Авторизация (как у других cron-роутов):
  *   Header: Authorization: Bearer CRON_SECRET  ИЛИ  ?secret=CRON_SECRET
@@ -34,14 +39,17 @@ export async function GET(request: NextRequest) {
     }
 
     await connectToDatabase();
-    const result = await expireMenuStops(new Date());
+    const expired = await expireMenuStops(new Date());
+    const modeReset = await resetMenuStopMode();
+    const result = { ...expired, modeReset };
     console.log('[menu-stop-expire]', result);
 
     // Сообщение в группу стоп-бота — best-effort, только если что-то включили.
-    if (result.sizes.length || result.products.length) {
+    if (expired.sizes.length || expired.products.length) {
       const lines = ['🌅 <b>Стоп-лист бота снят</b> — включено обратно:'];
-      if (result.sizes.length) lines.push(`🍕 Размеры: ${result.sizes.join(', ')}`);
-      if (result.products.length) lines.push(`📋 Позиции: ${result.products.join(', ')}`);
+      if (expired.sizes.length) lines.push(`🍕 Размеры: ${expired.sizes.join(', ')}`);
+      if (expired.products.length) lines.push(`📋 Позиции: ${expired.products.join(', ')}`);
+      if (modeReset) lines.push('⏳ Режим кнопок бота снова «до конца дня».');
       await sendControlMessage(lines.join('\n'));
     }
 

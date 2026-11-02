@@ -11,6 +11,7 @@ import {
   claimLieferandoCommand,
   describeLieferandoTarget,
   formatLieferandoReport,
+  lieferandoReportWanted,
   lieferandoTargetKey,
   readLieferandoState,
   readLieferandoTarget,
@@ -227,6 +228,26 @@ describe('requestLieferandoCommand', () => {
     await requestLieferandoCommand('off', { kind: 'item', names: ['B', 'A'] }, NOW);
     expect(written().commands).toHaveLength(1);
   });
+
+  it('origin: «бессрочно»/«утреннее перевыключение» пишутся, кнопка бота — нет', async () => {
+    mGet.mockResolvedValue({ commands: [] });
+    await requestLieferandoCommand('off', SIZE_30, NOW, { origin: 'reapply' });
+    expect(written().commands[0]).toMatchObject({ origin: 'reapply' });
+    await requestLieferandoCommand('off', ITEM_HAW, NOW, { origin: 'indefinite' });
+    expect(written().commands[0]).toMatchObject({ origin: 'indefinite' });
+    await requestLieferandoCommand('off', SIZE_30, NOW, { origin: 'bot' });
+    expect('origin' in written().commands[0]).toBe(false);
+    await requestLieferandoCommand('off', SIZE_30, NOW);
+    expect('origin' in written().commands[0]).toBe(false);
+    // чтение: мусорный origin отбрасывается, валидный сохраняется
+    const state = readLieferandoState({
+      commands: [
+        { ...cmd('a', 'off', SIZE_30), origin: 'reapply' },
+        { ...cmd('b', 'off', SIZE_30), origin: 'alien' },
+      ],
+    });
+    expect(state.commands.map((c) => c.origin)).toEqual(['reapply', undefined]);
+  });
 });
 
 describe('claimLieferandoCommand', () => {
@@ -305,6 +326,35 @@ describe('claimLieferandoCommand', () => {
 });
 
 describe('reportLieferandoResult', () => {
+  it('origin команды доезжает до running и до lastResult (агент его не шлёт)', async () => {
+    mGet.mockResolvedValue({ commands: [{ ...cmd('c1', 'off', SIZE_30), origin: 'reapply' }] });
+    const { command } = await claimLieferandoCommand('pc-1', NOW, null, { supportsTargets: true });
+    expect(command).toMatchObject({ id: 'c1', origin: 'reapply' });
+    expect(written().running).toMatchObject({ id: 'c1', origin: 'reapply' });
+
+    mGet.mockResolvedValue({ running: { ...written().running } });
+    await reportLieferandoResult(
+      { id: 'c1', action: 'off', target: SIZE_30, ok: true, count: 23, failed: 0, message: '' },
+      NOW
+    );
+    expect(written().lastResult).toMatchObject({ id: 'c1', origin: 'reapply' });
+    expect(readLieferandoState({ lastResult: written().lastResult }).lastResult?.origin).toBe('reapply');
+  });
+
+  it('протухший running с origin отдаётся заново вместе с origin', async () => {
+    mGet.mockResolvedValue({
+      commands: [],
+      running: {
+        ...cmd('c1', 'off', SIZE_30),
+        origin: 'indefinite',
+        startedAt: new Date(NOW.getTime() - RUNNING_TTL_MS - 1).toISOString(),
+        agentId: 'pc-1',
+      },
+    });
+    const { command } = await claimLieferandoCommand('pc-2', NOW, null, { supportsTargets: true });
+    expect(command).toMatchObject({ id: 'c1', origin: 'indefinite' });
+  });
+
   it('успех MakiLove off → running снят, itemsState=off, lastResult записан', async () => {
     mGet.mockResolvedValue({
       running: { ...cmd('c1', 'off'), startedAt: 'y', agentId: 'pc-1' },
@@ -382,6 +432,30 @@ describe('formatLieferandoReport', () => {
   const base = { id: 'r', ok: true, failed: 0, message: '', finishedAt: 'f' };
   const res = (extra: Partial<LieferandoResult> & Pick<LieferandoResult, 'action' | 'target' | 'count'>) =>
     ({ ...base, ...extra }) as LieferandoResult;
+
+  it('бессрочно/перевыключение: вместо «утром Lieferando включит» — «бот выключит снова»; у reapply префикс', () => {
+    const plain = formatLieferandoReport(res({ action: 'off', target: SIZE_30, count: 23 }));
+    expect(plain).toContain('ℹ️ Утром Lieferando включит их сам.');
+    const inf = formatLieferandoReport(res({ action: 'off', target: SIZE_30, count: 23, origin: 'indefinite' }));
+    expect(inf).not.toContain('Утром Lieferando включит их сам');
+    expect(inf).toContain('бот тут же выключит снова');
+    expect(inf.startsWith('🛵 Lieferando')).toBe(true);
+    const re = formatLieferandoReport(res({ action: 'off', target: SIZE_30, count: 23, origin: 'reapply' }));
+    expect(re.startsWith('🌅 Утреннее перевыключение бессрочного стоп-листа:\n🛵 Lieferando')).toBe(true);
+    expect(re).toContain('бот тут же выключит снова');
+  });
+
+  it('lieferandoReportWanted: кнопка бота — всегда; reapply — только при проблемах', () => {
+    expect(lieferandoReportWanted(res({ action: 'off', target: SIZE_30, count: 23 }))).toBe(true);
+    expect(lieferandoReportWanted(res({ action: 'off', target: SIZE_30, count: 0 }))).toBe(true);
+    const ok = res({ action: 'off', target: SIZE_30, count: 23, origin: 'reapply' });
+    expect(lieferandoReportWanted(ok)).toBe(false);
+    expect(lieferandoReportWanted({ ...ok, count: 0, already: 23 })).toBe(false); // уже были выкл — тоже тишина
+    expect(lieferandoReportWanted({ ...ok, ok: false })).toBe(true);
+    expect(lieferandoReportWanted({ ...ok, failed: 1 })).toBe(true);
+    expect(lieferandoReportWanted({ ...ok, notFound: ['X'] })).toBe(true);
+    expect(lieferandoReportWanted({ ...ok, count: 0, already: 0 })).toBe(true); // ничего не нашли
+  });
 
   it('MakiLove — прежние формулировки', () => {
     expect(formatLieferandoReport(res({ action: 'off', target: MAKI, count: 46 }))).toBe(

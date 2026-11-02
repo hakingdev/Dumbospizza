@@ -20,7 +20,10 @@
  *
  * Экраны «🍕 Размеры» и «📋 Позиции» — стоп-лист сайта (lib/menu-stop): те же
  * флаги, что админка и POS (библиотека размеров `active`, товар `available`),
- * тем же нажатием — команда агенту Lieferando (dep queueLieferando).
+ * тем же нажатием — команда агенту Lieferando (dep queueLieferando). Режим
+ * кнопок (тумблер вверху экрана, хранится в ключе menuStopBot): ⏳ «до конца
+ * дня» (по умолчанию, включится само) или ⛔ «бессрочно» (до ручного
+ * включения; на Lieferando перевыключается каждое утро — lib/menu-stop/reapply).
  *
  * Отдельный токен/секрет/чат от бота статусов заказов (lib/telegram.ts).
  * Работает через прямой fetch к Bot API — без node-telegram-bot-api и без
@@ -41,9 +44,11 @@ import {
 import {
   paginate,
   type LieferandoMenuTarget,
+  type MenuBotStop,
   type MenuCategoryRow,
   type MenuItemRow,
   type MenuSizeRow,
+  type MenuStopMode,
   type MenuStopPort,
 } from './menu-stop/state';
 import { buildMenuStopPort } from './menu-stop/service';
@@ -102,6 +107,17 @@ export const ctrlItemsEnableAll = (categoryId: string, page = 0) =>
 /** Позиций на странице экрана категории (у MakiLove их 52). */
 export const ITEMS_PAGE_SIZE = 10;
 
+/** Откуда нажали тумблер режима — тот же экран и перерисовываем. */
+export type MenuStopBack = { screen: 'sizes' } | { screen: 'items'; categoryId: string; page: number };
+
+/**
+ * Тумблер режима «до конца дня» ↔ «бессрочно»: в callback — ЦЕЛЕВОЙ режим и
+ * экран возврата. `ctrl_ms_mode_inf_it_<24hex>_<page>` — 48 байт, в лимит 64.
+ */
+export const ctrlMenuMode = (mode: MenuStopMode, back: MenuStopBack) =>
+  `ctrl_ms_mode_${mode === 'indefinite' ? 'inf' : 'day'}_` +
+  (back.screen === 'sizes' ? 'sz' : `it_${back.categoryId}_${back.page}`);
+
 /** Старые кнопки (панель до появления цехов) — трактуем как «весь приём». */
 export const CTRL_BLOCK_30 = 'ctrl_block_30';
 export const CTRL_BLOCK_60 = 'ctrl_block_60';
@@ -129,12 +145,22 @@ export type ControlAction =
   | { type: 'items_menu' }
   | { type: 'items_category'; categoryId: string; page: number }
   | { type: 'item_set'; productId: string; available: boolean; page: number }
-  | { type: 'items_enable_all'; categoryId: string; page: number };
+  | { type: 'items_enable_all'; categoryId: string; page: number }
+  | { type: 'menu_mode'; mode: MenuStopMode; back: MenuStopBack };
 
 /** Действия экранов «Размеры»/«Позиции» — отдельный конвейер (lib/menu-stop). */
 export type MenuStopAction = Extract<
   ControlAction,
-  { type: 'sizes_menu' | 'size_set' | 'items_menu' | 'items_category' | 'item_set' | 'items_enable_all' }
+  {
+    type:
+      | 'sizes_menu'
+      | 'size_set'
+      | 'items_menu'
+      | 'items_category'
+      | 'item_set'
+      | 'items_enable_all'
+      | 'menu_mode';
+  }
 >;
 
 export type ControlResult = {
@@ -232,6 +258,14 @@ export function parseControlAction(data: unknown): ControlAction | null {
   }
   const itemsAll = /^ctrl_it_all_([A-Za-z0-9-]{1,36})_(\d{1,3})$/.exec(data);
   if (itemsAll) return { type: 'items_enable_all', categoryId: itemsAll[1], page: Number(itemsAll[2]) };
+  const mode = /^ctrl_ms_mode_(day|inf)_(?:sz|it_([A-Za-z0-9-]{1,36})_(\d{1,3}))$/.exec(data);
+  if (mode) {
+    return {
+      type: 'menu_mode',
+      mode: mode[1] === 'inf' ? 'indefinite' : 'day',
+      back: mode[2] ? { screen: 'items', categoryId: mode[2], page: Number(mode[3]) } : { screen: 'sizes' },
+    };
+  }
 
   const menu = /^ctrl_menu_([a-z]+)$/.exec(data);
   if (menu && isScope(menu[1])) return { type: 'menu', scope: menu[1] };
@@ -518,15 +552,34 @@ export function buildLieferandoText(
 /** parse_mode HTML: имя товара с «&» или «<» иначе ломает всё сообщение. */
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-/** Чем и до когда выключено: ботом — «до HH:MM», иначе руками (админка/POS). */
-function stoppedNote(stoppedUntil: string | null, timeZone: string): string {
-  return stoppedUntil
-    ? `выключен ботом до ${formatTime(new Date(stoppedUntil), timeZone)}`
-    : 'выключен (админка/POS)';
+/** Чем и до когда выключено: ботом — «до HH:MM» / «бессрочно», иначе руками (админка/POS). */
+function stoppedNote(botStop: MenuBotStop, timeZone: string): string {
+  if (!botStop) return 'выключен (админка/POS)';
+  return botStop.until === null
+    ? 'выключен ботом бессрочно'
+    : `выключен ботом до ${formatTime(new Date(botStop.until), timeZone)}`;
+}
+
+/** 🟢 включено · 🔴 выключено (до конца дня или руками) · ⛔ выключено ботом бессрочно. */
+function rowIcon(on: boolean, botStop: MenuBotStop): string {
+  if (on) return '🟢';
+  return botStop && botStop.until === null ? '⛔' : '🔴';
 }
 
 const MENU_HINT = 'Нажмите на строку, чтобы переключить её на сайте и на Lieferando.';
-const MENU_AUTO_HINT = 'ℹ️ Выключенное ботом включится само в конце рабочего дня.';
+const MODE_HINTS: Record<MenuStopMode, string> = {
+  day: 'ℹ️ Режим ⏳ «до конца дня»: выключенное ботом включится само в конце рабочего дня.',
+  indefinite:
+    '⛔ Режим «бессрочно»: выключенное останется выключенным, пока не включите кнопкой; ' +
+    'на Lieferando бот перевыключает его каждое утро. Ночью режим сам вернётся на «до конца дня».',
+};
+
+/** Кнопка-тумблер режима: показывает ТЕКУЩИЙ режим, нажатие переключает на другой. */
+function modeButton(mode: MenuStopMode, back: MenuStopBack): { text: string; callback_data: string } {
+  return mode === 'indefinite'
+    ? { text: 'Режим: ⛔ бессрочно', callback_data: ctrlMenuMode('day', back) }
+    : { text: 'Режим: ⏳ до конца дня', callback_data: ctrlMenuMode('indefinite', back) };
+}
 
 /** Кнопки по две в ряд — списки короткие, а экран вытягивать не хочется. */
 function pairRows<T>(buttons: T[]): T[][] {
@@ -535,23 +588,30 @@ function pairRows<T>(buttons: T[]): T[][] {
   return rows;
 }
 
-export function buildSizesText(sizes: MenuSizeRow[], now: Date = new Date(), timeZone = TZ): string {
+export function buildSizesText(
+  sizes: MenuSizeRow[],
+  mode: MenuStopMode,
+  now: Date = new Date(),
+  timeZone = TZ
+): string {
   const lines = ['🍕 <b>Размеры</b> — вся библиотека: размер гаснет у всех товаров сразу', ''];
   if (!sizes.length) lines.push('Библиотека размеров пуста.');
   for (const s of sizes) {
     const title = esc(s.label && s.label !== s.name ? `${s.name} · ${s.label}` : s.name);
-    lines.push(s.active ? `🟢 ${title}` : `🔴 ${title} — ${stoppedNote(s.stoppedUntil, timeZone)}`);
+    const icon = rowIcon(s.active, s.botStop);
+    lines.push(s.active ? `${icon} ${title}` : `${icon} ${title} — ${stoppedNote(s.botStop, timeZone)}`);
   }
-  lines.push('', MENU_HINT, MENU_AUTO_HINT, `Обновлено ${formatTimeSec(now, timeZone)}`);
+  lines.push('', MENU_HINT, MODE_HINTS[mode], `Обновлено ${formatTimeSec(now, timeZone)}`);
   return lines.join('\n');
 }
 
-export function buildSizesKeyboard(sizes: MenuSizeRow[]): ControlPanel['keyboard'] {
+export function buildSizesKeyboard(sizes: MenuSizeRow[], mode: MenuStopMode): ControlPanel['keyboard'] {
   return {
     inline_keyboard: [
+      [modeButton(mode, { screen: 'sizes' })],
       ...pairRows(
         sizes.map((s) => ({
-          text: `${s.active ? '🟢' : '🔴'} ${s.name}`,
+          text: `${rowIcon(s.active, s.botStop)} ${s.name}`,
           callback_data: ctrlSizeSet(s.id, !s.active),
         }))
       ),
@@ -601,6 +661,7 @@ export function buildItemsText(
   category: MenuCategoryRow | null,
   items: MenuItemRow[],
   page: number,
+  mode: MenuStopMode,
   now: Date = new Date(),
   timeZone = TZ
 ): string {
@@ -615,23 +676,33 @@ export function buildItemsText(
   ];
   if (!items.length) lines.push('В категории нет позиций.');
   for (const i of slice) {
+    const icon = rowIcon(i.available, i.botStop);
     lines.push(
-      i.available ? `🟢 ${esc(i.name)}` : `🔴 ${esc(i.name)} — ${stoppedNote(i.stoppedUntil, timeZone)}`
+      i.available
+        ? `${icon} ${esc(i.name)}`
+        : `${icon} ${esc(i.name)} — ${stoppedNote(i.botStop, timeZone)}`
     );
   }
-  lines.push('', MENU_HINT, MENU_AUTO_HINT, `Обновлено ${formatTimeSec(now, timeZone)}`);
+  lines.push('', MENU_HINT, MODE_HINTS[mode], `Обновлено ${formatTimeSec(now, timeZone)}`);
   return lines.join('\n');
 }
 
 export function buildItemsKeyboard(
   categoryId: string,
   items: MenuItemRow[],
-  page: number
+  page: number,
+  mode: MenuStopMode
 ): ControlPanel['keyboard'] {
   const { page: p, pages, slice } = paginate(items, page, ITEMS_PAGE_SIZE);
-  const rows: ControlPanel['keyboard']['inline_keyboard'] = slice.map((i) => [
-    { text: `${i.available ? '🟢' : '🔴'} ${i.name}`, callback_data: ctrlItemSet(i.id, !i.available, p) },
-  ]);
+  const rows: ControlPanel['keyboard']['inline_keyboard'] = [
+    [modeButton(mode, { screen: 'items', categoryId, page: p })],
+    ...slice.map((i) => [
+      {
+        text: `${rowIcon(i.available, i.botStop)} ${i.name}`,
+        callback_data: ctrlItemSet(i.id, !i.available, p),
+      },
+    ]),
+  ];
   if (pages > 1) {
     const nav = [];
     if (p > 0) nav.push({ text: '⬅️', callback_data: ctrlItemsCategory(categoryId, p - 1) });
@@ -655,7 +726,7 @@ export function buildPanel(
     | { type: 'root' }
     | { type: 'scope'; scope: ControlScope }
     | { type: 'lieferando'; lief: LieferandoState }
-    | { type: 'sizes'; sizes: MenuSizeRow[] }
+    | { type: 'sizes'; sizes: MenuSizeRow[]; mode: MenuStopMode }
     | { type: 'item_categories'; categories: MenuCategoryRow[] }
     | {
         type: 'items';
@@ -663,6 +734,7 @@ export function buildPanel(
         category: MenuCategoryRow | null;
         items: MenuItemRow[];
         page: number;
+        mode: MenuStopMode;
       },
   state: BlockState,
   now: Date = new Date(),
@@ -678,7 +750,10 @@ export function buildPanel(
     };
   }
   if (view.type === 'sizes') {
-    return { text: buildSizesText(view.sizes, now, timeZone), keyboard: buildSizesKeyboard(view.sizes) };
+    return {
+      text: buildSizesText(view.sizes, view.mode, now, timeZone),
+      keyboard: buildSizesKeyboard(view.sizes, view.mode),
+    };
   }
   if (view.type === 'item_categories') {
     return {
@@ -688,9 +763,9 @@ export function buildPanel(
   }
   if (view.type === 'items') {
     return {
-      text: buildItemsText(view.category, view.items, view.page, now, timeZone),
+      text: buildItemsText(view.category, view.items, view.page, view.mode, now, timeZone),
       keyboard: view.category
-        ? buildItemsKeyboard(view.categoryId, view.items, view.page)
+        ? buildItemsKeyboard(view.categoryId, view.items, view.page, view.mode)
         : {
             inline_keyboard: [
               [
@@ -741,6 +816,7 @@ const MENU_STOP_TYPES: ReadonlySet<ControlAction['type']> = new Set<ControlActio
   'items_category',
   'item_set',
   'items_enable_all',
+  'menu_mode',
 ]);
 
 export function isMenuStopAction(action: ControlAction): action is MenuStopAction {
@@ -759,18 +835,24 @@ async function menuStopScreen(
   now: Date,
   log: (...args: any[]) => void
 ): Promise<{ panel: ControlPanel; toast: string }> {
-  const lieferando = async (liefAction: LieferandoAction, target: LieferandoMenuTarget) => {
+  const lieferando = async (
+    liefAction: LieferandoAction,
+    target: LieferandoMenuTarget,
+    indefinite: boolean
+  ) => {
     if (!queueLieferando) return 'Lieferando не настроен';
     try {
-      await queueLieferando(liefAction, target);
+      await queueLieferando(liefAction, target, { indefinite });
       return '📤 Lieferando: команда агенту';
     } catch (e) {
       log('queueLieferando failed', (e as Error)?.message);
       return '⚠️ Lieferando: команда не поставлена';
     }
   };
-  const sizesPanel = async () =>
-    buildPanel({ type: 'sizes', sizes: await menu.listSizes() }, EMPTY_BLOCK_STATE, now);
+  const sizesPanel = async () => {
+    const [sizes, mode] = await Promise.all([menu.listSizes(), menu.getMode()]);
+    return buildPanel({ type: 'sizes', sizes, mode }, EMPTY_BLOCK_STATE, now);
+  };
   const categoriesPanel = async () =>
     buildPanel(
       { type: 'item_categories', categories: await menu.listCategories() },
@@ -778,10 +860,23 @@ async function menuStopScreen(
       now
     );
   const itemsPanel = async (categoryId: string, page: number) => {
-    const { category, items } = await menu.listCategoryItems(categoryId);
-    return buildPanel({ type: 'items', categoryId, category, items, page }, EMPTY_BLOCK_STATE, now);
+    const [{ category, items }, mode] = await Promise.all([
+      menu.listCategoryItems(categoryId),
+      menu.getMode(),
+    ]);
+    return buildPanel(
+      { type: 'items', categoryId, category, items, page, mode },
+      EMPTY_BLOCK_STATE,
+      now
+    );
   };
   const refreshed = `🔄 Обновлено ${formatTimeSec(now)}`;
+  /** «выключен на сайте до 21:30» / «… бессрочно» — по записи, которую только что сделал порт. */
+  const offNote = (botStop: MenuBotStop) =>
+    botStop && botStop.until === null
+      ? 'бессрочно'
+      : `до ${formatTime(new Date(botStop?.until ?? now))}`;
+  const isIndefinite = (botStop: MenuBotStop) => Boolean(botStop && botStop.until === null);
 
   switch (action.type) {
     case 'sizes_menu':
@@ -789,11 +884,15 @@ async function menuStopScreen(
     case 'size_set': {
       const row = await menu.setSizeActive(action.variationId, action.active);
       if (!row) return { panel: await sizesPanel(), toast: '⚠️ Размер не найден' };
-      const lief = await lieferando(action.active ? 'on' : 'off', { kind: 'size', label: row.name });
-      return {
-        panel: await sizesPanel(),
-        toast: `${action.active ? '🟢' : '🔴'} ${row.name}: ${action.active ? 'включён' : 'выключен'} на сайте · ${lief}`,
-      };
+      const lief = await lieferando(
+        action.active ? 'on' : 'off',
+        { kind: 'size', label: row.name },
+        !action.active && isIndefinite(row.botStop)
+      );
+      const toast = action.active
+        ? `🟢 ${row.name}: включён на сайте · ${lief}`
+        : `${rowIcon(false, row.botStop)} ${row.name}: выключен на сайте ${offNote(row.botStop)} · ${lief}`;
+      return { panel: await sizesPanel(), toast };
     }
     case 'items_menu':
       return { panel: await categoriesPanel(), toast: refreshed };
@@ -802,24 +901,38 @@ async function menuStopScreen(
     case 'item_set': {
       const row = await menu.setItemAvailable(action.productId, action.available);
       if (!row) return { panel: await categoriesPanel(), toast: '⚠️ Позиция не найдена' };
-      const lief = await lieferando(action.available ? 'on' : 'off', {
-        kind: 'item',
-        names: [row.name],
-      });
-      return {
-        panel: await itemsPanel(row.categoryId, action.page),
-        toast: `${action.available ? '🟢' : '🔴'} ${row.name}: ${action.available ? 'включена' : 'выключена'} на сайте · ${lief}`,
-      };
+      const lief = await lieferando(
+        action.available ? 'on' : 'off',
+        { kind: 'item', names: [row.name] },
+        !action.available && isIndefinite(row.botStop)
+      );
+      const toast = action.available
+        ? `🟢 ${row.name}: включена на сайте · ${lief}`
+        : `${rowIcon(false, row.botStop)} ${row.name}: выключена на сайте ${offNote(row.botStop)} · ${lief}`;
+      return { panel: await itemsPanel(row.categoryId, action.page), toast };
     }
     case 'items_enable_all': {
       const enabled = await menu.enableCategoryItems(action.categoryId);
       const toast = enabled.length
-        ? `🟢 Включено позиций: ${enabled.length} · ${await lieferando('on', {
-            kind: 'item',
-            names: enabled.map((i) => i.name),
-          })}`
+        ? `🟢 Включено позиций: ${enabled.length} · ${await lieferando(
+            'on',
+            { kind: 'item', names: enabled.map((i) => i.name) },
+            false
+          )}`
         : 'Все позиции категории уже включены';
       return { panel: await itemsPanel(action.categoryId, action.page), toast };
+    }
+    case 'menu_mode': {
+      const mode = await menu.setMode(action.mode);
+      const toast =
+        mode === 'indefinite'
+          ? '⛔ Режим «бессрочно»: выключенное останется до ручного включения'
+          : '⏳ Режим «до конца дня»: выключенное включится само вечером';
+      const panel =
+        action.back.screen === 'sizes'
+          ? await sizesPanel()
+          : await itemsPanel(action.back.categoryId, action.back.page);
+      return { panel, toast };
     }
   }
 }
@@ -844,9 +957,14 @@ export interface ControlDeps {
   /**
    * Тем же нажатием — команда агенту Lieferando (контракт lib/lieferando-makilove
    * `requestLieferandoCommand`). Без dep переключается только сайт, тост
-   * предупреждает «Lieferando не настроен».
+   * предупреждает «Lieferando не настроен». `indefinite` — выключение в режиме
+   * «бессрочно» (отчёт агента скажет, что утром бот перевыключит сам).
    */
-  queueLieferando?: (action: LieferandoAction, target: LieferandoMenuTarget) => PromiseLike<unknown>;
+  queueLieferando?: (
+    action: LieferandoAction,
+    target: LieferandoMenuTarget,
+    options: { indefinite: boolean }
+  ) => PromiseLike<unknown>;
   allowedChatId: string;
   log?: (...args: any[]) => void;
 }
@@ -1061,7 +1179,10 @@ export async function processControlUpdate(
     requestLieferandoToggle: (action) => requestLieferandoToggle(action),
     menu: buildMenuStopPort(),
     // то же нажатие — команда агенту Lieferando (очередь lib/lieferando-makilove)
-    queueLieferando: (action, target) => requestLieferandoCommand(action, target),
+    queueLieferando: (action, target, { indefinite }) =>
+      requestLieferandoCommand(action, target, new Date(), {
+        origin: indefinite ? 'indefinite' : 'bot',
+      }),
     allowedChatId: config.chatId,
   };
 

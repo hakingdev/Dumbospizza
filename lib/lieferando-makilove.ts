@@ -31,7 +31,11 @@
  *   agentSeenAt — heartbeat: когда агент последний раз поллил.
  *
  * ⚠️ Особенность Hub: выключение действует «до конца дня» — наутро
- * Lieferando сам возвращает позиции/размеры в продажу.
+ * Lieferando сам возвращает позиции/размеры в продажу. Бессрочный стоп-лист
+ * бота (lib/menu-stop) поэтому ПЕРЕВЫКЛЮЧАЕТСЯ утренним кроном: такие команды
+ * помечены origin='reapply' и при успехе в группу не репортятся (сводку
+ * присылает сам крон), origin='indefinite' — выключение кнопкой в режиме
+ * «бессрочно» (отчёт говорит, что утром бот перевыключит сам).
  */
 import { randomUUID } from 'crypto';
 import { getSetting, setSetting } from './settings';
@@ -54,11 +58,22 @@ export type LieferandoTarget =
 
 export const MAKILOVE_TARGET: LieferandoTarget = { kind: 'makilove' };
 
+/**
+ * Откуда команда: кнопка бота (по умолчанию, в БД не пишется), кнопка в режиме
+ * «бессрочно» или утреннее перевыключение бессрочного стоп-листа кроном.
+ */
+export type LieferandoCommandOrigin = 'bot' | 'indefinite' | 'reapply';
+
+const isOrigin = (v: unknown): v is LieferandoCommandOrigin =>
+  v === 'bot' || v === 'indefinite' || v === 'reapply';
+
 export interface LieferandoCommand {
   id: string;
   action: LieferandoAction;
   target: LieferandoTarget;
   requestedAt: string;
+  /** отсутствует = 'bot' */
+  origin?: LieferandoCommandOrigin;
 }
 
 export interface LieferandoRunning extends LieferandoCommand {
@@ -83,6 +98,8 @@ export interface LieferandoResult {
   categories?: string[];
   /** имена из target.names (или label размера), не найденные в Hub */
   notFound?: string[];
+  /** откуда была команда (из running); отсутствует = кнопка бота */
+  origin?: LieferandoCommandOrigin;
 }
 
 export interface LieferandoState {
@@ -176,12 +193,14 @@ function readCommand(raw: unknown): LieferandoCommand | null {
   if (typeof c.id !== 'string' || !isAction(c.action)) return null;
   const target = c.target === undefined ? MAKILOVE_TARGET : readLieferandoTarget(c.target);
   if (!target) return null;
-  return {
+  const cmd: LieferandoCommand = {
     id: c.id,
     action: c.action,
     target,
     requestedAt: typeof c.requestedAt === 'string' ? c.requestedAt : '',
   };
+  if (isOrigin(c.origin) && c.origin !== 'bot') cmd.origin = c.origin;
+  return cmd;
 }
 
 function readRunning(raw: unknown): LieferandoRunning | null {
@@ -214,6 +233,7 @@ function readResult(raw: unknown): LieferandoResult | null {
   if (typeof r.already === 'number') result.already = r.already;
   if (Array.isArray(r.categories)) result.categories = cleanNames(r.categories);
   if (Array.isArray(r.notFound)) result.notFound = cleanNames(r.notFound);
+  if (isOrigin(r.origin) && r.origin !== 'bot') result.origin = r.origin;
   return result;
 }
 
@@ -259,22 +279,28 @@ async function writeState(state: Omit<LieferandoState, 'command'> & { command?: 
   return withDerived(persisted);
 }
 
+export interface RequestOptions {
+  /** откуда команда; 'bot' (по умолчанию) в БД не пишется */
+  origin?: LieferandoCommandOrigin;
+}
+
 /**
- * Кнопка бота: ставит команду в очередь. Команда с той же целью (если ещё
- * не забрана агентом) заменяется новой — чужие цели остаются на месте.
+ * Кнопка бота (или утренний крон): ставит команду в очередь. Команда с той же
+ * целью (если ещё не забрана агентом) заменяется новой — чужие цели остаются
+ * на месте.
  */
 export async function requestLieferandoCommand(
   action: LieferandoAction,
   target: LieferandoTarget,
-  now: Date = new Date()
+  now: Date = new Date(),
+  options: RequestOptions = {}
 ): Promise<LieferandoState> {
   const state = await getLieferandoState();
   const key = lieferandoTargetKey(target);
   const kept = state.commands.filter((c) => lieferandoTargetKey(c.target) !== key);
-  const commands = [
-    ...kept,
-    { id: randomUUID(), action, target, requestedAt: now.toISOString() },
-  ].slice(-MAX_QUEUE);
+  const command: LieferandoCommand = { id: randomUUID(), action, target, requestedAt: now.toISOString() };
+  if (options.origin && options.origin !== 'bot') command.origin = options.origin;
+  const commands = [...kept, command].slice(-MAX_QUEUE);
   return writeState({ ...state, commands });
 }
 
@@ -327,8 +353,8 @@ export async function claimLieferandoCommand(
     eligible(state.running) &&
     now.getTime() - new Date(state.running.startedAt).getTime() > RUNNING_TTL_MS
   ) {
-    const { id, action, target, requestedAt } = state.running;
-    claimed = { id, action, target, requestedAt };
+    const { id, action, target, requestedAt, origin } = state.running;
+    claimed = { id, action, target, requestedAt, ...(origin ? { origin } : {}) };
   }
 
   if (claimed) {
@@ -350,10 +376,11 @@ export async function reportLieferandoResult(
   now: Date = new Date()
 ): Promise<LieferandoState> {
   const state = await getLieferandoState();
-  const target =
-    result.target ??
-    (state.running && state.running.id === result.id ? state.running.target : MAKILOVE_TARGET);
+  const running = state.running && state.running.id === result.id ? state.running : null;
+  const target = result.target ?? running?.target ?? MAKILOVE_TARGET;
   const full: LieferandoResult = { ...result, target, finishedAt: now.toISOString() };
+  // Агент origin не знает — он приходит из забранной команды.
+  if (running?.origin) full.origin = running.origin;
   const touchesMakilove = result.ok && target.kind === 'makilove';
   return writeState({
     ...state,
@@ -367,11 +394,38 @@ export async function reportLieferandoResult(
 
 const quote = (names: string[]) => names.map((n) => `«${n}»`).join(', ');
 
+/** Сколько строк Hub команда нашла (переключила или уже были в нужном состоянии). */
+const foundRows = (r: LieferandoResult) => r.count + (r.already ?? 0);
+
+/**
+ * Слать ли отчёт агента в группу. Утреннее перевыключение (origin='reapply')
+ * при полном успехе молчит — сводку персонал уже получил от крона; шумим
+ * только если что-то не выключилось или не нашлось.
+ */
+export function lieferandoReportWanted(r: LieferandoResult): boolean {
+  if (r.origin !== 'reapply') return true;
+  return !r.ok || r.failed > 0 || (r.notFound?.length ?? 0) > 0 || foundRows(r) === 0;
+}
+
 /**
  * Текст отчёта в группу стоп-бота. Для MakiLove — прежние формулировки,
  * для размеров/позиций — что переключили, где и чего не нашли.
  */
 export function formatLieferandoReport(r: LieferandoResult): string {
+  const text = formatLieferandoReportBody(r);
+  return r.origin === 'reapply'
+    ? `🌅 Утреннее перевыключение бессрочного стоп-листа:\n${text}`
+    : text;
+}
+
+/** «Утром Lieferando включит их сам» — кроме бессрочного стопа: его бот перевыключит. */
+function morningNote(r: LieferandoResult): string {
+  return r.origin === 'indefinite' || r.origin === 'reapply'
+    ? 'ℹ️ Бессрочно: утром Lieferando включит их, а бот тут же выключит снова.'
+    : 'ℹ️ Утром Lieferando включит их сам.';
+}
+
+function formatLieferandoReportBody(r: LieferandoResult): string {
   const off = r.action === 'off';
   const verb = off ? 'выключить' : 'включить';
 
@@ -415,7 +469,7 @@ export function formatLieferandoReport(r: LieferandoResult): string {
       );
     }
   } else {
-    const found = r.count + (r.already ?? 0);
+    const found = foundRows(r);
     if (!found) {
       lines.push(`🛵⚠️ Lieferando: ${what} — на Lieferando не найдено, ничего не переключено.`);
     } else if (r.count) {
@@ -432,6 +486,6 @@ export function formatLieferandoReport(r: LieferandoResult): string {
   }
 
   if (r.failed) lines.push(`⚠️ Не удалось: ${r.failed}.${r.message ? ` ${r.message}` : ''}`);
-  if (off && r.count) lines.push('ℹ️ Утром Lieferando включит их сам.');
+  if (off && r.count) lines.push(morningNote(r));
   return lines.join('\n');
 }

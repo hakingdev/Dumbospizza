@@ -3,12 +3,14 @@ import { connectToDatabase } from '../../../../lib/models';
 import {
   claimLieferandoCommand,
   formatLieferandoReport,
+  lieferandoReportWanted,
   readLieferandoTarget,
   reportLieferandoResult,
   type LieferandoAction,
   type LieferandoReport,
 } from '../../../../lib/lieferando-makilove';
 import { sendControlMessage } from '../../../../lib/telegram-control';
+import { maybeReapplyIndefiniteStops } from '../../../../lib/menu-stop/reapply-live';
 
 /**
  * Обмен с агентом Lieferando (scripts/lieferando/agent.mjs на VDS/кассе).
@@ -16,7 +18,12 @@ import { sendControlMessage } from '../../../../lib/telegram-control';
  * GET  — поллинг: агент забирает команду { id, action, target } (и heartbeat'ится).
  *        Заголовок X-Agent-Caps: targets — агент умеет цели size/item; без него
  *        (старый агент до самообновления) отдаём только команды MakiLove.
- * POST — отчёт о выполнении → сохраняем + сообщение в группу стоп-бота.
+ *        Тем же поллингом раз в день (после 08:30 по Берлину) ставится
+ *        перевыключение бессрочного стоп-листа (lib/menu-stop/reapply-live) —
+ *        Hub к утру включает всё обратно.
+ * POST — отчёт о выполнении → сохраняем + сообщение в группу стоп-бота
+ *        (утреннее перевыключение бессрочного стоп-листа при успехе молчит —
+ *        сводку шлёт сам крон, см. lieferandoReportWanted).
  *
  * Auth: заголовок X-Lieferando-Agent-Key. Секрет — LIEFERANDO_AGENT_SECRET,
  * с фолбэком на PRINT_AGENT_SECRET (тот же ПК, тот же уровень доверия), чтобы
@@ -44,9 +51,12 @@ export async function GET(request: NextRequest) {
     const agentId = request.headers.get('X-Lieferando-Agent-Id') || 'agent';
     const agentVersion = request.headers.get('X-Agent-Version');
     const caps = (request.headers.get('X-Agent-Caps') || '').split(/[\s,]+/);
-    const { command } = await claimLieferandoCommand(agentId, new Date(), agentVersion, {
+    const now = new Date();
+    const { command } = await claimLieferandoCommand(agentId, now, agentVersion, {
       supportsTargets: caps.includes('targets'),
     });
+    // Утренний триггер — только агенту с целями size/item (старый выполнил бы их как MakiLove).
+    if (caps.includes('targets')) await maybeReapplyIndefiniteStops(now);
     return NextResponse.json({ success: true, command });
   } catch (error) {
     console.error('[lieferando-agent] GET failed:', error);
@@ -95,7 +105,9 @@ export async function POST(request: NextRequest) {
     const state = await reportLieferandoResult(result);
 
     // Отчёт в группу — best-effort: провал Telegram не должен ронять отчёт.
-    if (state.lastResult) await sendControlMessage(formatLieferandoReport(state.lastResult));
+    if (state.lastResult && lieferandoReportWanted(state.lastResult)) {
+      await sendControlMessage(formatLieferandoReport(state.lastResult));
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {
