@@ -9,6 +9,7 @@ import { useKitchenBlocks } from '../../lib/contexts/KitchenBlocksContext';
 import { WORKSHOP_BLOCK_HEADLINE } from '../../lib/kitchen/workshops';
 import { SCHEDULE_CLOSED_HEADLINE } from '../../lib/categories/availability';
 import { ScheduleClosedItemNote, ScheduleClosedSummary } from './ScheduleClosedNotice';
+import { SoldOutItemNote, SoldOutSummary } from './SoldOutNotice';
 import { useLanguage } from '../../lib/contexts/LanguageContext';
 import { loadTranslation } from '../../lib/i18n';
 import OrderSummaryBreakdown from './OrderSummaryBreakdown';
@@ -40,10 +41,13 @@ export function CartModal({ isOpen, onClose }: CartModalProps) {
   const [t, setT] = useState<any>(() => (k: string, fallback?: string) => fallback ?? k);
   // Цех мог встать уже ПОСЛЕ наполнения корзины — помечаем такие позиции и
   // не пускаем дальше, иначе гость узнает об этом только на оплате.
-  const { blockedWorkshopFor, blockedWorkshopsForItems, messageFor, scheduleClosureFor, scheduleClosuresForItems } = useKitchenBlocks();
+  const { blockedWorkshopFor, blockedWorkshopsForItems, messageFor, scheduleClosureFor, scheduleClosuresForItems, soldOutReasonFor, soldOutLinesIn } = useKitchenBlocks();
   const blockedInCart = blockedWorkshopsForItems(items);
   // То же для времени продажи категорий: окно могло закрыться, пока товар лежал в корзине.
   const closedInCart = scheduleClosuresForItems(items);
+  // И для стоп-листа: товар сняли / размер выключили (стоп-бот, админка, POS).
+  const soldOutInCart = soldOutLinesIn(items);
+  const removeSoldOutLines = () => soldOutInCart.forEach((line) => removeItem(line.item.id));
 
   useEffect(() => {
     const loadTranslations = async () => {
@@ -118,14 +122,24 @@ export function CartModal({ isOpen, onClose }: CartModalProps) {
                   <p className="text-sm leading-6 text-amber-900">{messageFor(blockedInCart)}</p>
                 </div>
               )}
-              {items.map((item) => (
+              {items.map((item) => {
+                const soldOutReason = soldOutReasonFor(item);
+                return (
                 <div
                   key={item.id}
+                  data-testid="cart-line"
+                  data-sold-out={soldOutReason || undefined}
                   className={`rounded-xl p-4 ${
-                    blockedWorkshopFor(item) || scheduleClosureFor(item) ? 'bg-amber-50 ring-1 ring-amber-200' : 'bg-gray-50'
+                    soldOutReason
+                      ? 'bg-red-50 ring-1 ring-red-200'
+                      : blockedWorkshopFor(item) || scheduleClosureFor(item)
+                        ? 'bg-amber-50 ring-1 ring-amber-200'
+                        : 'bg-gray-50'
                   }`}
                 >
-                  {blockedWorkshopFor(item) ? (
+                  {soldOutReason ? (
+                    <SoldOutItemNote reason={soldOutReason} onRemove={() => removeItem(item.id)} t={t} />
+                  ) : blockedWorkshopFor(item) ? (
                     <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-700">
                       ⏸️ {WORKSHOP_BLOCK_HEADLINE}
                     </p>
@@ -207,7 +221,8 @@ export function CartModal({ isOpen, onClose }: CartModalProps) {
                     </div>
                   </div>
                 </div>
-              ))}
+                );
+              })}
               {/* Награды акции (2-й товар со скидкой) — строками рядом с товарами */}
               <BogoRewardLines calculation={promotionCalculation} selectedFreeGifts={selectedFreeGifts} variant="card" />
             </div>
@@ -234,14 +249,26 @@ export function CartModal({ isOpen, onClose }: CartModalProps) {
 
             <ScheduleClosedSummary windows={closedInCart} />
 
+            <SoldOutSummary lines={soldOutInCart} onRemoveAll={removeSoldOutLines} t={t} />
+
             {/* Actions */}
-            {blockedInCart.length > 0 || closedInCart.length > 0 ? (
+            {blockedInCart.length > 0 || closedInCart.length > 0 || soldOutInCart.length > 0 ? (
               <button
                 type="button"
                 disabled
+                title={
+                  soldOutInCart.length > 0 && blockedInCart.length === 0
+                    ? t('cart.sold_out_hint', 'Bitte entfernen Sie die nicht verfügbaren Artikel, um fortzufahren.')
+                    : undefined
+                }
+                data-testid="cart-checkout"
                 className="flex w-full cursor-not-allowed items-center justify-center rounded-lg bg-gray-200 px-4 py-3 font-medium text-gray-600"
               >
-                {blockedInCart.length > 0 ? WORKSHOP_BLOCK_HEADLINE : SCHEDULE_CLOSED_HEADLINE}
+                {blockedInCart.length > 0
+                  ? WORKSHOP_BLOCK_HEADLINE
+                  : closedInCart.length > 0
+                    ? SCHEDULE_CLOSED_HEADLINE
+                    : t('cart.sold_out_cta', 'Artikel nicht verfügbar')}
               </button>
             ) : (
               <Link

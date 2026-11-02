@@ -27,6 +27,11 @@ export function invalidateSizeVariationStates(): void {
   variationStatesCache.invalidate();
 }
 
+/** Библиотека размеров (name/label/active) из того же кэша, что и гидрация. */
+export async function readSizeVariationStates(): Promise<SizeVariationState[]> {
+  return variationStatesCache.get();
+}
+
 /** Подмешивает актуальные статусы библиотеки в товары перед публичной выдачей. */
 export async function hydrateSizeVariationStates<T extends ProductWithSizes>(
   products: T[]

@@ -11,6 +11,10 @@
  *
  * Тот же опрос несёт время продажи категорий (бургеры только 17–22): окна
  * считает сервер, поэтому в 17:00 серые карточки оживают сами, без перезагрузки.
+ *
+ * И стоп-лист позиций/размеров (стоп-бот, админка, POS): корзина живёт в
+ * браузере сутки, строку, выключенную ПОСЛЕ её добавления, иначе отклонил бы
+ * только сервер при оформлении. Правило — lib/menu-stop/sold-out.ts.
  */
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
@@ -32,6 +36,17 @@ import {
   type CategoryHours,
   type CategoryWindow,
 } from '../categories/availability';
+import {
+  EMPTY_SOLD_OUT,
+  isProductSoldOut as productSoldOutIn,
+  isSizeInactive as sizeInactiveIn,
+  soldOutLinesIn as findSoldOutLines,
+  soldOutReasonFor as findSoldOutReason,
+  type SoldOutLine,
+  type SoldOutLineItem,
+  type SoldOutReason,
+  type SoldOutSnapshot,
+} from '../menu-stop/sold-out';
 
 export interface BlockableItem {
   categoryId?: string | null;
@@ -58,6 +73,14 @@ interface KitchenBlocksValue {
   scheduleClosuresForItems: (items: BlockableItem[]) => CategoryWindow[];
   /** Модалка «когда можно заказать» (клик по серой карточке). */
   showScheduleNotice: (window: CategoryWindow) => void;
+  /** Товар снят с продажи (products.available=false) — стоп-бот/админка/POS. */
+  isProductSoldOut: (productId: string) => boolean;
+  /** Размер библиотеки выключен (сравнение через normalizedSizeName). */
+  isSizeInactive: (sizeName: string) => boolean;
+  /** Почему строку корзины нельзя заказать; null — можно. */
+  soldOutReasonFor: (item: SoldOutLineItem) => SoldOutReason | null;
+  /** Строки корзины, которые сервер отклонит (товар снят или размер выключен). */
+  soldOutLinesIn: <T extends SoldOutLineItem>(items: readonly T[]) => SoldOutLine<T>[];
 }
 
 const NOOP_VALUE: KitchenBlocksValue = {
@@ -70,6 +93,10 @@ const NOOP_VALUE: KitchenBlocksValue = {
   scheduleClosureFor: () => null,
   scheduleClosuresForItems: () => [],
   showScheduleNotice: () => {},
+  isProductSoldOut: () => false,
+  isSizeInactive: () => false,
+  soldOutReasonFor: () => null,
+  soldOutLinesIn: () => [],
 };
 
 const KitchenBlocksContext = createContext<KitchenBlocksValue>(NOOP_VALUE);
@@ -89,6 +116,8 @@ interface BlocksState {
   ordersBlockedUntil: string;
   messageTemplate: string | null;
   categoryHours: CategoryHours;
+  /** Стоп-лист позиций и размеров (все, не только выключенные ботом). */
+  soldOut: SoldOutSnapshot;
 }
 
 const EMPTY_STATE: BlocksState = {
@@ -98,6 +127,7 @@ const EMPTY_STATE: BlocksState = {
   ordersBlockedUntil: '',
   messageTemplate: null,
   categoryHours: EMPTY_CATEGORY_HOURS,
+  soldOut: EMPTY_SOLD_OUT,
 };
 
 export function KitchenBlocksProvider({ children }: { children: ReactNode }) {
@@ -123,6 +153,14 @@ export function KitchenBlocksProvider({ children }: { children: ReactNode }) {
           categoryHours: {
             categories: data.categoryHours?.categories || {},
             subcategories: data.categoryHours?.subcategories || {},
+          },
+          soldOut: {
+            soldOutProductIds: Array.isArray(data.soldOutProductIds)
+              ? data.soldOutProductIds.map(String)
+              : [],
+            inactiveSizeKeys: Array.isArray(data.inactiveSizeKeys)
+              ? data.inactiveSizeKeys.map(String)
+              : [],
           },
         });
         setNow(new Date());
@@ -159,6 +197,11 @@ export function KitchenBlocksProvider({ children }: { children: ReactNode }) {
   const scheduleClosureFor = useCallback(
     (item: BlockableItem) => findScheduleClosure(item, state.categoryHours),
     [state.categoryHours]
+  );
+
+  const soldOutReasonFor = useCallback(
+    (item: SoldOutLineItem) => findSoldOutReason(state.soldOut, item),
+    [state.soldOut]
   );
 
   const value = useMemo<KitchenBlocksValue>(() => {
@@ -202,8 +245,13 @@ export function KitchenBlocksProvider({ children }: { children: ReactNode }) {
         return hit;
       },
       showScheduleNotice: setScheduleNotice,
+      isProductSoldOut: (productId: string) => productSoldOutIn(state.soldOut, productId),
+      isSizeInactive: (sizeName: string) => sizeInactiveIn(state.soldOut, sizeName),
+      soldOutReasonFor,
+      soldOutLinesIn: <T extends SoldOutLineItem>(items: readonly T[]) =>
+        findSoldOutLines(state.soldOut, items),
     };
-  }, [state, now, blockedWorkshopFor, scheduleClosureFor]);
+  }, [state, now, blockedWorkshopFor, scheduleClosureFor, soldOutReasonFor]);
 
   return (
     <KitchenBlocksContext.Provider value={value}>

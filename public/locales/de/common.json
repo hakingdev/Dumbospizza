@@ -134,7 +134,13 @@
     "terms_agb": "AGB",
     "terms_and_the": "und der",
     "terms_privacy": "Datenschutzerklärung",
-    "terms_suffix": "zu."
+    "terms_suffix": "zu.",
+    "sold_out_today": "Heute ausverkauft",
+    "size_unavailable_today": "Größe heute nicht verfügbar",
+    "sold_out_summary_title": "Nicht mehr verfügbar:",
+    "sold_out_hint": "Bitte entfernen Sie die nicht verfügbaren Artikel, um fortzufahren.",
+    "remove_unavailable": "Nicht verfügbare Artikel entfernen",
+    "sold_out_cta": "Artikel nicht verfügbar"
   },
   "checkout": {
     "title": "Kasse",
