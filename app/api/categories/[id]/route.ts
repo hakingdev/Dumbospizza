@@ -6,6 +6,8 @@ import { getServerSession } from 'next-auth';
 import { authOptions, isStaff } from '../../../../lib/auth';
 import { readSubcategories, sanitizeSubcategories } from '../../../../lib/categories/subcategories';
 import { invalidateCategories } from '../../../../lib/db/utils';
+import { validateCategoryAvailability } from '../../../../lib/categories/availability';
+import { invalidateCategoryHours } from '../../../../lib/categories/category-hours';
 
 async function isAuthorized() {
   const session = await getServerSession(authOptions);
@@ -42,6 +44,14 @@ export async function PUT(
     await connectToDatabase();
     const data = await request.json();
 
+    // Время продажи (категории и подкатегорий): битый график не сохраняем —
+    // иначе sanitize молча выкинул бы его и бургеры продавались бы с утра.
+    const availability = validateCategoryAvailability(data);
+    if (availability.error) {
+      return NextResponse.json({ success: false, error: availability.error }, { status: 400 });
+    }
+    if ('availabilitySchedule' in data) data.availabilitySchedule = availability.availabilitySchedule;
+
     // Список подкатегорий редактируется целиком: нормализуем и запоминаем,
     // какие метки исчезли — их нужно снять с товаров (иначе висят «осиротевшими»).
     let removedSubcategoryIds: string[] = [];
@@ -68,6 +78,7 @@ export async function PUT(
     }
 
     invalidateCategories();
+    invalidateCategoryHours();
 
     if (removedSubcategoryIds.length > 0) {
       await Product.updateMany(
@@ -99,6 +110,7 @@ export async function DELETE(
     }
 
     invalidateCategories();
+    invalidateCategoryHours();
 
     return NextResponse.json({ success: true, message: 'Category deleted' });
   } catch (error: any) {

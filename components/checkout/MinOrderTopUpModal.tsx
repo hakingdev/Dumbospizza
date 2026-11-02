@@ -41,6 +41,7 @@ export interface TopUpProduct {
   sizes?: any[];
   image?: string;
   category?: CategoryRef | string | null;
+  subcategoryId?: string | null;
   featured?: boolean;
 }
 
@@ -113,7 +114,7 @@ export default function MinOrderTopUpModal({
     preview: { name: string; image?: string };
   } | null>(null);
   const [pickedOpen, setPickedOpen] = useState(false);
-  const { blockedWorkshopFor, showNotice } = useKitchenBlocks();
+  const { blockedWorkshopFor, showNotice, scheduleClosureFor } = useKitchenBlocks();
 
   useEffect(() => {
     let cancelled = false;
@@ -150,6 +151,8 @@ export default function MinOrderTopUpModal({
       const category = readCategory(product.category);
       // Mini-Box собирается в своём полноэкранном конструкторе — не отсюда.
       if (category.slug === MINI_BOX_CATEGORY_SLUG) continue;
+      // Вне времени продажи (бургеры утром) — не предлагаем вовсе.
+      if (scheduleClosureFor({ categoryId: readCategoryId(product.category), subcategoryId: product.subcategoryId })) continue;
       if (hasNoActiveRegularSizes(product as any)) continue;
       const price = getProductDisplayPrice(product as any);
       if (!(price > 0)) continue;
@@ -162,7 +165,7 @@ export default function MinOrderTopUpModal({
       });
     }
     return list;
-  }, [products]);
+  }, [products, scheduleClosureFor]);
 
   const tabs = useMemo(() => {
     const map = new Map<string, { slug: string; name: string; order: number }>();

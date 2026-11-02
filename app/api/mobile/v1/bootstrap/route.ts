@@ -21,6 +21,7 @@ import {
   readWorkshopBlocks,
   withGlobalBlock,
 } from '../../../../../lib/kitchen/workshops';
+import { getCategoryHours } from '../../../../../lib/categories/category-hours';
 
 export const dynamic = 'force-dynamic';
 
@@ -119,6 +120,12 @@ export async function GET() {
               template: s[WORKSHOP_BLOCK_MESSAGE_KEY] as string,
             })
           : null,
+      /**
+       * Время продажи категорий (бургеры 17–22): { categories: { [categoryId]: окно },
+       * subcategories: { [subcategoryId]: окно } }, окно = { name, open, nextOpening,
+       * lines }. Только категории с графиком; open=false — сервер такие позиции отклонит.
+       */
+      categoryHours: await getCategoryHours(),
       /** Активные акции для модального окна и бейджей в приложении */
       activePromotions: modalPromos
         .filter((p) => isPromotionEffectivelyActive(p as any, now))

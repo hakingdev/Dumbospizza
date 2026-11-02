@@ -15,6 +15,8 @@ import { SafeImage } from '../../../components/SafeImage'
 import { useCart } from '../../../lib/contexts/CartContext'
 import { useKitchenBlocks } from '../../../lib/contexts/KitchenBlocksContext'
 import { WORKSHOP_BLOCK_HEADLINE } from '../../../lib/kitchen/workshops'
+import { SCHEDULE_CLOSED_HEADLINE } from '../../../lib/categories/availability'
+import { ScheduleClosedItemNote, ScheduleClosedSummary } from '../../../components/cart/ScheduleClosedNotice'
 import { getConflictingPromotions } from '../../../lib/promotions/coupon-conflict'
 import { PROMO_CONFLICT_MESSAGE } from '../../../components/cart/PromoConflictDialog'
 import { REPEAT_SKIPPED_STORAGE_KEY } from '../../../lib/orders/repeat-notice'
@@ -117,8 +119,11 @@ export default function CartPage() {
   const couponOrderAmount = state.items.reduce((s, i) => s + i.price * i.quantity, 0);
 
   // Стоп цеха мог начаться уже после наполнения корзины.
-  const { blockedWorkshopFor, blockedWorkshopsForItems, messageFor, showNotice } = useKitchenBlocks();
+  const { blockedWorkshopFor, blockedWorkshopsForItems, messageFor, showNotice, scheduleClosureFor, scheduleClosuresForItems } = useKitchenBlocks();
   const blockedInCart = blockedWorkshopsForItems(state.items);
+  // Окно категории могло закрыться, пока товар лежал в корзине (бургер в 21:50 → 22:05).
+  const closedInCart = scheduleClosuresForItems(state.items);
+  const checkoutBlocked = blockedInCart.length > 0 || closedInCart.length > 0;
 
   const handleProceedToCheckout = () => {
     // Цех встал уже с наполненной корзиной — дальше не пускаем.
@@ -126,6 +131,7 @@ export default function CartPage() {
       showNotice(blockedInCart);
       return;
     }
+    if (closedInCart.length > 0) return;
     // Награда BOGO опциональна — не блокируем оформление.
     if (needsGiftSelection) {
       openGiftModal();
@@ -187,7 +193,7 @@ export default function CartPage() {
           <p className="text-sm leading-6 text-amber-900">
             {t(
               'cart.repeat_skipped',
-              'Nicht mehr im Sortiment und daher übersprungen:'
+              'Derzeit nicht verfügbar und daher übersprungen:'
             )}{' '}
             <NoTranslate>{repeatSkipped.join(', ')}</NoTranslate>
           </p>
@@ -210,11 +216,13 @@ export default function CartPage() {
               <h2 className="sr-only">{t('cart.items', 'Artikel im Warenkorb')}</h2>
               <ul className="divide-y divide-gray-200">
                 {state.items.map((item) => (
-                  <li key={item.id} className={`p-4 ${blockedWorkshopFor(item) ? 'bg-amber-50' : ''}`}>
-                    {blockedWorkshopFor(item) && (
+                  <li key={item.id} className={`p-4 ${blockedWorkshopFor(item) || scheduleClosureFor(item) ? 'bg-amber-50' : ''}`}>
+                    {blockedWorkshopFor(item) ? (
                       <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-700">
                         ⏸️ {WORKSHOP_BLOCK_HEADLINE}
                       </p>
+                    ) : scheduleClosureFor(item) && (
+                      <ScheduleClosedItemNote window={scheduleClosureFor(item)!} onRemove={() => removeItem(item.id)} />
                     )}
                     <div className="flex flex-col md:flex-row md:items-center gap-4">
                       <div className="md:w-24 h-24 bg-gray-200 rounded-md flex items-center justify-center text-gray-500 flex-shrink-0 overflow-hidden">
@@ -398,17 +406,23 @@ export default function CartPage() {
                 </div>
               )}
 
+              <ScheduleClosedSummary windows={closedInCart} className="mb-4" />
+
               <button
                 type="button"
                 onClick={handleProceedToCheckout}
-                disabled={blockedInCart.length > 0}
+                disabled={checkoutBlocked}
                 className={`w-full mb-4 flex items-center justify-center ${
-                  blockedInCart.length > 0
+                  checkoutBlocked
                     ? 'min-h-[48px] cursor-not-allowed rounded-lg bg-gray-200 font-medium text-gray-600'
                     : 'btn-primary'
                 }`}
               >
-                {blockedInCart.length > 0 ? WORKSHOP_BLOCK_HEADLINE : t('cart.proceed_to_checkout')}
+                {blockedInCart.length > 0
+                  ? WORKSHOP_BLOCK_HEADLINE
+                  : closedInCart.length > 0
+                    ? SCHEDULE_CLOSED_HEADLINE
+                    : t('cart.proceed_to_checkout')}
               </button>
               
               {/* No registration required message */}

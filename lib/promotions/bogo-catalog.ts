@@ -3,6 +3,7 @@ import type { BogoSecondOption, BogoMode } from './types';
 import { getProductDisplayPrice, getSizePrice, getValidSizes } from '../product-pricing';
 import { hydrateSizeVariationStates } from '../size-variation-sync';
 import { getBlockedCategories, isProductBlocked } from '../kitchen/blocked-categories';
+import { getCategoryHours, productScheduleClosure } from '../categories/category-hours';
 
 type PromoRewardItem = { productId?: unknown; sizeName?: unknown };
 
@@ -57,12 +58,16 @@ export async function buildBogoCatalog(
           ],
         };
 
-  const [allProducts, blocked] = await Promise.all([
-    Product.find(query).select('name image basePrice sizes category').lean(),
+  const [allProducts, blocked, hours] = await Promise.all([
+    Product.find(query).select('name image basePrice sizes category subcategoryId').lean(),
     // Werkstatt gestoppt (Stop-Bot) → deren Artikel auch nicht als Belohnung.
     getBlockedCategories(),
+    // Außerhalb der Verkaufszeit ihrer Kategorie (Burger nur 17–22) — ebenso.
+    getCategoryHours(),
   ]);
-  const products = allProducts.filter((p) => !isProductBlocked(p as any, blocked));
+  const products = allProducts.filter(
+    (p) => !isProductBlocked(p as any, blocked) && !productScheduleClosure(p as any, hours)
+  );
   await hydrateSizeVariationStates(products as any[]);
   const productById = new Map(products.map((p) => [String(p._id), p]));
 

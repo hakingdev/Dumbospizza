@@ -39,6 +39,8 @@ export interface CartItem {
   image?: string;
   notes?: string;
   categoryId?: string;
+  /** Подкатегория товара — для времени продажи (lib/categories/availability). */
+  subcategoryId?: string;
 }
 
 export interface CartState {

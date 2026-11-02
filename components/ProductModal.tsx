@@ -9,6 +9,7 @@ import { X, Plus, Minus, ShoppingCart, Check } from 'lucide-react';
 import { useCart } from '../lib/contexts/CartContext';
 import { useKitchenBlocks } from '../lib/contexts/KitchenBlocksContext';
 import { WORKSHOP_BLOCK_HEADLINE } from '../lib/kitchen/workshops';
+import { availabilityBadge } from '../lib/categories/availability';
 import { useLanguage } from '../lib/contexts/LanguageContext';
 import { loadTranslation } from '../lib/i18n';
 import { normalizeObjectId } from '../lib/normalize-id';
@@ -64,6 +65,7 @@ interface Product {
   image: string;
   available: boolean;
   category?: string;
+  subcategoryId?: string | null;
   extras?: {
     toppings?: Extra[];
     sauces?: Extra[];
@@ -110,7 +112,7 @@ export default function ProductModal({ isOpen, onClose, productId, origin, previ
     [origin]
   );
   const { addItem } = useCart();
-  const { blockedWorkshopFor, messageFor, showNotice } = useKitchenBlocks();
+  const { blockedWorkshopFor, messageFor, showNotice, scheduleClosureFor, showScheduleNotice } = useKitchenBlocks();
   const { language } = useLanguage();
   const [t, setT] = useState<any>(() => (k: string, fallback?: string) => fallback ?? k);
 
@@ -302,6 +304,11 @@ export default function ProductModal({ isOpen, onClose, productId, origin, previ
   const blockedWorkshop = product
     ? blockedWorkshopFor({ categoryId: readCategoryId(product.category), name: product.name })
     : null;
+  // Вне времени продажи категории/подкатегории (бургеры утром).
+  const closedWindow = product && !blockedWorkshop
+    ? scheduleClosureFor({ categoryId: readCategoryId(product.category), subcategoryId: product.subcategoryId })
+    : null;
+  const unavailable = !!blockedWorkshop || !!closedWindow;
 
   // Halloween: модалка закрывается после капли крови — повторный клик в эту паузу не кладёт товар дважды.
   const dripCloseRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -318,6 +325,10 @@ export default function ProductModal({ isOpen, onClose, productId, origin, previ
       showNotice([blockedWorkshop]);
       return;
     }
+    if (closedWindow) {
+      showScheduleNotice(closedWindow);
+      return;
+    }
 
     const err = validateOptions();
     if (err) {
@@ -331,6 +342,7 @@ export default function ProductModal({ isOpen, onClose, productId, origin, previ
       id: product._id,
       productId: product._id,
       categoryId: normalizeObjectId(product.category),
+      subcategoryId: product.subcategoryId || undefined,
       name: product.name,
       price: calculateTotal() / quantity,
       quantity: quantity,
@@ -752,17 +764,30 @@ export default function ProductModal({ isOpen, onClose, productId, origin, previ
                           </p>
                         </div>
                       )}
+                      {closedWindow && (
+                        <div className="mb-3 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                          <span className="text-xl leading-none" aria-hidden="true">
+                            🕒
+                          </span>
+                          <p className="text-sm leading-6 text-amber-900">
+                            <span className="font-semibold">{closedWindow.name}:</span>{' '}
+                            <span className="tabular-nums">{closedWindow.lines.join(' · ')}</span>
+                          </p>
+                        </div>
+                      )}
                       <button
                         onClick={handleAddToCart}
-                        aria-disabled={!!blockedWorkshop}
+                        aria-disabled={unavailable}
                         className={`flex min-h-[56px] w-full items-center justify-center gap-3 rounded-xl px-6 py-4 text-center text-lg font-bold leading-tight shadow-lg transition-all ${
-                          blockedWorkshop
+                          unavailable
                             ? 'cursor-not-allowed bg-gray-200 text-gray-600'
                             : 'bg-primary-600 text-white hover:bg-primary-700 hover:shadow-xl'
                         }`}
                       >
                         {blockedWorkshop ? (
                           <span className="min-w-0">{WORKSHOP_BLOCK_HEADLINE}</span>
+                        ) : closedWindow ? (
+                          <span className="min-w-0">🕒 {availabilityBadge(closedWindow)}</span>
                         ) : (
                           <>
                             <ShoppingCart className="h-6 w-6 shrink-0" />

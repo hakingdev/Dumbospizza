@@ -6,6 +6,7 @@ import { ChevronLeft, Plus, Minus, ShoppingCart, Check } from 'lucide-react';
 import { useCart } from '../../../../lib/contexts/CartContext';
 import { useKitchenBlocks } from '../../../../lib/contexts/KitchenBlocksContext';
 import { WORKSHOP_BLOCK_HEADLINE } from '../../../../lib/kitchen/workshops';
+import { availabilityBadge } from '../../../../lib/categories/availability';
 import { useParams, useRouter } from 'next/navigation';
 import { useLanguage } from '../../../../lib/contexts/LanguageContext';
 import { loadTranslation } from '../../../../lib/i18n';
@@ -63,6 +64,7 @@ interface Product {
   image: string;
   available: boolean;
   category?: string;
+  subcategoryId?: string | null;
   extras?: {
     toppings?: Extra[];
     sauces?: Extra[];
@@ -77,7 +79,7 @@ export default function ProductPage() {
   const productId = params.id as string;
   const router = useRouter();
   const { addItem } = useCart();
-  const { blockedWorkshopFor, messageFor, showNotice } = useKitchenBlocks();
+  const { blockedWorkshopFor, messageFor, showNotice, scheduleClosureFor, showScheduleNotice } = useKitchenBlocks();
   const { language } = useLanguage();
   const [t, setT] = useState<any>(() => (k: string, fallback?: string) => fallback ?? k);
   
@@ -235,6 +237,11 @@ export default function ProductPage() {
   const blockedWorkshop = product
     ? blockedWorkshopFor({ categoryId: readCategoryId(product.category), name: product.name })
     : null;
+  // Вне времени продажи категории/подкатегории (бургеры утром).
+  const closedWindow = product && !blockedWorkshop
+    ? scheduleClosureFor({ categoryId: readCategoryId(product.category), subcategoryId: product.subcategoryId })
+    : null;
+  const unavailable = !!blockedWorkshop || !!closedWindow;
 
   const handleAddToCart = (e: React.MouseEvent<HTMLButtonElement>) => {
     if (!product) return;
@@ -243,6 +250,10 @@ export default function ProductPage() {
     // Цех позиции остановлен — в корзину не кладём, объясняем почему.
     if (blockedWorkshop) {
       showNotice([blockedWorkshop]);
+      return;
+    }
+    if (closedWindow) {
+      showScheduleNotice(closedWindow);
       return;
     }
 
@@ -261,6 +272,7 @@ export default function ProductPage() {
       id: `${product._id}-${Date.now()}`, // Unique ID for cart item
       productId: product._id,
       categoryId: normalizeObjectId(product.category),
+      subcategoryId: product.subcategoryId || undefined,
       name: product.name,
       quantity,
       price: itemPrice,
@@ -611,19 +623,33 @@ export default function ProductPage() {
                 </div>
               )}
 
+              {closedWindow && (
+                <div className="mb-3 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
+                  <span className="text-2xl leading-none" aria-hidden="true">
+                    🕒
+                  </span>
+                  <p className="text-sm leading-6 text-amber-900">
+                    <span className="font-semibold">{closedWindow.name}:</span>{' '}
+                    <span className="tabular-nums">{closedWindow.lines.join(' · ')}</span>
+                  </p>
+                </div>
+              )}
+
               {/* Add to Cart Button */}
               <button
                 onClick={handleAddToCart}
                 disabled={isAdding}
-                aria-disabled={!!blockedWorkshop}
+                aria-disabled={unavailable}
                 className={`w-full text-lg ${
-                  blockedWorkshop
+                  unavailable
                     ? 'flex min-h-[52px] cursor-not-allowed items-center justify-center rounded-lg bg-gray-200 font-medium text-gray-600'
                     : 'btn-primary disabled:cursor-not-allowed disabled:opacity-50'
                 }`}
               >
                 {blockedWorkshop ? (
                   WORKSHOP_BLOCK_HEADLINE
+                ) : closedWindow ? (
+                  `🕒 ${availabilityBadge(closedWindow)}`
                 ) : isAdding ? (
                   <>
                     <Check className="h-6 w-6" />

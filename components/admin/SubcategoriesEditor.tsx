@@ -1,7 +1,10 @@
 "use client";
 
-import { Plus, Trash2, ArrowUp, ArrowDown } from 'lucide-react';
+import { useState } from 'react';
+import { Plus, Trash2, ArrowUp, ArrowDown, Clock } from 'lucide-react';
 import type { Subcategory } from '../../lib/categories/subcategories';
+import type { WeeklySchedule } from '../../lib/opening-schedule';
+import AvailabilityScheduleField, { formatAvailabilitySummary } from './AvailabilityScheduleField';
 
 interface Props {
   value: Subcategory[];
@@ -16,6 +19,8 @@ interface Props {
  */
 export default function SubcategoriesEditor({ value, onChange }: Props) {
   const rows = value || [];
+  // Строка, у которой раскрыт график «время продажи» (индекс).
+  const [scheduleOpen, setScheduleOpen] = useState<number | null>(null);
 
   const add = () => onChange([...rows, { id: '', name: '', order: rows.length }]);
 
@@ -25,7 +30,15 @@ export default function SubcategoriesEditor({ value, onChange }: Props) {
     onChange(next);
   };
 
+  const setSchedule = (index: number, schedule: WeeklySchedule | null) => {
+    const next = [...rows];
+    const { availabilitySchedule: _old, ...row } = next[index];
+    next[index] = schedule ? { ...row, availabilitySchedule: schedule } : row;
+    onChange(next);
+  };
+
   const remove = (index: number) => {
+    setScheduleOpen(null);
     const next = rows.filter((_, i) => i !== index);
     onChange(next.map((row, i) => ({ ...row, order: i })));
   };
@@ -33,6 +46,7 @@ export default function SubcategoriesEditor({ value, onChange }: Props) {
   const move = (index: number, direction: -1 | 1) => {
     const target = index + direction;
     if (target < 0 || target >= rows.length) return;
+    setScheduleOpen(null);
     const next = [...rows];
     [next[index], next[target]] = [next[target], next[index]];
     onChange(next.map((row, i) => ({ ...row, order: i })));
@@ -65,41 +79,66 @@ export default function SubcategoriesEditor({ value, onChange }: Props) {
       ) : (
         <div className="space-y-2">
           {rows.map((row, index) => (
-            <div key={row.id || `new-${index}`} className="flex items-center gap-2">
-              <span className="w-6 text-center text-sm text-gray-400">{index + 1}</span>
-              <input
-                type="text"
-                value={row.name}
-                onChange={(e) => rename(index, e.target.value)}
-                placeholder="Название подкатегории"
-                className="flex-1 rounded-lg border px-3 py-2"
-              />
-              <button
-                type="button"
-                onClick={() => move(index, -1)}
-                disabled={index === 0}
-                className="p-2 text-gray-500 hover:text-gray-800 disabled:opacity-30"
-                title="Выше"
-              >
-                <ArrowUp className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => move(index, 1)}
-                disabled={index === rows.length - 1}
-                className="p-2 text-gray-500 hover:text-gray-800 disabled:opacity-30"
-                title="Ниже"
-              >
-                <ArrowDown className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => remove(index)}
-                className="p-2 text-gray-500 hover:text-red-600"
-                title="Удалить"
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
+            <div key={row.id || `new-${index}`}>
+              <div className="flex items-center gap-2">
+                <span className="w-6 text-center text-sm text-gray-400">{index + 1}</span>
+                <input
+                  type="text"
+                  value={row.name}
+                  onChange={(e) => rename(index, e.target.value)}
+                  placeholder="Название подкатегории"
+                  className="flex-1 rounded-lg border px-3 py-2"
+                />
+                <button
+                  type="button"
+                  onClick={() => move(index, -1)}
+                  disabled={index === 0}
+                  className="p-2 text-gray-500 hover:text-gray-800 disabled:opacity-30"
+                  title="Выше"
+                >
+                  <ArrowUp className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => move(index, 1)}
+                  disabled={index === rows.length - 1}
+                  className="p-2 text-gray-500 hover:text-gray-800 disabled:opacity-30"
+                  title="Ниже"
+                >
+                  <ArrowDown className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setScheduleOpen(scheduleOpen === index ? null : index)}
+                  className={`p-2 hover:text-gray-800 ${row.availabilitySchedule ? 'text-primary-600' : 'text-gray-500'}`}
+                  title="Время продажи"
+                  aria-expanded={scheduleOpen === index}
+                >
+                  <Clock className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => remove(index)}
+                  className="p-2 text-gray-500 hover:text-red-600"
+                  title="Удалить"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+              {row.availabilitySchedule && scheduleOpen !== index && (
+                <p className="ml-8 mt-1 text-xs text-gray-600">
+                  🕒 {formatAvailabilitySummary(row.availabilitySchedule)}
+                </p>
+              )}
+              {scheduleOpen === index && (
+                <div className="ml-8 mt-2 rounded-lg bg-gray-50 p-3">
+                  <AvailabilityScheduleField
+                    value={row.availabilitySchedule}
+                    onChange={(schedule) => setSchedule(index, schedule)}
+                    title={`«${row.name || 'Подкатегория'}» продаётся только в определённое время`}
+                  />
+                </div>
+              )}
             </div>
           ))}
         </div>

@@ -7,6 +7,8 @@ import { getCustomerSession, normalizePhone } from '../../../../lib/customer-aut
 import { verifyOrderAccessToken } from '../../../../lib/orders/access-token';
 import { isPromoRewardName, stripPromoLabels } from '../../../../lib/orders/gift-label';
 import { isMinOrderSurchargeItem } from '../../../../lib/orders/min-order-surcharge';
+import { availabilityBadge } from '../../../../lib/categories/availability';
+import { getCategoryHours, productScheduleClosure } from '../../../../lib/categories/category-hours';
 
 // POST /api/orders/repeat - Функция для повторения заказа
 // Ответ содержит PII (адрес, имя, телефон, email). Авторизация: cookie-сессия
@@ -72,12 +74,15 @@ export async function POST(request: NextRequest) {
           .filter(Boolean)
       )
     );
-    const products = productIds.length
-      ? await Product.find({ _id: { $in: productIds } })
-          .select('name available image category')
-          .lean()
-      : [];
-    const productsById = new Map(products.map((p) => [String(p._id), p]));
+    const [products, categoryHours] = await Promise.all([
+      productIds.length
+        ? Product.find({ _id: { $in: productIds } })
+            .select('name available image category subcategoryId')
+            .lean()
+        : Promise.resolve([] as any[]),
+      getCategoryHours(),
+    ]);
+    const productsById = new Map(products.map((p: any) => [String(p._id), p]));
 
     const items: any[] = [];
     const skippedItems: string[] = [];
@@ -86,6 +91,12 @@ export async function POST(request: NextRequest) {
       const product = productId ? productsById.get(productId) : undefined;
       if (!product || product.available === false) {
         skippedItems.push(stripPromoLabels(item.name));
+        continue;
+      }
+      // Вне времени продажи категории (бургеры утром) — тоже пропускаем, с подсказкой когда.
+      const closure = productScheduleClosure(product, categoryHours);
+      if (closure) {
+        skippedItems.push(`${stripPromoLabels(item.name)} (${availabilityBadge(closure)})`);
         continue;
       }
       items.push({

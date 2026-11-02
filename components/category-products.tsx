@@ -75,6 +75,7 @@ export function CategoryProducts({ categorySlug, categoryTitle, limit = 4, onPro
             price: getProductDisplayPrice(product),
             image: product.image,
             category: product.category,
+            subcategoryId: product.subcategoryId,
             valentinePromo: product.valentinePromo
           }} />
         ))}

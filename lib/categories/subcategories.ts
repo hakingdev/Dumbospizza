@@ -10,11 +10,21 @@
  * (сравнивать всегда по id, не по имени — см. историю с именами размеров).
  */
 import { genObjectId } from '../db/object-id';
+import type { WeeklySchedule } from '../opening-schedule';
+import { readAvailabilitySchedule } from './availability';
 
 export interface Subcategory {
   id: string;
   name: string;
   order: number;
+  /** Когда метку можно заказать (lib/categories/availability); нет — всегда. */
+  availabilitySchedule?: WeeklySchedule;
+}
+
+/** График кладём в метку, только если он задан — иначе поля нет вовсе. */
+function withSchedule(subcategory: Subcategory, raw: unknown): Subcategory {
+  const schedule = readAvailabilitySchedule(raw);
+  return schedule ? { ...subcategory, availabilitySchedule: schedule } : subcategory;
 }
 
 /** Категория может прийти как populate-объект, слаг-строка или null. */
@@ -40,7 +50,7 @@ export function sanitizeSubcategories(raw: unknown): Subcategory[] {
     if (!id || seen.has(id)) id = genObjectId();
     seen.add(id);
 
-    result.push({ id, name, order: result.length });
+    result.push(withSchedule({ id, name, order: result.length }, (entry as any).availabilitySchedule));
   }
 
   return result;
@@ -54,11 +64,16 @@ export function readSubcategories(category: CategoryLike): Subcategory[] {
 
   return raw
     .filter((s: any) => s && typeof s === 'object' && s.id && s.name)
-    .map((s: any, index: number) => ({
-      id: String(s.id),
-      name: String(s.name),
-      order: typeof s.order === 'number' ? s.order : index,
-    }))
+    .map((s: any, index: number) =>
+      withSchedule(
+        {
+          id: String(s.id),
+          name: String(s.name),
+          order: typeof s.order === 'number' ? s.order : index,
+        },
+        s.availabilitySchedule
+      )
+    )
     .sort((a, b) => a.order - b.order);
 }
 

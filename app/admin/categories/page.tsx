@@ -6,7 +6,10 @@ import Link from 'next/link';
 import ImageUpload from '../../../components/ImageUpload';
 import { SafeImage } from '../../../components/SafeImage';
 import SubcategoriesEditor from '../../../components/admin/SubcategoriesEditor';
+import AvailabilityScheduleField, { formatAvailabilitySummary } from '../../../components/admin/AvailabilityScheduleField';
 import { readSubcategories, type Subcategory } from '../../../lib/categories/subcategories';
+import { readAvailabilitySchedule, validateCategoryAvailability } from '../../../lib/categories/availability';
+import type { WeeklySchedule } from '../../../lib/opening-schedule';
 
 const emptyForm = {
   name: '',
@@ -16,7 +19,9 @@ const emptyForm = {
   icon: '',
   active: true,
   order: 0,
-  subcategories: [] as Subcategory[]
+  subcategories: [] as Subcategory[],
+  /** Время продажи (бургеры 17–22); null — всё время работы ресторана. */
+  availabilitySchedule: null as WeeklySchedule | null
 };
 
 export default function CategoriesPage() {
@@ -59,13 +64,20 @@ export default function CategoriesPage() {
       icon: category.icon || '',
       active: category.active !== false,
       order: category.order || 0,
-      subcategories: readSubcategories(category)
+      subcategories: readSubcategories(category),
+      availabilitySchedule: readAvailabilitySchedule(category.availabilitySchedule)
     });
     setIsEditing(category._id);
     setIsAdding(false);
   };
 
   const handleSave = async () => {
+    // Битый график не отправляем: ошибки уже подсвечены в редакторе.
+    const availability = validateCategoryAvailability(formData);
+    if (availability.error) {
+      alert(availability.error);
+      return;
+    }
     try {
       const url = isEditing 
         ? `/api/categories/${isEditing}`
@@ -84,6 +96,9 @@ export default function CategoriesPage() {
         setIsAdding(false);
         setIsEditing(null);
         setFormData(emptyForm);
+      } else {
+        const data = await response.json().catch(() => null);
+        alert(data?.error || 'Ошибка сохранения');
       }
     } catch (error) {
       console.error('Error:', error);
@@ -230,6 +245,14 @@ export default function CategoriesPage() {
             </div>
 
             <div className="col-span-12 border-t pt-4">
+              <AvailabilityScheduleField
+                value={formData.availabilitySchedule}
+                onChange={(availabilitySchedule) => setFormData({ ...formData, availabilitySchedule })}
+                title="Категория продаётся только в определённое время"
+              />
+            </div>
+
+            <div className="col-span-12 border-t pt-4">
               <SubcategoriesEditor
                 value={formData.subcategories}
                 onChange={(subcategories) => setFormData({ ...formData, subcategories })}
@@ -277,12 +300,19 @@ export default function CategoriesPage() {
                       {category.description && (
                         <div className="text-sm text-gray-500">{category.description.substring(0, 50)}</div>
                       )}
+                      {readAvailabilitySchedule(category.availabilitySchedule) && (
+                        <div className="mt-1 text-xs text-gray-600">
+                          🕒 {formatAvailabilitySummary(readAvailabilitySchedule(category.availabilitySchedule)!)}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </td>
                 <td className="px-4 sm:px-6 py-4 text-sm text-gray-500">{category.slug}</td>
                 <td className="px-4 sm:px-6 py-4 text-sm text-gray-500">
-                  {readSubcategories(category).map((s) => s.name).join(', ') || '—'}
+                  {readSubcategories(category)
+                    .map((s) => (s.availabilitySchedule ? `${s.name} (🕒 ${formatAvailabilitySummary(s.availabilitySchedule)})` : s.name))
+                    .join(', ') || '—'}
                 </td>
                 <td className="px-4 sm:px-6 py-4 text-sm">{category.order || 0}</td>
                 <td className="px-4 sm:px-6 py-4">

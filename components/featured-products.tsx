@@ -50,6 +50,7 @@ export function FeaturedProducts() {
             price: getProductDisplayPrice(product),
             image: product.image,
             category: product.category,
+            subcategoryId: product.subcategoryId,
             valentinePromo: product.valentinePromo
           }} />
         ))}

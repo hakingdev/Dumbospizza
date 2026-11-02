@@ -8,6 +8,9 @@
  * минуту) + модалка с объяснением: что закрыто, на сколько минут и что можно
  * заказать вместо этого. Карточки товара, страница товара и чекаут читают
  * состояние отсюда — правило «какая позиция к какому цеху» живёт в одном месте.
+ *
+ * Тот же опрос несёт время продажи категорий (бургеры только 17–22): окна
+ * считает сервер, поэтому в 17:00 серые карточки оживают сами, без перезагрузки.
  */
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
@@ -22,9 +25,17 @@ import {
   type WorkshopBlocks,
   type WorkshopId,
 } from '../kitchen/workshops';
+import {
+  EMPTY_CATEGORY_HOURS,
+  availabilityBadge,
+  scheduleClosureFor as findScheduleClosure,
+  type CategoryHours,
+  type CategoryWindow,
+} from '../categories/availability';
 
 export interface BlockableItem {
   categoryId?: string | null;
+  subcategoryId?: string | null;
   name?: string;
 }
 
@@ -41,6 +52,12 @@ interface KitchenBlocksValue {
   badgeFor: (ids: WorkshopId[]) => string;
   /** Показать модалку с объяснением (клик по закрытому товару). */
   showNotice: (ids: WorkshopId[]) => void;
+  /** Окно категории/подкатегории позиции, если оно СЕЙЧАС закрыто; иначе null. */
+  scheduleClosureFor: (item: BlockableItem) => CategoryWindow | null;
+  /** Закрытые окна, задетые набором позиций (корзина), без повторов. */
+  scheduleClosuresForItems: (items: BlockableItem[]) => CategoryWindow[];
+  /** Модалка «когда можно заказать» (клик по серой карточке). */
+  showScheduleNotice: (window: CategoryWindow) => void;
 }
 
 const NOOP_VALUE: KitchenBlocksValue = {
@@ -50,6 +67,9 @@ const NOOP_VALUE: KitchenBlocksValue = {
   messageFor: () => '',
   badgeFor: () => '',
   showNotice: () => {},
+  scheduleClosureFor: () => null,
+  scheduleClosuresForItems: () => [],
+  showScheduleNotice: () => {},
 };
 
 const KitchenBlocksContext = createContext<KitchenBlocksValue>(NOOP_VALUE);
@@ -68,6 +88,7 @@ interface BlocksState {
   /** Глобальный стоп приёма ('' — приём открыт). Он сильнее цехов. */
   ordersBlockedUntil: string;
   messageTemplate: string | null;
+  categoryHours: CategoryHours;
 }
 
 const EMPTY_STATE: BlocksState = {
@@ -76,6 +97,7 @@ const EMPTY_STATE: BlocksState = {
   blocks: { ...EMPTY_WORKSHOP_BLOCKS },
   ordersBlockedUntil: '',
   messageTemplate: null,
+  categoryHours: EMPTY_CATEGORY_HOURS,
 };
 
 export function KitchenBlocksProvider({ children }: { children: ReactNode }) {
@@ -83,6 +105,7 @@ export function KitchenBlocksProvider({ children }: { children: ReactNode }) {
   // Тик, чтобы «noch N Minuten» пересчитывалось само (не только при ответе API).
   const [now, setNow] = useState<Date>(() => new Date());
   const [notice, setNotice] = useState<WorkshopId[] | null>(null);
+  const [scheduleNotice, setScheduleNotice] = useState<CategoryWindow | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -97,6 +120,10 @@ export function KitchenBlocksProvider({ children }: { children: ReactNode }) {
           blocks: { ...EMPTY_WORKSHOP_BLOCKS, ...(data.blocks || {}) },
           ordersBlockedUntil: data.ordersBlockedUntil || '',
           messageTemplate: data.messageTemplate || null,
+          categoryHours: {
+            categories: data.categoryHours?.categories || {},
+            subcategories: data.categoryHours?.subcategories || {},
+          },
         });
         setNow(new Date());
       } catch (error) {
@@ -127,6 +154,11 @@ export function KitchenBlocksProvider({ children }: { children: ReactNode }) {
       return workshop && state.blockedWorkshops.includes(workshop) ? workshop : null;
     },
     [state]
+  );
+
+  const scheduleClosureFor = useCallback(
+    (item: BlockableItem) => findScheduleClosure(item, state.categoryHours),
+    [state.categoryHours]
   );
 
   const value = useMemo<KitchenBlocksValue>(() => {
@@ -160,8 +192,18 @@ export function KitchenBlocksProvider({ children }: { children: ReactNode }) {
       showNotice: (ids: WorkshopId[]) => {
         if (ids.length > 0) setNotice(ids);
       },
+      scheduleClosureFor,
+      scheduleClosuresForItems: (items: BlockableItem[]) => {
+        const hit: CategoryWindow[] = [];
+        for (const item of items || []) {
+          const window = scheduleClosureFor(item);
+          if (window && !hit.includes(window)) hit.push(window);
+        }
+        return hit;
+      },
+      showScheduleNotice: setScheduleNotice,
     };
-  }, [state, now, blockedWorkshopFor]);
+  }, [state, now, blockedWorkshopFor, scheduleClosureFor]);
 
   return (
     <KitchenBlocksContext.Provider value={value}>
@@ -172,6 +214,9 @@ export function KitchenBlocksProvider({ children }: { children: ReactNode }) {
           message={value.messageFor(notice)}
           onClose={() => setNotice(null)}
         />
+      )}
+      {scheduleNotice && (
+        <ScheduleNoticeModal window={scheduleNotice} onClose={() => setScheduleNotice(null)} />
       )}
     </KitchenBlocksContext.Provider>
   );
@@ -207,6 +252,52 @@ function BlockedNoticeModal({
           </div>
         </div>
         <p className="mb-6 text-sm leading-6 text-gray-700">{message}</p>
+        <button
+          type="button"
+          onClick={onClose}
+          className="min-h-[44px] w-full rounded-lg bg-primary-600 px-4 py-3 font-medium text-white transition-colors hover:bg-primary-700"
+        >
+          Verstanden
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** «Burger — Erhältlich ab 17:00» + недельный график категории. */
+function ScheduleNoticeModal({ window, onClose }: { window: CategoryWindow; onClose: () => void }) {
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4"
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-3 flex items-start gap-3">
+          <span className="text-3xl leading-none" aria-hidden="true">
+            🕒
+          </span>
+          <div>
+            <h2 className="text-lg font-bold text-gray-900">{availabilityBadge(window)}</h2>
+            <p className="text-sm font-medium text-gray-500">{window.name}</p>
+          </div>
+        </div>
+        {window.lines.length > 0 && (
+          <div className="mb-6">
+            <p className="mb-1 text-sm leading-6 text-gray-700">Bestellbar:</p>
+            <ul className="text-sm leading-6 text-gray-900">
+              {window.lines.map((line) => (
+                <li key={line} className="tabular-nums">
+                  {line}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         <button
           type="button"
           onClick={onClose}

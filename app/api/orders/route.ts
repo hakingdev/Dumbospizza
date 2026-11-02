@@ -33,6 +33,8 @@ import {
 import { claimPendingPrintOrders } from '../../../lib/orders/print-queue';
 import { getSetting } from '../../../lib/settings';
 import { evaluateOrderHours } from '../../../lib/opening-schedule';
+import { scheduleClosedOrderMessage, type CategoryWindow } from '../../../lib/categories/availability';
+import { getCategoryHours, productScheduleClosure } from '../../../lib/categories/category-hours';
 import {
   WORKSHOP_BLOCK_MESSAGE_KEY,
   blockedWorkshopsForItems,
@@ -187,6 +189,8 @@ export async function POST(request: NextRequest) {
         if (subName) subcategoryByProduct.set(id, subName);
       }
     };
+    // Позиции вне времени продажи своей категории/подкатегории (бургеры 17–22).
+    const scheduleClosed: Array<{ productId: string; name: string; window: CategoryWindow }> = [];
     if (lineProductIds.length > 0) {
       const lineProducts = await Product.find({ _id: { $in: lineProductIds } })
         .select('taxRate category sizes subcategoryId')
@@ -241,6 +245,28 @@ export async function POST(request: NextRequest) {
       }
 
       await collectProductMeta(lineProducts as any[]);
+
+      // Окно берём по товару из БД, а не по тому, что прислала корзина.
+      const categoryHours = await getCategoryHours();
+      for (const item of orderData.items || []) {
+        const productId = String(item.productId || item.id);
+        const product = productById.get(productId);
+        const window = product ? productScheduleClosure(product, categoryHours) : null;
+        if (window && !scheduleClosed.some((e) => e.productId === productId)) {
+          scheduleClosed.push({ productId, name: item.name || window.name, window });
+        }
+      }
+    }
+
+    if (scheduleClosed.length > 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: scheduleClosedOrderMessage(scheduleClosed),
+          unavailableProductIds: scheduleClosed.map((e) => e.productId),
+        },
+        { status: 403 }
+      );
     }
 
     // Стоп по цехам (стоп-бот / админка): заказ отклоняем, только если в нём

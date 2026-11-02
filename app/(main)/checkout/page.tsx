@@ -22,6 +22,8 @@ import { useLanguage } from '../../../lib/contexts/LanguageContext'
 import { loadTranslation } from '../../../lib/i18n'
 import { evaluateOrderHours } from '../../../lib/opening-schedule'
 import { useKitchenBlocks } from '../../../lib/contexts/KitchenBlocksContext'
+import { scheduleClosedCartMessage } from '../../../lib/categories/availability'
+import { ScheduleClosedItemNote } from '../../../components/cart/ScheduleClosedNotice'
 import {
   WORKSHOP_BLOCK_HEADLINE,
   formatBlockTemplate,
@@ -192,7 +194,7 @@ export default function CheckoutPage() {
   const [orderBlocked, setOrderBlocked] = useState(false)
   const [orderBlockMessage, setOrderBlockMessage] = useState('')
   // Остановленные цеха (стоп-бот) — общее состояние витрины, одно на всё приложение.
-  const { blockedWorkshopsForItems, messageFor: kitchenMessageFor } = useKitchenBlocks()
+  const { blockedWorkshopsForItems, messageFor: kitchenMessageFor, scheduleClosureFor, scheduleClosuresForItems } = useKitchenBlocks()
   const deliveryFacts = useDeliveryFacts()
 
   // Meta Pixel: начало оформления — один раз, когда корзина гидратирована и не пуста
@@ -365,6 +367,12 @@ export default function CheckoutPage() {
     [blockedWorkshopsForItems, state.items]
   )
 
+  /** Позиции вне времени продажи своей категории (бургер положили в 21:50, оформляют в 22:05). */
+  const closedWindowsInCart = useMemo(
+    () => scheduleClosuresForItems(state.items),
+    [scheduleClosuresForItems, state.items]
+  )
+
   useEffect(() => {
     const evaluateOrderBlock = () => {
       const settings = orderSettings || {}
@@ -399,6 +407,13 @@ export default function CheckoutPage() {
         return
       }
 
+      // Ресторан открыт, но часть корзины вне времени продажи — без неё заказ пройдёт.
+      if (closedWindowsInCart.length > 0) {
+        setOrderBlocked(true)
+        setOrderBlockMessage(scheduleClosedCartMessage(closedWindowsInCart))
+        return
+      }
+
       setOrderBlocked(false)
       setOrderBlockMessage('')
     }
@@ -406,7 +421,7 @@ export default function CheckoutPage() {
     evaluateOrderBlock()
     const interval = setInterval(evaluateOrderBlock, 60 * 1000)
     return () => clearInterval(interval)
-  }, [orderSettings, blockedWorkshopsInCart, kitchenMessageFor])
+  }, [orderSettings, blockedWorkshopsInCart, kitchenMessageFor, closedWindowsInCart])
   
   // Sync local state with cart context (only when values actually change)
   useEffect(() => {
@@ -1904,8 +1919,15 @@ export default function CheckoutPage() {
                       (item.extras.sides && item.extras.sides.length > 0)
                     );
                   
+                    const closedWindow = scheduleClosureFor(item);
                     return (
-                      <div key={`${item.id}-${item.size?.id || 'no-size'}-${index}`} className="bg-gray-50 rounded-lg p-3">
+                      <div
+                        key={`${item.id}-${item.size?.id || 'no-size'}-${index}`}
+                        className={`rounded-lg p-3 ${closedWindow ? 'bg-amber-50 ring-1 ring-amber-200' : 'bg-gray-50'}`}
+                      >
+                        {closedWindow && (
+                          <ScheduleClosedItemNote window={closedWindow} onRemove={() => removeItem(item.id)} />
+                        )}
                         <div className="flex justify-between items-start">
                           <div className="flex-1">
                             <h3 className="font-semibold text-gray-900 mb-1"><NoTranslate>{item.name}</NoTranslate></h3>
