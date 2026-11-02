@@ -152,6 +152,9 @@ export function lieferandoTargetKey(target: LieferandoTarget): string {
   }
 }
 
+/** Больше имён в отчёте не перечисляем («включить всё в категории» шлёт одну команду на всю категорию). */
+const MAX_LISTED_NAMES = 4;
+
 /** Человекочитаемая цель для сообщений бота/отчётов. */
 export function describeLieferandoTarget(target: LieferandoTarget): string {
   switch (target.kind) {
@@ -160,9 +163,9 @@ export function describeLieferandoTarget(target: LieferandoTarget): string {
     case 'size':
       return `размер «${target.label}»`;
     case 'item':
-      return target.names.length === 1
-        ? `позиция «${target.names[0]}»`
-        : `позиции: ${target.names.map((n) => `«${n}»`).join(', ')}`;
+      if (target.names.length === 1) return `позиция «${target.names[0]}»`;
+      if (target.names.length > MAX_LISTED_NAMES) return `позиции (${target.names.length} шт.)`;
+      return `позиции: ${target.names.map((n) => `«${n}»`).join(', ')}`;
   }
 }
 

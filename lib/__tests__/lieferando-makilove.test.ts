@@ -157,6 +157,28 @@ describe('readLieferandoTarget / lieferandoTargetKey / describeLieferandoTarget'
     expect(describeLieferandoTarget(SIZE_30)).toBe('размер «30 cm»');
     expect(describeLieferandoTarget(ITEM_HAW)).toBe('позиция «Hawaiian»');
     expect(describeLieferandoTarget({ kind: 'item', names: ['A', 'B'] })).toBe('позиции: «A», «B»');
+    // «включить всё в категории» = одна команда со всеми именами — не перечисляем
+    expect(describeLieferandoTarget({ kind: 'item', names: ['A', 'B', 'C', 'D', 'E'] })).toBe('позиции (5 шт.)');
+  });
+
+  it('отчёт по целой категории: компактно, не найденные перечислены', () => {
+    const names = Array.from({ length: 23 }, (_, i) => `Pizza ${i + 1}`);
+    const t = formatLieferandoReport({
+      id: 'r',
+      ok: true,
+      failed: 0,
+      message: '',
+      finishedAt: 'f',
+      action: 'on',
+      target: { kind: 'item', names },
+      count: 40,
+      already: 4,
+      categories: ['Pizza', 'Runde Pizza'],
+      notFound: ['Pizza 23'],
+    });
+    expect(t).toContain('позиции (23 шт.) <b>включены</b> (Pizza, Runde Pizza) — строк: 40. Ещё 4 уже были включены.');
+    expect(t).toContain('⚠️ Не найдено на Lieferando: «Pizza 23».');
+    expect(t.length).toBeLessThan(400);
   });
 });
 
