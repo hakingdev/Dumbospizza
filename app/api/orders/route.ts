@@ -52,6 +52,7 @@ import { getBalance } from '../../../lib/loyalty/service';
 import { getLoyaltyRules, computeMaxRedeemablePoints } from '../../../lib/loyalty/config';
 import { hydrateSizeVariationStates } from '../../../lib/size-variation-sync';
 import { hasConfiguredRegularSizes } from '../../../lib/product-pricing';
+import { soldOutOrderMessage } from '../../../lib/menu-stop/state';
 
 /**
  * Тариф доставки заказа. Источник правды — зона в БД (клиент прислал её id),
@@ -193,11 +194,26 @@ export async function POST(request: NextRequest) {
     const scheduleClosed: Array<{ productId: string; name: string; window: CategoryWindow }> = [];
     if (lineProductIds.length > 0) {
       const lineProducts = await Product.find({ _id: { $in: lineProductIds } })
-        .select('taxRate category sizes subcategoryId')
+        .select('name taxRate category sizes subcategoryId available')
         .lean();
       await hydrateSizeVariationStates(lineProducts as any[]);
 
       const productById = new Map(lineProducts.map((p: any) => [String(p._id), p]));
+
+      // Стоп-лист (админка / кухонный терминал / стоп-бот): снятую с продажи
+      // позицию не принимаем, даже если корзина собрана до стопа. Витрина её
+      // уже не показывает, но корзина в браузере живёт сутки.
+      const soldOut = (lineProducts as any[]).filter((p) => p.available === false);
+      if (soldOut.length > 0) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: soldOutOrderMessage(soldOut.map((p) => String(p.name || ''))),
+            unavailableProductIds: soldOut.map((p) => String(p._id)),
+          },
+          { status: 403 }
+        );
+      }
       for (const item of orderData.items || []) {
         const product = productById.get(String(item.productId || item.id));
         const sizes = Array.isArray((product as any)?.sizes) ? (product as any).sizes : [];
