@@ -1,20 +1,31 @@
 /**
- * Ядро управления позициями MakiLove в Lieferando Partner Hub
+ * Ядро управления доступностью позиций в Lieferando Partner Hub
  * (страница «Artikelverfügbarkeit»: /menu/item-availability).
  *
  * Используется двумя обёртками:
- *   toggle.mjs — ручной CLI (login/list/off/on);
- *   agent.mjs  — демон на кассовом ПК, выполняющий команды стоп-бота.
+ *   toggle.mjs — ручной CLI (login/list/off/on/set-size/set-item/…);
+ *   agent.mjs  — демон (VDS/кассовый ПК), выполняющий команды стоп-бота.
  *
- * Как ищем: позиция считается MakiLove, если «makilove» есть в названии ЕЁ
- * КАТЕГОРИИ (в Hub все суши разложены по категориям «Makilove …») ЛИБО в
- * названии самой позиции. Скрипт проходит по всем категориям слева.
+ * Три вида целей:
+ *   MakiLove (runOff/runOn) — позиция считается MakiLove, если «makilove» есть
+ *     в названии ЕЁ КАТЕГОРИИ (в Hub все суши разложены по категориям
+ *     «Makilove …») ЛИБО в названии самой позиции;
+ *   размер (runSet, kind:'size') — у каждой строки категорий вне MakiLove есть
+ *     переключатели ВАРИАНТОВ ([data-test-id="variation"]: «30 cm», «36 cm»,
+ *     «Ca. 27×37 cm (entspricht ca. Ø 36 cm Pizza)», «6stk»); подпись сайта
+ *     («30 cm», «ca. 27x37», «6 Stk») матчится по числам — sizeKey();
+ *   позиция (runSet, kind:'item') — общий переключатель строки, чьё имя
+ *     совпадает с именем сайта нормализованно (без «Pizza», «(rund)»,
+ *     регистра, пунктуации) — itemKey(); «Hawaiian» переключает и
+ *     «Hawaiian Pizza», и «Hawaiian Pizza (rund)».
  *
  * ⚠️ Особенность Hub: выключение действует «до конца дня» — на следующий день
- * Lieferando сам вернёт позиции в продажу.
+ * Lieferando сам вернёт позиции/размеры в продажу.
+ *
+ * Playwright импортируется лениво (в openBrowser): чистые матчеры
+ * (sizeKey/itemKey) тогда можно тестировать vitest'ом без браузера.
  */
 
-import { chromium } from 'playwright';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -31,7 +42,39 @@ const MATCH = process.env.MATCH || 'makilove';
 const norm = (s) => (s || '').toLowerCase().replace(/[\s ]+/g, '');
 const matches = (name) => norm(name).includes(norm(MATCH));
 
-// Селекторы сняты с реального DOM Partner Hub (август 2026).
+/**
+ * Ключ размера — числа подписи, отсортированные и склеенные через «x»:
+ *   «30 cm» → «30»; «ca. 27x37» и «Ca. 27×37 cm (entspricht ca. Ø 36 cm Pizza)»
+ *   → «27x37»; «6 Stk» и «6stk» → «6». Хвост в скобках и после «≈»/«Ø»/
+ *   «entspricht» отбрасываем — там пересчёт в диаметр, он сбил бы матч.
+ *   Пустая строка = чисел нет (такую цель не выполняем).
+ */
+export function sizeKey(label) {
+  const head = String(label || '')
+    .replace(/\(.*$/s, '')
+    .split(/≈|ø|entspricht/i)[0];
+  const nums = (head.match(/\d+(?:[.,]\d+)?/g) || []).map((n) => Number(n.replace(',', '.')));
+  return nums.sort((a, b) => a - b).join('x');
+}
+
+/**
+ * Ключ позиции для сравнения имени сайта с Hub-строкой: без «Pizza»,
+ * «(rund)», маркетингового «Neu:», регистра, пунктуации и пробелов.
+ *   «Hawaiian» ≡ «Hawaiian Pizza» ≡ «Hawaiian Pizza (rund)»;
+ *   «Katz's Corner» ≡ «Katz’s Corner (rund)»; «Hot Dog Pizza» ≡ «Hotdog-Pizza».
+ */
+export function itemKey(name) {
+  return String(name || '')
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/^\s*neu\s*:/, ' ')
+    .replace(/\(\s*rund\s*\)/g, ' ')
+    .replace(/\bpizza\b/g, ' ')
+    .replace(/[’'`´"„“”.,;:!?&+\-–—/\\()]/g, ' ')
+    .replace(/\s+/g, '');
+}
+
+// Селекторы сняты с реального DOM Partner Hub (август 2026; варианты — ноябрь 2026).
 const SEL = {
   categoryBtn: 'button[data-test-id="categoriesListItemLink"]',
   paneCategoryName: '[data-test-id="itemsListCategoryName"]',
@@ -39,6 +82,11 @@ const SEL = {
   itemName: 'span.font-black',
   toggleLabel: '[data-test-id="toggle-switch-component"] label',
   toggleInput: '[data-test-id="toggle-switch-component"] input[type="checkbox"]',
+  /** вариант строки (размер/порция) — со своим toggle-switch-component внутри */
+  variation: '[data-test-id="variation"]',
+  /** общий переключатель строки: toggle вне вариантов и групп опций */
+  generalToggle:
+    'xpath=.//*[@data-test-id="toggle-switch-component"][not(ancestor::*[@data-test-id="variation"]) and not(ancestor::*[@data-test-id="group"])]',
   modal: '[data-testid="pt-modal"]',
 };
 
@@ -69,6 +117,7 @@ export function defaultHeadless() {
 }
 
 export async function openBrowser({ headless = false } = {}) {
+  const { chromium } = await import('playwright');
   const context = await chromium.launchPersistentContext(PROFILE_DIR, {
     headless,
     viewport: { width: 1400, height: 900 },
@@ -271,6 +320,49 @@ async function collectPaneItems(page) {
   return items;
 }
 
+/**
+ * Строки текущей категории с общим переключателем и (по запросу) вариантами:
+ *   { name, general: { checked, label, input }, variations: [{ text, key, checked, label, input }] }
+ * general/variation — в формате, который понимает setItem().
+ */
+async function collectPaneRows(page, { withVariations = false } = {}) {
+  const rows = page.locator(SEL.itemRow);
+  const count = await rows.count();
+  const out = [];
+  for (let i = 0; i < count; i++) {
+    const row = rows.nth(i);
+    const name = ((await row.locator(SEL.itemName).first().textContent().catch(() => '')) || '').trim();
+    if (!name) continue;
+    const general = row.locator(SEL.generalToggle).first();
+    const gInput = general.locator('input[type="checkbox"]').first();
+    if ((await gInput.count()) === 0) continue;
+    const entry = {
+      name,
+      general: { checked: await gInput.isChecked(), label: general.locator('label').first(), input: gInput },
+      variations: [],
+    };
+    if (withVariations) {
+      const vars = row.locator(SEL.variation);
+      const vn = await vars.count();
+      for (let j = 0; j < vn; j++) {
+        const v = vars.nth(j);
+        const input = v.locator(SEL.toggleInput).first();
+        if ((await input.count()) === 0) continue;
+        const text = ((await v.textContent().catch(() => '')) || '').replace(/\s+/g, ' ').trim();
+        entry.variations.push({
+          text,
+          key: sizeKey(text),
+          checked: await input.isChecked(),
+          label: v.locator(SEL.toggleLabel).first(),
+          input,
+        });
+      }
+    }
+    out.push(entry);
+  }
+  return out;
+}
+
 /** Если Hub показал модалку подтверждения — жмём согласие. */
 async function confirmModalIfAny(page, log) {
   const modal = page.locator(SEL.modal).first();
@@ -333,32 +425,25 @@ async function setItem(page, item, makeAvailable, log) {
 }
 
 /**
- * Обходит все категории и вызывает handler(category, items) для позиций,
- * подпадающих под MATCH (вся категория либо отдельная позиция по имени).
+ * Обходит категории сайдбара, для которых shouldVisit(name) истинно, открывает
+ * каждую и зовёт handler(category). Одна сломавшаяся категория не роняет
+ * прогон: вторая попытка после закрытия оверлея, затем — в список пропущенных.
  */
-async function forEachTarget(page, handler, log = console.log) {
+async function walkCategories(page, shouldVisit, handler, log = console.log) {
   const cats = await categoryNames(page);
-  // Чужие категории смотрим только при FULL_SCAN=1: все позиции MakiLove живут
-  // в категориях «Makilove …», а лишние заходы удваивают время прогона и
-  // поверхность отказов (26.09 весь off упал на «Alkoholische Getränke»).
-  const fullScan = process.env.FULL_SCAN === '1';
   const failedCats = [];
   for (const cat of cats) {
-    const wholeCategory = matches(cat);
-    if (!wholeCategory && !fullScan) continue;
+    if (!shouldVisit(cat)) continue;
     // Вторая попытка — на случай, если клик съел всплывший оверлей.
     let attempts = 0;
     while (attempts < 2) {
       attempts++;
       try {
         await openCategory(page, cat, log);
-        let items = await collectPaneItems(page);
-        if (!wholeCategory) items = items.filter((i) => matches(i.name));
-        if (items.length) await handler(cat.trim(), items);
+        await handler(cat.trim());
         break;
       } catch (e) {
         if (attempts < 2 && (await clearOverlays(page, log))) continue;
-        // Одна сломавшаяся категория не должна ронять весь прогон.
         failedCats.push(cat.trim());
         log(`  ✖ категория «${cat.trim()}» пропущена: ${failReason(e)}`);
         break;
@@ -366,6 +451,27 @@ async function forEachTarget(page, handler, log = console.log) {
     }
   }
   return failedCats;
+}
+
+/**
+ * Обходит категории MakiLove и вызывает handler(category, items) для позиций,
+ * подпадающих под MATCH (вся категория либо отдельная позиция по имени).
+ */
+async function forEachTarget(page, handler, log = console.log) {
+  // Чужие категории смотрим только при FULL_SCAN=1: все позиции MakiLove живут
+  // в категориях «Makilove …», а лишние заходы удваивают время прогона и
+  // поверхность отказов (26.09 весь off упал на «Alkoholische Getränke»).
+  const fullScan = process.env.FULL_SCAN === '1';
+  return walkCategories(
+    page,
+    (cat) => matches(cat) || fullScan,
+    async (cat) => {
+      let items = await collectPaneItems(page);
+      if (!matches(cat)) items = items.filter((i) => matches(i.name));
+      if (items.length) await handler(cat, items);
+    },
+    log
+  );
 }
 
 // --- высокоуровневые операции (обе обёртки зовут только их) --------------------
@@ -486,6 +592,117 @@ export async function runOn({ headless = false, log = console.log } = {}) {
       ok: problems.length === 0,
       count: enabled,
       failed: failed + failedCats.length,
+      message: problems.join('; '),
+    };
+  } finally {
+    await context.close();
+  }
+}
+
+/**
+ * Выключить/включить цель стоп-бота вне MakiLove — во всех категориях, кроме
+ * «Makilove …»:
+ *   { kind: 'size', label }   — вариант с подходящей подписью (sizeKey) у каждой
+ *                               строки: «30 cm» у всех круглых пицц и т.п.;
+ *   { kind: 'item', names[] } — общий переключатель строк, чьё имя совпадает с
+ *                               одним из names (itemKey): и Detroit, и «(rund)».
+ * available: true = включить, false = выключить. dryRun — только показать.
+ * Возвращает { ok, count, already, failed, categories, notFound, message }.
+ */
+export async function runSet({ target, available, headless = false, dryRun = false, log = console.log }) {
+  if (!target || (target.kind !== 'size' && target.kind !== 'item')) {
+    throw new Error(`runSet: неизвестная цель ${JSON.stringify(target)}`);
+  }
+  const wantKey = target.kind === 'size' ? sizeKey(target.label) : null;
+  if (target.kind === 'size' && !wantKey) {
+    throw new Error(`runSet: в подписи размера «${target.label}» нет чисел — нечего искать`);
+  }
+  // ключ → имя сайта (для отчёта «не найдено» своими словами)
+  const wantNames = new Map(
+    target.kind === 'item' ? (target.names || []).map((n) => [itemKey(n), n]).filter(([k]) => k) : []
+  );
+  if (target.kind === 'item' && !wantNames.size) {
+    throw new Error('runSet: пустой список позиций');
+  }
+  const verb = available ? 'включаю' : 'выключаю';
+  const stateWord = available ? 'вкл' : 'выкл';
+
+  const { context, page } = await openBrowser({ headless });
+  try {
+    await openMenu(page);
+    let count = 0;
+    let already = 0;
+    let failed = 0;
+    const categories = [];
+    const foundKeys = new Set();
+
+    const failedCats = await walkCategories(
+      page,
+      (cat) => !matches(cat),
+      async (cat) => {
+        const rows = await collectPaneRows(page, { withVariations: target.kind === 'size' });
+        const hits = [];
+        for (const row of rows) {
+          if (target.kind === 'size') {
+            for (const v of row.variations) {
+              if (v.key === wantKey) hits.push({ what: `${row.name} — ${v.text}`, toggle: v });
+            }
+          } else {
+            const key = itemKey(row.name);
+            if (wantNames.has(key)) {
+              foundKeys.add(key);
+              hits.push({ what: row.name, toggle: row.general });
+            }
+          }
+        }
+        if (!hits.length) return;
+        categories.push(cat);
+        const todo = hits.filter((h) => h.toggle.checked !== available);
+        already += hits.length - todo.length;
+        log(`\n${cat}: найдено ${hits.length}, ${verb} ${todo.length}${dryRun ? ' (dry run — не кликаю)' : ''}:`);
+        for (const h of hits) if (h.toggle.checked === available) log(`  = уже ${stateWord}: ${h.what}`);
+        for (const h of todo) {
+          if (dryRun) {
+            log(`  → ${h.what}`);
+            continue;
+          }
+          const ok = await setItem(page, h.toggle, available, log).catch(() => false);
+          if (ok) {
+            count++;
+            log(`  ✔ ${h.what}`);
+          } else {
+            failed++;
+            log(`  ✖ НЕ ПЕРЕКЛЮЧИЛОСЬ: ${h.what}`);
+          }
+        }
+      },
+      log
+    );
+
+    const notFound =
+      target.kind === 'size'
+        ? categories.length
+          ? []
+          : [target.label]
+        : [...wantNames].filter(([k]) => !foundKeys.has(k)).map(([, n]) => n);
+
+    log(
+      `\nПереключено: ${count}, уже были ${stateWord}: ${already}` +
+        (failed ? `, ошибок: ${failed}` : '') +
+        (categories.length ? ` — ${categories.join(', ')}` : '') +
+        (notFound.length ? `\n⚠️ Не найдено: ${notFound.join(', ')}` : '') +
+        (failedCats.length ? `\n⚠️ Не открылись категории: ${failedCats.join(', ')}` : '')
+    );
+    const problems = [];
+    if (failed) problems.push(`не переключилось: ${failed}`);
+    if (failedCats.length) problems.push(`не открылись категории: ${failedCats.join(', ')}`);
+    return {
+      ok: problems.length === 0,
+      count,
+      already,
+      failed: failed + failedCats.length,
+      categories,
+      notFound,
       message: problems.join('; '),
     };
   } finally {

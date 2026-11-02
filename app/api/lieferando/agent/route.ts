@@ -2,15 +2,20 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '../../../../lib/models';
 import {
   claimLieferandoCommand,
+  formatLieferandoReport,
+  readLieferandoTarget,
   reportLieferandoResult,
   type LieferandoAction,
+  type LieferandoReport,
 } from '../../../../lib/lieferando-makilove';
 import { sendControlMessage } from '../../../../lib/telegram-control';
 
 /**
- * Обмен с агентом Lieferando на кассовом ПК (scripts/lieferando/agent.mjs).
+ * Обмен с агентом Lieferando (scripts/lieferando/agent.mjs на VDS/кассе).
  *
- * GET  — поллинг: агент забирает команду off/on (и heartbeat'ится);
+ * GET  — поллинг: агент забирает команду { id, action, target } (и heartbeat'ится).
+ *        Заголовок X-Agent-Caps: targets — агент умеет цели size/item; без него
+ *        (старый агент до самообновления) отдаём только команды MakiLove.
  * POST — отчёт о выполнении → сохраняем + сообщение в группу стоп-бота.
  *
  * Auth: заголовок X-Lieferando-Agent-Key. Секрет — LIEFERANDO_AGENT_SECRET,
@@ -38,7 +43,10 @@ export async function GET(request: NextRequest) {
     await connectToDatabase();
     const agentId = request.headers.get('X-Lieferando-Agent-Id') || 'agent';
     const agentVersion = request.headers.get('X-Agent-Version');
-    const { command } = await claimLieferandoCommand(agentId, new Date(), agentVersion);
+    const caps = (request.headers.get('X-Agent-Caps') || '').split(/[\s,]+/);
+    const { command } = await claimLieferandoCommand(agentId, new Date(), agentVersion, {
+      supportsTargets: caps.includes('targets'),
+    });
     return NextResponse.json({ success: true, command });
   } catch (error) {
     console.error('[lieferando-agent] GET failed:', error);
@@ -47,6 +55,15 @@ export async function GET(request: NextRequest) {
 }
 
 const isAction = (v: unknown): v is LieferandoAction => v === 'off' || v === 'on';
+
+const strings = (v: unknown, max: number): string[] | undefined =>
+  Array.isArray(v)
+    ? v
+        .filter((s): s is string => typeof s === 'string')
+        .map((s) => s.trim().slice(0, 120))
+        .filter(Boolean)
+        .slice(0, max)
+    : undefined;
 
 export async function POST(request: NextRequest) {
   if (!authorized(request)) {
@@ -59,31 +76,26 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Bad request' }, { status: 400 });
     }
 
-    const result = {
+    const result: LieferandoReport = {
       id: body.id,
       action: body.action as LieferandoAction,
+      // старый агент цель не шлёт — reportLieferandoResult возьмёт её из running
+      target: readLieferandoTarget(body.target),
       ok: Boolean(body.ok),
       count: Number(body.count) || 0,
       failed: Number(body.failed) || 0,
       message: typeof body.message === 'string' ? body.message.slice(0, 500) : '',
     };
-    await reportLieferandoResult(result);
+    if (typeof body.already === 'number') result.already = body.already;
+    const categories = strings(body.categories, 30);
+    if (categories) result.categories = categories;
+    const notFound = strings(body.notFound, 30);
+    if (notFound) result.notFound = notFound;
+
+    const state = await reportLieferandoResult(result);
 
     // Отчёт в группу — best-effort: провал Telegram не должен ронять отчёт.
-    // count 0 при ok = всё уже было в нужном состоянии — «скрыто 0 позиций» пугает.
-    const text = result.ok
-      ? result.action === 'off'
-        ? (result.count
-            ? `🛵 Lieferando: MakiLove <b>ВЫКЛЮЧЕН</b> — скрыто позиций: ${result.count}.`
-            : '🛵 Lieferando: MakiLove <b>ВЫКЛЮЧЕН</b> — все позиции уже были скрыты.') +
-          (result.failed ? `\n⚠️ Не удалось: ${result.failed}.` : '') +
-          '\nℹ️ Утром Lieferando включит их сам.'
-        : (result.count
-            ? `🛵 Lieferando: MakiLove <b>включён</b> — позиций: ${result.count}.`
-            : '🛵 Lieferando: MakiLove <b>включён</b> — скрытых скриптом позиций не было.') +
-          (result.failed ? `\n⚠️ Не удалось: ${result.failed}.` : '')
-      : `🛵❌ Lieferando: команда «${result.action === 'off' ? 'выключить' : 'включить'}» НЕ выполнена.\n${result.message || 'Причина неизвестна.'}`;
-    await sendControlMessage(text);
+    if (state.lastResult) await sendControlMessage(formatLieferandoReport(state.lastResult));
 
     return NextResponse.json({ success: true });
   } catch (error) {

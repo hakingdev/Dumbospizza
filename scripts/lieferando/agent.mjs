@@ -1,9 +1,13 @@
 /**
- * Агент Lieferando для кассового ПК — исполнитель команд стоп-бота.
+ * Агент Lieferando (VDS / кассовый ПК) — исполнитель команд стоп-бота.
  *
- * Поллит GET /api/lieferando/agent (раз в POLL_MS); получив команду off/on,
- * прокликивает позиции MakiLove в Partner Hub (core.mjs) и отчитывается
- * POST'ом — сервер шлёт итог в Telegram-группу стоп-бота.
+ * Поллит GET /api/lieferando/agent (раз в POLL_MS); получив команду
+ * { id, action: off|on, target }, прокликивает переключатели в Partner Hub
+ * (core.mjs) и отчитывается POST'ом — сервер шлёт итог в Telegram-группу
+ * стоп-бота. Цели (target.kind): makilove — все позиции MakiLove (runOff/runOn);
+ * size — размер у всех строк вне MakiLove; item — позиции по именам (runSet).
+ * Заголовок X-Agent-Caps: targets говорит серверу, что size/item нам можно
+ * отдавать (старому агенту без него сервер их не отдаёт).
  *
  * env (можно в .env рядом, см. README):
  *   LIEFERANDO_AGENT_SECRET — общий секрет (или PRINT_AGENT_SECRET, как у печати)
@@ -22,7 +26,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { runOff, runOn } from './core.mjs';
+import { runOff, runOn, runSet } from './core.mjs';
 
 // .env рядом со скриптом (KEY=value построчно) — чтобы на кассовом ПК не
 // настраивать переменные окружения; реальный env имеет приоритет.
@@ -124,6 +128,8 @@ const HEADERS = {
   'X-Lieferando-Agent-Key': SECRET,
   'X-Lieferando-Agent-Id': AGENT_ID,
   'X-Agent-Version': '',
+  // умеем цели size/item — без этого сервер отдаёт только команды MakiLove
+  'X-Agent-Caps': 'targets',
   'Content-Type': 'application/json',
 };
 HEADERS['X-Agent-Version'] = localVersion();
@@ -144,18 +150,35 @@ async function report(result) {
   if (!res.ok) throw new Error(`POST ${res.status}`);
 }
 
+const describeTarget = (t) =>
+  t.kind === 'size'
+    ? `размер «${t.label}»`
+    : t.kind === 'item'
+      ? `позиции: ${t.names.join(', ')}`
+      : 'MakiLove';
+
+/** Диспетчер по виду цели. Команда без target — старый формат, т.е. MakiLove. */
+function runCommand(command) {
+  const target = command.target || { kind: 'makilove' };
+  if (target.kind === 'makilove') {
+    return (command.action === 'off' ? runOff : runOn)({ headless: HEADLESS, log });
+  }
+  return runSet({ target, available: command.action === 'on', headless: HEADLESS, log });
+}
+
 async function execute(command) {
-  log(`Команда: ${command.action} (id ${command.id})`);
+  const target = command.target || { kind: 'makilove' };
+  log(`Команда: ${command.action} — ${describeTarget(target)} (id ${command.id})`);
   let result;
   try {
-    const run = command.action === 'off' ? runOff : runOn;
-    const r = await run({ headless: HEADLESS, log });
-    result = { id: command.id, action: command.action, ...r };
+    const r = await runCommand(command);
+    result = { id: command.id, action: command.action, target, ...r };
   } catch (e) {
     log('ОШИБКА выполнения:', e.message);
     result = {
       id: command.id,
       action: command.action,
+      target,
       ok: false,
       count: 0,
       failed: 0,

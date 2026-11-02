@@ -33,6 +33,7 @@ import { getSetting, setSetting } from './settings';
 import {
   AGENT_OFFLINE_MS,
   getLieferandoState,
+  requestLieferandoCommand,
   requestLieferandoToggle,
   type LieferandoAction,
   type LieferandoState,
@@ -1059,9 +1060,8 @@ export async function processControlUpdate(
     getLieferandoState: () => getLieferandoState(),
     requestLieferandoToggle: (action) => requestLieferandoToggle(action),
     menu: buildMenuStopPort(),
-    // queueLieferando: requestLieferandoCommand — провод к очереди Lieferando
-    // (lib/lieferando-makilove) добавляет ветка, которая мержится второй:
-    // до неё экраны переключают только сайт и говорят «Lieferando не настроен».
+    // то же нажатие — команда агенту Lieferando (очередь lib/lieferando-makilove)
+    queueLieferando: (action, target) => requestLieferandoCommand(action, target),
     allowedChatId: config.chatId,
   };
 

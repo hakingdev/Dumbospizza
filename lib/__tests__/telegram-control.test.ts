@@ -11,6 +11,12 @@ vi.mock('../settings', () => ({
 vi.mock('../menu-stop/service', () => ({
   buildMenuStopPort: vi.fn(() => ({})),
 }));
+// Живая обвязка (processControlUpdate) должна прокинуть очередь Lieferando;
+// саму очередь (settings) здесь не гоняем — только факт вызова.
+vi.mock('../lieferando-makilove', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../lieferando-makilove')>()),
+  requestLieferandoCommand: vi.fn(async () => ({})),
+}));
 
 import { getSetting, setSetting } from '../settings';
 import {
@@ -21,6 +27,7 @@ import {
   buildPanel,
   applyBlockAction,
   handleControlUpdate,
+  processControlUpdate,
   readBlockState,
   ctrlBlock,
   ctrlMenu,
@@ -45,6 +52,8 @@ import {
   type BlockState,
 } from '../telegram-control';
 import type { MenuCategoryRow, MenuItemRow, MenuSizeRow } from '../menu-stop/state';
+import { buildMenuStopPort } from '../menu-stop/service';
+import { requestLieferandoCommand } from '../lieferando-makilove';
 
 /**
  * Служебный stop-бот: блокировка приёма заказов на 30/60 мин — целиком или по
@@ -716,5 +725,38 @@ describe('handleControlUpdate', () => {
       deps
     );
     expect(res).toEqual({ handled: false, reason: 'not_ours' });
+  });
+});
+
+// --- живая обвязка вебхука -----------------------------------------------------
+
+describe('processControlUpdate', () => {
+  it('прокидывает очередь Lieferando: кнопка размера → requestLieferandoCommand', async () => {
+    const row: MenuSizeRow = { id: 's36', name: '36 cm', label: '', active: false, stoppedUntil: null };
+    (buildMenuStopPort as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+      listSizes: vi.fn(async () => [row]),
+      setSizeActive: vi.fn(async () => row),
+      listCategories: vi.fn(async () => []),
+      listCategoryItems: vi.fn(async () => ({ category: null, items: [] })),
+      setItemAvailable: vi.fn(async () => null),
+      enableCategoryItems: vi.fn(async () => []),
+    });
+    // Bot API — заглушка fetch: проверяем только, что dep прокинут и экран отрисован
+    const fetchMock = vi.fn(async () => ({ json: async () => ({ ok: true, result: true }) }));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const res = await processControlUpdate(cbUpdate(ctrlSizeSet('s36', false)), {
+        botToken: 'token',
+        chatId: ALLOWED,
+        webhookSecret: '',
+      });
+      expect(res.handled).toBe(true);
+      expect(requestLieferandoCommand).toHaveBeenCalledWith('off', { kind: 'size', label: '36 cm' });
+      const urls = fetchMock.mock.calls.map((c: any[]) => String(c[0]));
+      expect(urls.some((u) => u.endsWith('/answerCallbackQuery'))).toBe(true);
+      expect(urls.some((u) => u.endsWith('/editMessageText'))).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

@@ -1,14 +1,26 @@
-# Lieferando: массовое вкл/выкл позиций MakiLove
+# Lieferando: вкл/выкл позиций и размеров из стоп-бота
 
-Выключает/включает все позиции MakiLove в Partner Hub (страница
-«Artikelverfügbarkeit»). Работает через Playwright с сохранённой сессией —
-логин руками нужен один раз.
+Переключает доступность в Partner Hub (страница «Artikelverfügbarkeit»):
+все позиции MakiLove разом, один размер у всех пицц («30 cm», «ca. 27x37»)
+или отдельные позиции по имени. Работает через Playwright с сохранённой
+сессией — логин руками нужен один раз.
 
 Две обёртки над общим ядром (`core.mjs`):
 
 - **`toggle.mjs`** — ручной CLI;
-- **`agent.mjs`** — демон для кассового ПК: выполняет команды из панели
-  Telegram-стоп-бота (кнопка «🛵 Lieferando MakiLove»).
+- **`agent.mjs`** — демон (VDS или кассовый ПК): выполняет команды из панели
+  Telegram-стоп-бота (кнопка «🛵 Lieferando MakiLove», экраны размеров/позиций).
+
+Команда агенту = `{ action: off|on, target }`, где `target.kind`:
+
+| kind | что переключает | как ищет в Hub |
+|---|---|---|
+| `makilove` | все позиции категорий «Makilove …» | «makilove» в имени категории/позиции |
+| `size` (`label`) | вариант строки (`[data-test-id="variation"]`) у всех строк вне MakiLove | по числам подписи: «30 cm» ↔ «30 cm», «ca. 27x37» ↔ «Ca. 27×37 cm (entspricht ca. Ø 36 cm Pizza)», «6 Stk» ↔ «6stk» |
+| `item` (`names[]`) | общий переключатель строки | имя без «Pizza», «(rund)», «Neu:», регистра и пунктуации: «Hawaiian» → и «Hawaiian Pizza», и «Hawaiian Pizza (rund)» |
+
+Сервер отдаёт `size`/`item` только агенту с заголовком `X-Agent-Caps: targets`
+(старый агент до самообновления выполнил бы их как MakiLove off/on).
 
 ## Установка на кассовом ПК (один раз)
 
@@ -41,9 +53,13 @@ npm run agent
 ## Ручные команды
 
 ```bash
-node toggle.mjs list   # dry run: что видим и что включено
-node toggle.mjs off    # выключить всё MakiLove (список → state/disabled.json)
-node toggle.mjs on     # включить обратно ровно то, что выключали
+node toggle.mjs list                      # dry run: позиции MakiLove и их состояние
+node toggle.mjs off                       # выключить всё MakiLove (список → state/disabled.json)
+node toggle.mjs on                        # включить все позиции MakiLove
+node toggle.mjs find-size "30 cm"         # dry run: где есть размер и что бы переключилось
+node toggle.mjs set-size "30 cm" off      # выключить размер у всех строк вне MakiLove (on — включить)
+node toggle.mjs find-item "Hawaiian"      # dry run: какие строки Hub совпадают с именем сайта
+node toggle.mjs set-item "Hawaiian" off   # общий переключатель этих строк (несколько имён — через запятую)
 ```
 
 ## Важно знать
@@ -52,9 +68,12 @@ node toggle.mjs on     # включить обратно ровно то, что
   или её самой (регистр/пробелы не важны). Новые категории Makilove
   подхватываются сами.
 - Выключение в Hub действует **до конца дня** — утром Lieferando сам вернёт
-  позиции в продажу.
-- `on` включает только то, что выключал скрипт (`state/disabled.json`) —
-  выключенное руками не трогает.
+  позиции и размеры в продажу.
+- `on` для MakiLove включает **все** позиции MakiLove (список
+  `state/disabled.json` — только журнал).
+- `set-size`/`set-item` обходят все категории, кроме «Makilove …», и
+  переключают только то, что в другом состоянии; отчёт — сколько переключено,
+  сколько уже было, в каких категориях, что не найдено.
 - «Сессия истекла» в отчёте бота → на кассовом ПК: `node toggle.mjs login`.
 - Селекторы DOM (`SEL` в core.mjs) сняты с реального Hub в августе 2026;
   если Hub переверстают — чинить там.
