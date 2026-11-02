@@ -3,6 +3,7 @@ import { connectToDatabase } from '../../../../lib/models';
 import { getSetting, getMewsPosEnabled } from '../../../../lib/settings';
 import { getCategories } from '../../../../lib/db/utils';
 import { fetchMewsPosCategories } from '../../../../lib/mews-pos/sync';
+import { getCategoryHours } from '../../../../lib/categories/category-hours';
 import {
   DEFAULT_WORKSHOP_BLOCK_MESSAGE,
   WORKSHOPS,
@@ -27,6 +28,8 @@ export const dynamic = 'force-dynamic';
  * (lib/kitchen/workshops.ts) остаётся в одном месте и по именам категорий.
  * Шаблон сообщения (админка) отдаём тоже: текст про «через N минут» чекаут
  * собирает сам — только для тех цехов, чьи позиции реально лежат в корзине.
+ * Сюда же — окна категорий по графику: витрина опрашивает этот адрес раз в
+ * минуту, так серые бургеры «оживают» в 17:00 без перезагрузки.
  */
 export async function GET() {
   try {
@@ -73,6 +76,11 @@ export async function GET() {
         blockedWorkshops,
         blockedCategories,
         messageTemplate: template,
+        /**
+         * Время продажи категорий/подкатегорий (бургеры 17–22): окна с графиком,
+         * open — можно ли заказать СЕЙЧАС (по часам сервера, с часами ресторана).
+         */
+        categoryHours: await getCategoryHours(),
         message:
           blockedWorkshops.length > 0
             ? buildWorkshopBlockMessage(blockedWorkshops, {

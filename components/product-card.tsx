@@ -8,6 +8,7 @@ import ProductModal from './ProductModal'
 import { useLanguage } from '../lib/contexts/LanguageContext'
 import { useKitchenBlocks } from '../lib/contexts/KitchenBlocksContext'
 import { WORKSHOP_BLOCK_HEADLINE } from '../lib/kitchen/workshops'
+import { availabilityBadge } from '../lib/categories/availability'
 import { loadTranslation } from '../lib/i18n'
 import { PromotionBadges, ProductCardPrice } from './promotions/PromotionBadges'
 import { readCategoryId } from './promotions/PromotionBadgesContext'
@@ -31,6 +32,8 @@ interface Product {
   /** slug-строка или populated-объект категории (как отдаёт /api/products) */
   category: any;
   categoryId?: string;
+  /** Подкатегория — у неё может быть своё время продажи. */
+  subcategoryId?: string | null;
   valentinePromo?: boolean;
 }
 
@@ -70,9 +73,14 @@ export function ProductCard({ product }: ProductCardProps) {
 
   // Цех этой позиции остановлен (стоп-бот)? Тогда карточка не открывается:
   // гость сразу видит «keine Bestellungen möglich» и по клику получает объяснение с минутами.
-  const { blockedWorkshopFor, badgeFor, showNotice } = useKitchenBlocks();
+  const { blockedWorkshopFor, badgeFor, showNotice, scheduleClosureFor, showScheduleNotice } = useKitchenBlocks();
   const blockedWorkshop = blockedWorkshopFor({ categoryId, name: product.name });
   const blockedIds = blockedWorkshop ? [blockedWorkshop] : [];
+  // Вне времени продажи категории (бургеры утром): карточка серая, по клику — когда можно.
+  const closedWindow = blockedWorkshop
+    ? null
+    : scheduleClosureFor({ categoryId, subcategoryId: product.subcategoryId });
+  const unavailable = !!blockedWorkshop || !!closedWindow;
 
   // Пока товар открыт, Halloween-эффекты на паузе.
   useEffect(() => {
@@ -83,7 +91,7 @@ export function ProductCard({ product }: ProductCardProps) {
 
   // Товар начинает грузиться с касания, а не после открытия модалки (и паузы на вспышку).
   const prefetch = () => {
-    if (!isMiniBox && !blockedWorkshop) prefetchProduct(product.id);
+    if (!isMiniBox && !unavailable) prefetchProduct(product.id);
   };
 
   const handleOpenModal = (e: React.MouseEvent) => {
@@ -91,6 +99,10 @@ export function ProductCard({ product }: ProductCardProps) {
     e.stopPropagation();
     if (blockedWorkshop) {
       showNotice(blockedIds);
+      return;
+    }
+    if (closedWindow) {
+      showScheduleNotice(closedWindow);
       return;
     }
     if (flarePendingRef.current) return;
@@ -111,7 +123,9 @@ export function ProductCard({ product }: ProductCardProps) {
 
   const ctaLabel = blockedWorkshop
     ? WORKSHOP_BLOCK_HEADLINE
-    : isMiniBox
+    : closedWindow
+      ? availabilityBadge(closedWindow)
+      : isMiniBox
       ? t('product_card.build_box', 'Box zusammenstellen')
       : t('product_card.choose_options', 'Optionen wählen');
 
@@ -145,13 +159,18 @@ export function ProductCard({ product }: ProductCardProps) {
             ⏸️ {badgeFor(blockedIds)}
           </span>
         )}
+        {closedWindow && (
+          <span className="absolute inset-x-0 bottom-0 z-20 bg-gray-900/80 px-1.5 py-1 text-center text-[11px] font-semibold leading-tight text-white md:px-3 md:py-2 md:text-xs">
+            🕒 {availabilityBadge(closedWindow)}
+          </span>
+        )}
         {product.image ? (
           <SafeImage
             src={product.image}
             alt=""
             // Лёгкий поворот пиццы при наведении (только мышь). scale-110 прячет
             // углы фото, которые иначе открылись бы при повороте на 6°.
-            className={`absolute inset-0 h-full w-full object-cover transition-transform duration-500 ease-out [@media(hover:hover)]:group-hover:rotate-6 [@media(hover:hover)]:group-hover:scale-110 motion-reduce:transition-none motion-reduce:transform-none ${blockedWorkshop ? 'opacity-50 grayscale' : ''}`}
+            className={`absolute inset-0 h-full w-full object-cover transition-transform duration-500 ease-out [@media(hover:hover)]:group-hover:rotate-6 [@media(hover:hover)]:group-hover:scale-110 motion-reduce:transition-none motion-reduce:transform-none ${unavailable ? 'opacity-50 grayscale' : ''}`}
           />
         ) : (
           <span className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200 text-4xl md:text-6xl" aria-hidden="true">
@@ -195,14 +214,14 @@ export function ProductCard({ product }: ProductCardProps) {
             type="button"
             onClick={handleOpenModal}
             onPointerDown={prefetch}
-            aria-disabled={!!blockedWorkshop}
+            aria-disabled={unavailable}
             className={`flex h-11 w-11 shrink-0 items-center justify-center gap-2 rounded-full font-medium leading-tight shadow-md transition-all md:mt-3 md:h-auto md:min-h-[44px] md:w-full md:rounded-lg md:px-4 md:py-3 ${
-              blockedWorkshop
+              unavailable
                 ? 'cursor-not-allowed bg-gray-200 text-gray-600'
                 : 'bg-primary-600 text-white hover:bg-primary-700 hover:shadow-lg'
             }`}
           >
-            {blockedWorkshop ? (
+            {unavailable ? (
               <span className="sr-only md:not-sr-only md:min-w-0">{ctaLabel}</span>
             ) : (
               <>

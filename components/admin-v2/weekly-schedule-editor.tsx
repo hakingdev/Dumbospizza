@@ -3,7 +3,8 @@
 /**
  * Редактор недельного графика приёма заказов: по каждому дню — тумблер
  * «работаем / выходной» и до MAX_RANGES_PER_DAY интервалов (утро + вечер).
- * Используется в портале (/admin-v2/venue) и в старой /admin/settings.
+ * Используется в портале (/admin-v2/venue) и в старой /admin/settings, а также
+ * для времени продажи категорий (/admin/categories).
  */
 
 import { useRef } from 'react';
@@ -46,12 +47,15 @@ export function WeeklyScheduleEditor({
   onChange,
   errors,
   today,
+  closedDayLabel = 'Выходной — заказы не принимаем',
 }: {
   value: WeeklySchedule;
   onChange: (next: WeeklySchedule) => void;
   errors: ScheduleError[];
   /** Подсветить сегодняшний день. */
   today?: WeekdayKey;
+  /** Подпись выключенного дня. */
+  closedDayLabel?: string;
 }) {
   /* Выключили день и включили обратно — возвращаем его прежние интервалы. */
   const remembered = useRef<Partial<Record<WeekdayKey, TimeRange[]>>>({});
@@ -126,7 +130,7 @@ export function WeeklyScheduleEditor({
             </div>
 
             {!open && (
-              <span className="text-sm leading-5 text-gray-600">Выходной — заказы не принимаем</span>
+              <span className="text-sm leading-5 text-gray-600">{closedDayLabel}</span>
             )}
 
             {ranges.map((range, index) => {

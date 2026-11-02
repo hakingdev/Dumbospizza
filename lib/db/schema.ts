@@ -54,9 +54,15 @@ export const categories = pgTable(
      * id стабилен — переименование метки не отвязывает товары.
      */
     subcategories: jsonb('subcategories')
-      .$type<{ id: string; name: string; order: number }[]>()
+      .$type<{ id: string; name: string; order: number; availabilitySchedule?: Record<string, { start: string; end: string }[]> }[]>()
       .notNull()
       .default([]),
+    /**
+     * Когда категорию можно заказать: недельный график как у приёма заказов
+     * ({ mon: [{ start, end }], …, sun: [] }). null — без ограничения.
+     * Правило — lib/categories/availability.ts.
+     */
+    availabilitySchedule: jsonb('availability_schedule').$type<Record<string, { start: string; end: string }[]>>(),
     mewsProductTypeId: text('mews_product_type_id'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),

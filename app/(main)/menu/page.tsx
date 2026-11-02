@@ -2,6 +2,7 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ProductCard } from '../../../components/product-card';
+import { CategoryHoursBadge } from '../../../components/CategoryHoursBadge';
 import { useLanguage } from '../../../lib/contexts/LanguageContext';
 import { loadTranslation } from '../../../lib/i18n';
 import {
@@ -93,6 +94,12 @@ function groupByCategory(products: ApiProduct[]): Group[] {
     g.products.sort((a, b) => Number(!!b.featured) - Number(!!a.featured));
   }
   return groups;
+}
+
+/** id категории группы — для времени продажи (у товаров категория populated). */
+function categoryIdOf(g: Group): string | undefined {
+  const cat = g.products[0]?.category;
+  return cat && typeof cat === 'object' ? cat._id || cat.id : undefined;
 }
 
 export default function MenuPage() {
@@ -290,7 +297,10 @@ export default function MenuPage() {
             style={{ scrollMarginTop: offset }}
             className="mb-12"
           >
-            <h2 className="mb-4 text-2xl font-bold md:text-3xl">{g.name}</h2>
+            <h2 className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-2xl font-bold md:text-3xl">
+              {g.name}
+              <CategoryHoursBadge categoryId={categoryIdOf(g)} />
+            </h2>
 
             <SubcategoryFilter
               subcategories={g.subcategories}
@@ -309,7 +319,10 @@ export default function MenuPage() {
               .map((sub) => (
                 <div key={sub.id || 'ohne'} className="mb-8 last:mb-0">
                   {sub.name && (
-                    <h3 className="mb-4 text-lg font-semibold text-gray-700 md:text-xl">{sub.name}</h3>
+                    <h3 className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-lg font-semibold text-gray-700 md:text-xl">
+                      {sub.name}
+                      <CategoryHoursBadge categoryId={categoryIdOf(g)} subcategoryId={sub.id} />
+                    </h3>
                   )}
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-6 lg:grid-cols-3 xl:grid-cols-4">
                     {sub.products.map((product) => (
@@ -323,6 +336,7 @@ export default function MenuPage() {
                           price: getProductDisplayPrice(product),
                           image: product.image,
                           category: product.category,
+                          subcategoryId: product.subcategoryId,
                           valentinePromo: product.valentinePromo,
                         }}
                       />

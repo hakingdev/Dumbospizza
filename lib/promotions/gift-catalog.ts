@@ -3,6 +3,7 @@ import { getValidSizes } from '../product-pricing';
 import { hydrateSizeVariationStates } from '../size-variation-sync';
 import { normalizedSizeName } from '../size-variation-state';
 import { getBlockedCategories, isProductBlocked } from '../kitchen/blocked-categories';
+import { getCategoryHours, productScheduleClosure } from '../categories/category-hours';
 import { getGiftItems, giftOptionId } from './gifts';
 
 type GiftPromoLike = {
@@ -33,16 +34,18 @@ export async function buildGiftCatalog(
   }
   if (productIds.size === 0) return new Set();
 
-  const [products, blocked] = await Promise.all([
+  const [products, blocked, hours] = await Promise.all([
     Product.find({
       _id: { $in: Array.from(productIds) },
       available: true,
     })
-      .select('basePrice sizes category')
+      .select('basePrice sizes category subcategoryId')
       .lean(),
     // Цех остановлен (стоп-бот) → его подарки не предлагаем: иначе гость выберет
     // Gratis-ролл, когда суши не готовят, и упрётся в отказ уже на оплате.
     getBlockedCategories(),
+    // То же для категорий вне времени продажи (бургеры только 17–22).
+    getCategoryHours(),
   ]);
   // Größen-Status kommt aus der Bibliothek — ohne Hydration greift ein dort
   // abgeschalteter Größenvariant nicht auf die eingebetteten Produktgrößen durch.
@@ -58,6 +61,8 @@ export async function buildGiftCatalog(
       if (!product) continue;
       // Werkstatt gestoppt (Stop-Bot) → dieses Geschenk gibt es gerade nicht.
       if (isProductBlocked(product, blocked)) continue;
+      // Kategorie außerhalb ihrer Verkaufszeit → Geschenk gerade nicht verfügbar.
+      if (productScheduleClosure(product, hours)) continue;
 
       const pricing = { basePrice: Number(product.basePrice) || 0, sizes: product.sizes || [] };
       const activeSizes = getValidSizes(pricing);

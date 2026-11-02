@@ -6,6 +6,7 @@ import { FeaturedProducts } from '../../components/featured-products'
 import { CategoryProducts } from '../../components/category-products'
 import { Hero } from '../../components/hero'
 import { HomeBannerSlider } from '../../components/home-banner-slider'
+import { CategoryHoursBadge } from '../../components/CategoryHoursBadge'
 import { ProductCard } from '../../components/product-card'
 import { useDeliveryFacts } from '../../lib/delivery/use-delivery-facts'
 import { formatEuro } from '../../lib/format-euro'
@@ -51,7 +52,7 @@ function CategorySectionWrapper({
   category,
   t
 }: {
-  category: { name: string; slug: string; href: string; color: string };
+  category: { id?: string; name: string; slug: string; href: string; color: string };
   t: (key: string, defaultValue?: string) => string;
 }) {
   const [hasProducts, setHasProducts] = useState<boolean | null>(null);
@@ -65,7 +66,10 @@ function CategorySectionWrapper({
     <section className={`py-12 bg-white`}>
       <div className="container mx-auto px-4">
         <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="min-w-0 text-3xl font-bold text-gray-900 md:text-4xl">{title}</h2>
+          <h2 className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-3xl font-bold text-gray-900 md:text-4xl">
+            {title}
+            <CategoryHoursBadge categoryId={category.id} />
+          </h2>
           <Link href={category.href} className="inline-flex max-w-full shrink-0 items-center gap-1 self-start text-sm font-medium leading-tight text-primary-600 hover:text-primary-700 sm:text-base">
             <span className="truncate">{t('home.view_all', 'Alle')} {title.toLowerCase()}</span>
             <svg className="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -217,6 +221,7 @@ export default function Home() {
                         <div className="text-4xl mb-2">{icon}</div>
                       )}
                       <span className="max-w-full px-2 text-center text-sm font-bold leading-tight text-gray-900 line-clamp-2">{title}</span>
+                      <CategoryHoursBadge categoryId={category._id} className="mt-1 px-2 py-0.5 text-xs leading-4" />
                     </div>
                   </div>
                 </Link>
@@ -255,6 +260,7 @@ export default function Home() {
                     price: getProductDisplayPrice(product),
                     image: product.image,
                     category: product.category,
+                    subcategoryId: product.subcategoryId,
                     valentinePromo: true
                   }} />
                 ))}
@@ -285,6 +291,7 @@ export default function Home() {
         <CategorySectionWrapper
           key={category.slug}
           category={{
+            id: category._id,
             name: category.name,
             slug: category.slug,
             href: `/category/${category.slug}`,

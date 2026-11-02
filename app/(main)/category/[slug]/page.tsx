@@ -22,6 +22,8 @@ import {
 } from '../../../../components/promotions/PromotionBadgesContext';
 import { useKitchenBlocks } from '../../../../lib/contexts/KitchenBlocksContext';
 import { getProductDisplayPrice } from '../../../../lib/product-pricing';
+import { availabilityBadge } from '../../../../lib/categories/availability';
+import { CategoryHoursBadge } from '../../../../components/CategoryHoursBadge';
 
 // useParams() liefert das URL-Segment ENKODIERT (z. B. "getr%C3%A4nke" für "getränke").
 // Dekodieren, damit Anzeige korrekt ist und der Vergleich mit dem DB-slug ("getränke") greift.
@@ -50,12 +52,14 @@ export default function CategoryPage() {
   const badgeItems = useMemo(() => toBadgeItems(products), [products]);
 
   // Вся категория на паузе (стоп-бот)? Говорим об этом СРАЗУ, до товаров.
-  const { blockedWorkshopFor, messageFor } = useKitchenBlocks();
-  const blockedWorkshop = useMemo(() => {
+  const { blockedWorkshopFor, messageFor, scheduleClosureFor } = useKitchenBlocks();
+  const categoryId = useMemo(() => {
     const first: any = products[0];
-    const categoryId = readCategoryId(first?.category ?? first?.categoryId);
-    return categoryId ? blockedWorkshopFor({ categoryId }) : null;
-  }, [products, blockedWorkshopFor]);
+    return readCategoryId(first?.category ?? first?.categoryId);
+  }, [products]);
+  const blockedWorkshop = categoryId ? blockedWorkshopFor({ categoryId }) : null;
+  // Вне времени продажи вся категория (бургеры утром) — тоже говорим сразу.
+  const closedCategory = categoryId && !blockedWorkshop ? scheduleClosureFor({ categoryId }) : null;
 
   useEffect(() => {
     const fetchProducts = async () => {
@@ -128,6 +132,18 @@ export default function CategoryPage() {
         </div>
       )}
 
+      {closedCategory && (
+        <div className="mb-8 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+          <span className="text-2xl leading-none" aria-hidden="true">
+            🕒
+          </span>
+          <p className="text-sm leading-6 text-amber-900">
+            <span className="font-semibold">{availabilityBadge(closedCategory)}.</span>{' '}
+            <span className="tabular-nums">Bestellbar: {closedCategory.lines.join(' · ')}</span>
+          </p>
+        </div>
+      )}
+
       <SubcategoryFilter
         subcategories={subcategories}
         counts={countBySubcategory(products as any[], subcategories, (p: any) => p.subcategoryId)}
@@ -148,7 +164,11 @@ export default function CategoryPage() {
             .map((sub) => (
               <div key={sub.id || 'ohne'} className="mb-10 last:mb-0">
                 {sub.name && (
-                  <h2 className="mb-4 text-xl font-semibold text-gray-700 md:text-2xl">{sub.name}</h2>
+                  <h2 className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-xl font-semibold text-gray-700 md:text-2xl">
+                    {sub.name}
+                    {/* Подкатегория вне своего окна (суши-бургеры утром) — плашка у заголовка. */}
+                    <CategoryHoursBadge categoryId={categoryId} subcategoryId={sub.id} />
+                  </h2>
                 )}
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-6 lg:grid-cols-3 xl:grid-cols-4">
                   {sub.products.map((product: any) => (
@@ -159,7 +179,8 @@ export default function CategoryPage() {
                       // «ab»-Preis aus den aktiven Größen — basePrice ist bei Größen-Produkten veraltet
                       price: getProductDisplayPrice(product),
                       image: product.image,
-                      category: product.category
+                      category: product.category,
+                      subcategoryId: product.subcategoryId
                     }} />
                   ))}
                 </div>

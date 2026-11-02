@@ -7,6 +7,8 @@ import { fetchMewsPosCategories } from '../../../lib/mews-pos/sync';
 import { getServerSession } from 'next-auth';
 import { authOptions, isStaff } from '../../../lib/auth';
 import { sanitizeSubcategories } from '../../../lib/categories/subcategories';
+import { validateCategoryAvailability } from '../../../lib/categories/availability';
+import { invalidateCategoryHours } from '../../../lib/categories/category-hours';
 
 async function isAuthorized() {
   const session = await getServerSession(authOptions);
@@ -58,12 +60,19 @@ export async function POST(request: NextRequest) {
         .replace(/^-|-$/g, '');
     }
 
+    const availability = validateCategoryAvailability(data);
+    if (availability.error) {
+      return NextResponse.json({ success: false, error: availability.error }, { status: 400 });
+    }
+    data.availabilitySchedule = availability.availabilitySchedule;
+
     // Подкатегории приходят из формы без id — проставляем и нормализуем порядок.
     data.subcategories = sanitizeSubcategories(data.subcategories);
 
     const category = new Category(data);
     await category.save();
     invalidateCategories();
+    invalidateCategoryHours();
 
     return NextResponse.json({ success: true, category }, { status: 201 });
   } catch (error: any) {

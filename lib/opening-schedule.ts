@@ -74,7 +74,7 @@ function parseHHmm(value: unknown): number | null {
   return h * 60 + m;
 }
 
-function toHHmm(minutes: number): string {
+export function toHHmm(minutes: number): string {
   const h = Math.floor(minutes / 60) % 24;
   const m = minutes % 60;
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
