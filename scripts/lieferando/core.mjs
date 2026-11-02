@@ -600,8 +600,7 @@ export async function runOn({ headless = false, log = console.log } = {}) {
 }
 
 /**
- * Выключить/включить цель стоп-бота вне MakiLove — во всех категориях, кроме
- * «Makilove …»:
+ * Выключить/включить цель стоп-бота:
  *   { kind: 'size', label }   — вариант с подходящей подписью (sizeKey) у каждой
  *                               строки: «30 cm» у всех круглых пицц и т.п.;
  *   { kind: 'item', names[] } — общий переключатель строк, чьё имя совпадает с
@@ -636,9 +635,12 @@ export async function runSet({ target, available, headless = false, dryRun = fal
     const categories = [];
     const foundKeys = new Set();
 
+    // Размеры живут только у пицц/сайдов — категории MakiLove пропускаем ради
+    // скорости. Позиции же ищем ВЕЗДЕ: экран «Позиции» показывает и отдельные
+    // суши, а они лежат в категориях «Makilove …» (баг 02.11: «не найдено»).
     const failedCats = await walkCategories(
       page,
-      (cat) => !matches(cat),
+      (cat) => (target.kind === 'size' ? !matches(cat) : true),
       async (cat) => {
         const rows = await collectPaneRows(page, { withVariations: target.kind === 'size' });
         const hits = [];

@@ -427,7 +427,8 @@ export function formatLieferandoReport(r: LieferandoResult): string {
     } else {
       lines.push(`🛵 Lieferando: ${what} — уже ${off ? 'выключен' : 'включен'}${r.already === 1 ? 'а' : 'ы'}${where}.`);
     }
-    if (notFound.length) lines.push(`⚠️ Не найдено на Lieferando: ${quote(notFound)}.`);
+    // Когда не нашли НИЧЕГО, первая строка уже сказала это — не дублируем.
+    if (found && notFound.length) lines.push(`⚠️ Не найдено на Lieferando: ${quote(notFound)}.`);
   }
 
   if (r.failed) lines.push(`⚠️ Не удалось: ${r.failed}.${r.message ? ` ${r.message}` : ''}`);
