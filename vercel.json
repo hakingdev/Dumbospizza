@@ -5,6 +5,10 @@
     {
       "path": "/api/cron/telegram-cleanup",
       "schedule": "0 1 * * *"
+    },
+    {
+      "path": "/api/cron/menu-stop-expire",
+      "schedule": "0 3 * * *"
     }
   ]
 }

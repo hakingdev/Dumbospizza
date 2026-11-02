@@ -6,6 +6,11 @@ vi.mock('../settings', () => ({
   getSetting: vi.fn(),
   setSetting: vi.fn(),
 }));
+// Живой порт стоп-листа ходит в модели БД — здесь он не нужен: ядро получает
+// порт через deps.menu.
+vi.mock('../menu-stop/service', () => ({
+  buildMenuStopPort: vi.fn(() => ({})),
+}));
 
 import { getSetting, setSetting } from '../settings';
 import {
@@ -29,8 +34,17 @@ import {
   LIEF_MENU,
   LIEF_OFF,
   LIEF_ON,
+  SIZES_MENU,
+  ITEMS_MENU,
+  ITEMS_PAGE_SIZE,
+  ctrlSizeSet,
+  ctrlItemsCategory,
+  ctrlItemSet,
+  ctrlItemsEnableAll,
+  buildItemsKeyboard,
   type BlockState,
 } from '../telegram-control';
+import type { MenuCategoryRow, MenuItemRow, MenuSizeRow } from '../menu-stop/state';
 
 /**
  * Служебный stop-бот: блокировка приёма заказов на 30/60 мин — целиком или по
@@ -80,6 +94,42 @@ describe('parseControlAction', () => {
     expect(parseControlAction(CTRL_BLOCK_60)).toEqual({ type: 'block', scope: 'all', minutes: 60 });
     expect(parseControlAction(CTRL_UNBLOCK)).toEqual({ type: 'unblock', scope: 'all' });
     expect(parseControlAction(CTRL_STATUS)).toEqual({ type: 'status', scope: 'all' });
+  });
+
+  it('стоп-лист: размеры и позиции', () => {
+    const id = '6ab13e01bac562cf69912ba6';
+    expect(parseControlAction(SIZES_MENU)).toEqual({ type: 'sizes_menu' });
+    expect(parseControlAction(ITEMS_MENU)).toEqual({ type: 'items_menu' });
+    expect(parseControlAction(ctrlSizeSet(id, false))).toEqual({
+      type: 'size_set',
+      variationId: id,
+      active: false,
+    });
+    expect(parseControlAction(ctrlSizeSet(id, true))).toEqual({
+      type: 'size_set',
+      variationId: id,
+      active: true,
+    });
+    expect(parseControlAction(ctrlItemsCategory(id, 2))).toEqual({
+      type: 'items_category',
+      categoryId: id,
+      page: 2,
+    });
+    expect(parseControlAction(ctrlItemSet(id, true, 1))).toEqual({
+      type: 'item_set',
+      productId: id,
+      available: true,
+      page: 1,
+    });
+    expect(parseControlAction(ctrlItemsEnableAll(id, 0))).toEqual({
+      type: 'items_enable_all',
+      categoryId: id,
+      page: 0,
+    });
+    // callback_data у Telegram ≤ 64 байт
+    expect(Buffer.byteLength(ctrlItemSet(id, false, 99))).toBeLessThanOrEqual(64);
+    expect(parseControlAction('ctrl_sz_maybe_' + id)).toBeNull();
+    expect(parseControlAction('ctrl_it_cat_' + id)).toBeNull(); // без страницы
   });
 
   it('чужие/пустые/несуществующий цех → null', () => {
@@ -160,6 +210,80 @@ describe('buildPanel', () => {
     expect(data).toContain(ctrlMenu('sushi'));
     expect(data).toContain(ctrlMenu('all'));
     expect(data).toContain(LIEF_MENU);
+    expect(data).toContain(SIZES_MENU);
+    expect(data).toContain(ITEMS_MENU);
+  });
+
+  it('экран размеров: кнопка каждого размера переключает в ПРОТИВОПОЛОЖНОЕ состояние', () => {
+    const sizes: MenuSizeRow[] = [
+      { id: 'a', name: '30 cm', label: '', active: true, stoppedUntil: null },
+      {
+        id: 'b',
+        name: '36 cm',
+        label: '',
+        active: false,
+        stoppedUntil: '2026-11-02T20:30:00.000Z',
+      },
+      { id: 'c', name: '40 cm', label: '', active: false, stoppedUntil: null },
+    ];
+    const panel = buildPanel({ type: 'sizes', sizes }, state(), new Date('2026-11-02T18:00:00Z'));
+    const data = panel.keyboard.inline_keyboard.flat().map((b) => b.callback_data);
+    expect(data).toContain(ctrlSizeSet('a', false));
+    expect(data).toContain(ctrlSizeSet('b', true));
+    expect(data).toContain(SIZES_MENU);
+    expect(data).toContain(CTRL_ROOT);
+    expect(panel.text).toContain('🟢 30 cm');
+    expect(panel.text).toContain('36 cm — выключен ботом до 21:30');
+    expect(panel.text).toContain('40 cm — выключен (админка/POS)');
+  });
+
+  it('экран категории: пагинация, «включить всё», имя с & экранировано', () => {
+    const category: MenuCategoryRow = { id: 'cat', name: 'Pizza & Co', itemCount: 23, stoppedCount: 1 };
+    const items: MenuItemRow[] = Array.from({ length: 23 }, (_, i) => ({
+      id: `p${i}`,
+      name: i === 0 ? 'Mac & Cheese' : `Pizza ${i}`,
+      categoryId: 'cat',
+      available: i !== 3,
+      stoppedUntil: null,
+    }));
+    const panel = buildPanel({ type: 'items', categoryId: 'cat', category, items, page: 1 }, state());
+    expect(panel.text).toContain('Pizza &amp; Co');
+    expect(panel.text).toContain('стр. 2/3');
+    const flat = panel.keyboard.inline_keyboard.flat();
+    const data = flat.map((b) => b.callback_data);
+    // на странице 1 лежат p10..p19
+    expect(data).toContain(ctrlItemSet('p10', false, 1));
+    expect(data).not.toContain(ctrlItemSet('p3', true, 1));
+    expect(data).toContain(ctrlItemsCategory('cat', 0));
+    expect(data).toContain(ctrlItemsCategory('cat', 2));
+    expect(data).toContain(ctrlItemsEnableAll('cat', 1));
+    expect(data).toContain(ITEMS_MENU);
+    // первая страница: p3 выключен → кнопка включает
+    const first = buildPanel({ type: 'items', categoryId: 'cat', category, items, page: 0 }, state());
+    expect(first.text).toContain('Mac &amp; Cheese');
+    expect(first.keyboard.inline_keyboard.flat().map((b) => b.callback_data)).toContain(
+      ctrlItemSet('p3', true, 0)
+    );
+    expect(first.keyboard.inline_keyboard.flat().map((b) => b.text)).toContain('🔴 Pizza 3');
+    // стрелки: на первой нет «⬅️», на последней нет «➡️»
+    expect(buildItemsKeyboard('cat', items, 0).inline_keyboard.flat().map((b) => b.text)).not.toContain('⬅️');
+    expect(buildItemsKeyboard('cat', items, 2).inline_keyboard.flat().map((b) => b.text)).not.toContain('➡️');
+    expect(buildItemsKeyboard('cat', items, 0).inline_keyboard[ITEMS_PAGE_SIZE].map((b) => b.text)).toEqual([
+      '1/3',
+      '➡️',
+    ]);
+  });
+
+  it('удалённая категория: только навигация назад', () => {
+    const panel = buildPanel(
+      { type: 'items', categoryId: 'gone', category: null, items: [], page: 0 },
+      state()
+    );
+    expect(panel.text).toContain('не найдена');
+    expect(panel.keyboard.inline_keyboard.flat().map((b) => b.callback_data)).toEqual([
+      ITEMS_MENU,
+      CTRL_ROOT,
+    ]);
   });
 
   it('экран цеха: кнопки со своей областью + назад', () => {
@@ -371,6 +495,160 @@ describe('handleControlUpdate', () => {
     const deps = makeDeps(); // getLieferandoState/requestLieferandoToggle отсутствуют
     const res = await handleControlUpdate(cbUpdate(LIEF_OFF), deps);
     expect(deps.applyAction).not.toHaveBeenCalled();
+    expect(deps.editPanel).not.toHaveBeenCalled();
+    expect(res).toEqual({ handled: false, reason: 'error' });
+  });
+
+  // --- стоп-лист: экраны «Размеры» / «Позиции» ---------------------------------
+
+  const sizeRows = (active36: boolean): MenuSizeRow[] => [
+    { id: 's30', name: '30 cm', label: '', active: true, stoppedUntil: null },
+    {
+      id: 's36',
+      name: '36 cm',
+      label: '',
+      active: active36,
+      stoppedUntil: active36 ? null : '2026-11-02T20:30:00.000Z',
+    },
+  ];
+  const catRow: MenuCategoryRow = { id: 'cat1', name: 'Pizza', itemCount: 2, stoppedCount: 0 };
+  const itemRows = (hawaiiOn: boolean): MenuItemRow[] => [
+    { id: 'p1', name: 'Hawaiian', categoryId: 'cat1', available: hawaiiOn, stoppedUntil: null },
+    { id: 'p2', name: 'Margherita', categoryId: 'cat1', available: true, stoppedUntil: null },
+  ];
+  const makeMenu = (over: Record<string, any> = {}) => ({
+    listSizes: vi.fn(async () => sizeRows(true)),
+    setSizeActive: vi.fn(async (id: string, active: boolean) =>
+      id === 's36' ? sizeRows(active).find((s) => s.id === 's36')! : null
+    ),
+    listCategories: vi.fn(async () => [catRow]),
+    listCategoryItems: vi.fn(async () => ({ category: catRow, items: itemRows(true) })),
+    setItemAvailable: vi.fn(async (id: string, available: boolean) =>
+      id === 'p1' ? itemRows(available)[0] : null
+    ),
+    enableCategoryItems: vi.fn(async () => [itemRows(true)[0]]),
+    ...over,
+  });
+
+  it('размер выключить: флаг сайта + команда Lieferando {size, label}, экран размеров', async () => {
+    const menu = makeMenu();
+    const queueLieferando = vi.fn(async () => ({}));
+    const deps = makeDeps({ menu, queueLieferando });
+    const res = await handleControlUpdate(cbUpdate(ctrlSizeSet('s36', false)), deps);
+    expect(menu.setSizeActive).toHaveBeenCalledWith('s36', false);
+    expect(queueLieferando).toHaveBeenCalledWith('off', { kind: 'size', label: '36 cm' });
+    expect(deps.applyAction).not.toHaveBeenCalled(); // блокировки цехов не тронуты
+    const toast = (deps.answerCallbackQuery as any).mock.calls[0][1] as string;
+    expect(toast).toContain('36 cm');
+    expect(toast).toContain('выключен');
+    expect(toast).toContain('Lieferando');
+    const panel = (deps.editPanel as any).mock.calls[0][2];
+    expect(panel.text).toContain('Размеры');
+    expect(panel.keyboard.inline_keyboard.flat().map((b: any) => b.callback_data)).toContain(
+      ctrlSizeSet('s30', false)
+    );
+    expect(res).toEqual({ handled: true, reason: 'menu_stop' });
+  });
+
+  it('без queueLieferando сайт переключается, тост предупреждает', async () => {
+    const menu = makeMenu();
+    const deps = makeDeps({ menu });
+    await handleControlUpdate(cbUpdate(ctrlSizeSet('s36', true)), deps);
+    expect(menu.setSizeActive).toHaveBeenCalledWith('s36', true);
+    const toast = (deps.answerCallbackQuery as any).mock.calls[0][1] as string;
+    expect(toast).toContain('включён');
+    expect(toast).toContain('Lieferando не настроен');
+  });
+
+  it('сбой очереди Lieferando не откатывает сайт и не роняет обработку', async () => {
+    const menu = makeMenu();
+    const deps = makeDeps({
+      menu,
+      queueLieferando: vi.fn(async () => {
+        throw new Error('settings down');
+      }),
+    });
+    const res = await handleControlUpdate(cbUpdate(ctrlSizeSet('s36', false)), deps);
+    expect(res).toEqual({ handled: true, reason: 'menu_stop' });
+    expect((deps.answerCallbackQuery as any).mock.calls[0][1]).toContain('команда не поставлена');
+    expect(deps.editPanel).toHaveBeenCalledTimes(1);
+  });
+
+  it('позиция выключить: флаг + Lieferando {item, names}, перерисован экран её категории', async () => {
+    const menu = makeMenu();
+    const queueLieferando = vi.fn(async () => ({}));
+    const deps = makeDeps({ menu, queueLieferando });
+    const res = await handleControlUpdate(cbUpdate(ctrlItemSet('p1', false, 0)), deps);
+    expect(menu.setItemAvailable).toHaveBeenCalledWith('p1', false);
+    expect(queueLieferando).toHaveBeenCalledWith('off', { kind: 'item', names: ['Hawaiian'] });
+    expect(menu.listCategoryItems).toHaveBeenCalledWith('cat1');
+    const panel = (deps.editPanel as any).mock.calls[0][2];
+    expect(panel.text).toContain('Pizza');
+    expect(res).toEqual({ handled: true, reason: 'menu_stop' });
+  });
+
+  it('«включить всё в категории»: одна команда Lieferando со всеми именами', async () => {
+    const menu = makeMenu();
+    const queueLieferando = vi.fn(async () => ({}));
+    const deps = makeDeps({ menu, queueLieferando });
+    await handleControlUpdate(cbUpdate(ctrlItemsEnableAll('cat1', 1)), deps);
+    expect(menu.enableCategoryItems).toHaveBeenCalledWith('cat1');
+    expect(queueLieferando).toHaveBeenCalledWith('on', { kind: 'item', names: ['Hawaiian'] });
+    expect((deps.answerCallbackQuery as any).mock.calls[0][1]).toContain('Включено позиций: 1');
+  });
+
+  it('«включить всё», когда всё уже включено: без команды Lieferando', async () => {
+    const menu = makeMenu({ enableCategoryItems: vi.fn(async () => []) });
+    const queueLieferando = vi.fn(async () => ({}));
+    const deps = makeDeps({ menu, queueLieferando });
+    await handleControlUpdate(cbUpdate(ctrlItemsEnableAll('cat1', 0)), deps);
+    expect(queueLieferando).not.toHaveBeenCalled();
+    expect((deps.answerCallbackQuery as any).mock.calls[0][1]).toContain('уже включены');
+  });
+
+  it('навигация по категориям/страницам ничего не пишет', async () => {
+    const menu = makeMenu();
+    const queueLieferando = vi.fn(async () => ({}));
+    const deps = makeDeps({ menu, queueLieferando });
+    await handleControlUpdate(cbUpdate(ITEMS_MENU), deps);
+    await handleControlUpdate(cbUpdate(ctrlItemsCategory('cat1', 0)), deps);
+    await handleControlUpdate(cbUpdate(SIZES_MENU), deps);
+    expect(menu.setSizeActive).not.toHaveBeenCalled();
+    expect(menu.setItemAvailable).not.toHaveBeenCalled();
+    expect(menu.enableCategoryItems).not.toHaveBeenCalled();
+    expect(queueLieferando).not.toHaveBeenCalled();
+    expect(deps.editPanel).toHaveBeenCalledTimes(3);
+    const categoriesPanel = (deps.editPanel as any).mock.calls[0][2];
+    expect(categoriesPanel.keyboard.inline_keyboard.flat().map((b: any) => b.callback_data)).toContain(
+      ctrlItemsCategory('cat1', 0)
+    );
+  });
+
+  it('неизвестный размер: тост-предупреждение, Lieferando не трогаем', async () => {
+    const menu = makeMenu();
+    const queueLieferando = vi.fn(async () => ({}));
+    const deps = makeDeps({ menu, queueLieferando });
+    const res = await handleControlUpdate(cbUpdate(ctrlSizeSet('nope', false)), deps);
+    expect(queueLieferando).not.toHaveBeenCalled();
+    expect((deps.answerCallbackQuery as any).mock.calls[0][1]).toContain('не найден');
+    expect(res).toEqual({ handled: true, reason: 'menu_stop' });
+  });
+
+  it('порт стоп-листа не передан → error, ничего не пишем', async () => {
+    const deps = makeDeps();
+    const res = await handleControlUpdate(cbUpdate(ctrlSizeSet('s36', false)), deps);
+    expect(deps.editPanel).not.toHaveBeenCalled();
+    expect(res).toEqual({ handled: false, reason: 'error' });
+  });
+
+  it('сбой порта (БД) → error, ack-предупреждение, экран не трогаем', async () => {
+    const menu = makeMenu({
+      setItemAvailable: vi.fn(async () => {
+        throw new Error('DB down');
+      }),
+    });
+    const deps = makeDeps({ menu });
+    const res = await handleControlUpdate(cbUpdate(ctrlItemSet('p1', false, 0)), deps);
     expect(deps.editPanel).not.toHaveBeenCalled();
     expect(res).toEqual({ handled: false, reason: 'error' });
   });
