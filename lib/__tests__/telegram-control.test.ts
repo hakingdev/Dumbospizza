@@ -48,6 +48,7 @@ import {
   ctrlItemsCategory,
   ctrlItemSet,
   ctrlItemsEnableAll,
+  ctrlMenuMode,
   buildItemsKeyboard,
   type BlockState,
 } from '../telegram-control';
@@ -141,6 +142,27 @@ describe('parseControlAction', () => {
     expect(parseControlAction('ctrl_it_cat_' + id)).toBeNull(); // без страницы
   });
 
+  it('тумблер режима: целевой режим + экран возврата, ≤ 64 байт', () => {
+    const id = '6ab13e01bac562cf69912ba6';
+    expect(ctrlMenuMode('indefinite', { screen: 'sizes' })).toBe('ctrl_ms_mode_inf_sz');
+    expect(parseControlAction(ctrlMenuMode('indefinite', { screen: 'sizes' }))).toEqual({
+      type: 'menu_mode',
+      mode: 'indefinite',
+      back: { screen: 'sizes' },
+    });
+    expect(parseControlAction(ctrlMenuMode('day', { screen: 'items', categoryId: id, page: 2 }))).toEqual({
+      type: 'menu_mode',
+      mode: 'day',
+      back: { screen: 'items', categoryId: id, page: 2 },
+    });
+    expect(
+      Buffer.byteLength(ctrlMenuMode('indefinite', { screen: 'items', categoryId: id, page: 999 }))
+    ).toBeLessThanOrEqual(64);
+    expect(parseControlAction('ctrl_ms_mode_inf')).toBeNull();
+    expect(parseControlAction('ctrl_ms_mode_forever_sz')).toBeNull();
+    expect(parseControlAction('ctrl_ms_mode_day_it_' + id)).toBeNull(); // без страницы
+  });
+
   it('чужие/пустые/несуществующий цех → null', () => {
     expect(parseControlAction('status_ready_1')).toBeNull();
     expect(parseControlAction('ctrl_grill_block_30')).toBeNull();
@@ -225,25 +247,48 @@ describe('buildPanel', () => {
 
   it('экран размеров: кнопка каждого размера переключает в ПРОТИВОПОЛОЖНОЕ состояние', () => {
     const sizes: MenuSizeRow[] = [
-      { id: 'a', name: '30 cm', label: '', active: true, stoppedUntil: null },
+      { id: 'a', name: '30 cm', label: '', active: true, botStop: null },
       {
         id: 'b',
         name: '36 cm',
         label: '',
         active: false,
-        stoppedUntil: '2026-11-02T20:30:00.000Z',
+        botStop: { until: '2026-11-02T20:30:00.000Z' },
       },
-      { id: 'c', name: '40 cm', label: '', active: false, stoppedUntil: null },
+      { id: 'c', name: '40 cm', label: '', active: false, botStop: null },
+      { id: 'd', name: '24 Stk', label: '', active: false, botStop: { until: null } },
     ];
-    const panel = buildPanel({ type: 'sizes', sizes }, state(), new Date('2026-11-02T18:00:00Z'));
+    const panel = buildPanel(
+      { type: 'sizes', sizes, mode: 'day' },
+      state(),
+      new Date('2026-11-02T18:00:00Z')
+    );
     const data = panel.keyboard.inline_keyboard.flat().map((b) => b.callback_data);
     expect(data).toContain(ctrlSizeSet('a', false));
     expect(data).toContain(ctrlSizeSet('b', true));
     expect(data).toContain(SIZES_MENU);
     expect(data).toContain(CTRL_ROOT);
     expect(panel.text).toContain('🟢 30 cm');
-    expect(panel.text).toContain('36 cm — выключен ботом до 21:30');
-    expect(panel.text).toContain('40 cm — выключен (админка/POS)');
+    expect(panel.text).toContain('🔴 36 cm — выключен ботом до 21:30');
+    expect(panel.text).toContain('🔴 40 cm — выключен (админка/POS)');
+    // бессрочно выключенное — своим значком и в тексте, и на кнопке
+    expect(panel.text).toContain('⛔ 24 Stk — выключен ботом бессрочно');
+    expect(panel.keyboard.inline_keyboard.flat().map((b) => b.text)).toContain('⛔ 24 Stk');
+  });
+
+  it('экран размеров: тумблер режима вверху показывает текущий режим и переключает на другой', () => {
+    const sizes: MenuSizeRow[] = [{ id: 'a', name: '30 cm', label: '', active: true, botStop: null }];
+    const day = buildPanel({ type: 'sizes', sizes, mode: 'day' }, state());
+    expect(day.keyboard.inline_keyboard[0]).toEqual([
+      { text: 'Режим: ⏳ до конца дня', callback_data: ctrlMenuMode('indefinite', { screen: 'sizes' }) },
+    ]);
+    expect(day.text).toContain('включится само в конце рабочего дня');
+    const inf = buildPanel({ type: 'sizes', sizes, mode: 'indefinite' }, state());
+    expect(inf.keyboard.inline_keyboard[0]).toEqual([
+      { text: 'Режим: ⛔ бессрочно', callback_data: ctrlMenuMode('day', { screen: 'sizes' }) },
+    ]);
+    expect(inf.text).toContain('Режим «бессрочно»');
+    expect(inf.text).toContain('перевыключает его каждое утро');
   });
 
   it('экран категории: пагинация, «включить всё», имя с & экранировано', () => {
@@ -253,9 +298,12 @@ describe('buildPanel', () => {
       name: i === 0 ? 'Mac & Cheese' : `Pizza ${i}`,
       categoryId: 'cat',
       available: i !== 3,
-      stoppedUntil: null,
+      botStop: null,
     }));
-    const panel = buildPanel({ type: 'items', categoryId: 'cat', category, items, page: 1 }, state());
+    const panel = buildPanel(
+      { type: 'items', categoryId: 'cat', category, items, page: 1, mode: 'day' },
+      state()
+    );
     expect(panel.text).toContain('Pizza &amp; Co');
     expect(panel.text).toContain('стр. 2/3');
     const flat = panel.keyboard.inline_keyboard.flat();
@@ -267,25 +315,35 @@ describe('buildPanel', () => {
     expect(data).toContain(ctrlItemsCategory('cat', 2));
     expect(data).toContain(ctrlItemsEnableAll('cat', 1));
     expect(data).toContain(ITEMS_MENU);
+    // тумблер режима возвращает на ту же страницу категории
+    expect(panel.keyboard.inline_keyboard[0]).toEqual([
+      {
+        text: 'Режим: ⏳ до конца дня',
+        callback_data: ctrlMenuMode('indefinite', { screen: 'items', categoryId: 'cat', page: 1 }),
+      },
+    ]);
     // первая страница: p3 выключен → кнопка включает
-    const first = buildPanel({ type: 'items', categoryId: 'cat', category, items, page: 0 }, state());
+    const first = buildPanel(
+      { type: 'items', categoryId: 'cat', category, items, page: 0, mode: 'day' },
+      state()
+    );
     expect(first.text).toContain('Mac &amp; Cheese');
     expect(first.keyboard.inline_keyboard.flat().map((b) => b.callback_data)).toContain(
       ctrlItemSet('p3', true, 0)
     );
     expect(first.keyboard.inline_keyboard.flat().map((b) => b.text)).toContain('🔴 Pizza 3');
     // стрелки: на первой нет «⬅️», на последней нет «➡️»
-    expect(buildItemsKeyboard('cat', items, 0).inline_keyboard.flat().map((b) => b.text)).not.toContain('⬅️');
-    expect(buildItemsKeyboard('cat', items, 2).inline_keyboard.flat().map((b) => b.text)).not.toContain('➡️');
-    expect(buildItemsKeyboard('cat', items, 0).inline_keyboard[ITEMS_PAGE_SIZE].map((b) => b.text)).toEqual([
-      '1/3',
-      '➡️',
-    ]);
+    expect(buildItemsKeyboard('cat', items, 0, 'day').inline_keyboard.flat().map((b) => b.text)).not.toContain('⬅️');
+    expect(buildItemsKeyboard('cat', items, 2, 'day').inline_keyboard.flat().map((b) => b.text)).not.toContain('➡️');
+    // ряд 0 — тумблер режима, затем ITEMS_PAGE_SIZE позиций, затем навигация
+    expect(
+      buildItemsKeyboard('cat', items, 0, 'day').inline_keyboard[ITEMS_PAGE_SIZE + 1].map((b) => b.text)
+    ).toEqual(['1/3', '➡️']);
   });
 
   it('удалённая категория: только навигация назад', () => {
     const panel = buildPanel(
-      { type: 'items', categoryId: 'gone', category: null, items: [], page: 0 },
+      { type: 'items', categoryId: 'gone', category: null, items: [], page: 0, mode: 'day' },
       state()
     );
     expect(panel.text).toContain('не найдена');
@@ -510,22 +568,30 @@ describe('handleControlUpdate', () => {
 
   // --- стоп-лист: экраны «Размеры» / «Позиции» ---------------------------------
 
-  const sizeRows = (active36: boolean): MenuSizeRow[] => [
-    { id: 's30', name: '30 cm', label: '', active: true, stoppedUntil: null },
+  const sizeRows = (active36: boolean, until: string | null = '2026-11-02T20:30:00.000Z'): MenuSizeRow[] => [
+    { id: 's30', name: '30 cm', label: '', active: true, botStop: null },
     {
       id: 's36',
       name: '36 cm',
       label: '',
       active: active36,
-      stoppedUntil: active36 ? null : '2026-11-02T20:30:00.000Z',
+      botStop: active36 ? null : { until },
     },
   ];
   const catRow: MenuCategoryRow = { id: 'cat1', name: 'Pizza', itemCount: 2, stoppedCount: 0 };
-  const itemRows = (hawaiiOn: boolean): MenuItemRow[] => [
-    { id: 'p1', name: 'Hawaiian', categoryId: 'cat1', available: hawaiiOn, stoppedUntil: null },
-    { id: 'p2', name: 'Margherita', categoryId: 'cat1', available: true, stoppedUntil: null },
+  const itemRows = (hawaiiOn: boolean, until: string | null = '2026-11-02T20:30:00.000Z'): MenuItemRow[] => [
+    {
+      id: 'p1',
+      name: 'Hawaiian',
+      categoryId: 'cat1',
+      available: hawaiiOn,
+      botStop: hawaiiOn ? null : { until },
+    },
+    { id: 'p2', name: 'Margherita', categoryId: 'cat1', available: true, botStop: null },
   ];
   const makeMenu = (over: Record<string, any> = {}) => ({
+    getMode: vi.fn(async () => 'day' as const),
+    setMode: vi.fn(async (mode: 'day' | 'indefinite') => mode),
     listSizes: vi.fn(async () => sizeRows(true)),
     setSizeActive: vi.fn(async (id: string, active: boolean) =>
       id === 's36' ? sizeRows(active).find((s) => s.id === 's36')! : null
@@ -545,11 +611,15 @@ describe('handleControlUpdate', () => {
     const deps = makeDeps({ menu, queueLieferando });
     const res = await handleControlUpdate(cbUpdate(ctrlSizeSet('s36', false)), deps);
     expect(menu.setSizeActive).toHaveBeenCalledWith('s36', false);
-    expect(queueLieferando).toHaveBeenCalledWith('off', { kind: 'size', label: '36 cm' });
+    expect(queueLieferando).toHaveBeenCalledWith(
+      'off',
+      { kind: 'size', label: '36 cm' },
+      { indefinite: false }
+    );
     expect(deps.applyAction).not.toHaveBeenCalled(); // блокировки цехов не тронуты
     const toast = (deps.answerCallbackQuery as any).mock.calls[0][1] as string;
-    expect(toast).toContain('36 cm');
-    expect(toast).toContain('выключен');
+    expect(toast).toContain('🔴 36 cm');
+    expect(toast).toContain('выключен на сайте до 21:30');
     expect(toast).toContain('Lieferando');
     const panel = (deps.editPanel as any).mock.calls[0][2];
     expect(panel.text).toContain('Размеры');
@@ -589,7 +659,11 @@ describe('handleControlUpdate', () => {
     const deps = makeDeps({ menu, queueLieferando });
     const res = await handleControlUpdate(cbUpdate(ctrlItemSet('p1', false, 0)), deps);
     expect(menu.setItemAvailable).toHaveBeenCalledWith('p1', false);
-    expect(queueLieferando).toHaveBeenCalledWith('off', { kind: 'item', names: ['Hawaiian'] });
+    expect(queueLieferando).toHaveBeenCalledWith(
+      'off',
+      { kind: 'item', names: ['Hawaiian'] },
+      { indefinite: false }
+    );
     expect(menu.listCategoryItems).toHaveBeenCalledWith('cat1');
     const panel = (deps.editPanel as any).mock.calls[0][2];
     expect(panel.text).toContain('Pizza');
@@ -602,8 +676,62 @@ describe('handleControlUpdate', () => {
     const deps = makeDeps({ menu, queueLieferando });
     await handleControlUpdate(cbUpdate(ctrlItemsEnableAll('cat1', 1)), deps);
     expect(menu.enableCategoryItems).toHaveBeenCalledWith('cat1');
-    expect(queueLieferando).toHaveBeenCalledWith('on', { kind: 'item', names: ['Hawaiian'] });
+    expect(queueLieferando).toHaveBeenCalledWith(
+      'on',
+      { kind: 'item', names: ['Hawaiian'] },
+      { indefinite: false }
+    );
     expect((deps.answerCallbackQuery as any).mock.calls[0][1]).toContain('Включено позиций: 1');
+  });
+
+  it('режим «бессрочно»: порт вернул запись без срока → Lieferando получает indefinite, тост ⛔', async () => {
+    const menu = makeMenu({
+      getMode: vi.fn(async () => 'indefinite' as const),
+      setSizeActive: vi.fn(async () => sizeRows(false, null)[1]),
+      setItemAvailable: vi.fn(async () => itemRows(false, null)[0]),
+    });
+    const queueLieferando = vi.fn(async () => ({}));
+    const deps = makeDeps({ menu, queueLieferando });
+    await handleControlUpdate(cbUpdate(ctrlSizeSet('s36', false)), deps);
+    expect(queueLieferando).toHaveBeenCalledWith(
+      'off',
+      { kind: 'size', label: '36 cm' },
+      { indefinite: true }
+    );
+    const toast = (deps.answerCallbackQuery as any).mock.calls[0][1] as string;
+    expect(toast).toContain('⛔ 36 cm: выключен на сайте бессрочно');
+    // экран перерисован с режимом из порта
+    const panel = (deps.editPanel as any).mock.calls[0][2];
+    expect(panel.keyboard.inline_keyboard[0][0].text).toBe('Режим: ⛔ бессрочно');
+
+    await handleControlUpdate(cbUpdate(ctrlItemSet('p1', false, 0)), deps);
+    expect(queueLieferando).toHaveBeenLastCalledWith(
+      'off',
+      { kind: 'item', names: ['Hawaiian'] },
+      { indefinite: true }
+    );
+    expect((deps.answerCallbackQuery as any).mock.calls[1][1]).toContain('⛔ Hawaiian: выключена на сайте бессрочно');
+  });
+
+  it('тумблер режима: пишет режим через порт и перерисовывает тот же экран', async () => {
+    const menu = makeMenu();
+    const queueLieferando = vi.fn(async () => ({}));
+    const deps = makeDeps({ menu, queueLieferando });
+    const res = await handleControlUpdate(
+      cbUpdate(ctrlMenuMode('indefinite', { screen: 'items', categoryId: 'cat1', page: 1 })),
+      deps
+    );
+    expect(menu.setMode).toHaveBeenCalledWith('indefinite');
+    expect(menu.listCategoryItems).toHaveBeenCalledWith('cat1');
+    expect(menu.setSizeActive).not.toHaveBeenCalled();
+    expect(queueLieferando).not.toHaveBeenCalled();
+    expect((deps.answerCallbackQuery as any).mock.calls[0][1]).toContain('⛔ Режим «бессрочно»');
+    expect(res).toEqual({ handled: true, reason: 'menu_stop' });
+
+    await handleControlUpdate(cbUpdate(ctrlMenuMode('day', { screen: 'sizes' })), deps);
+    expect(menu.setMode).toHaveBeenLastCalledWith('day');
+    expect(menu.listSizes).toHaveBeenCalled();
+    expect((deps.answerCallbackQuery as any).mock.calls[1][1]).toContain('⏳ Режим «до конца дня»');
   });
 
   it('«включить всё», когда всё уже включено: без команды Lieferando', async () => {
@@ -732,8 +860,10 @@ describe('handleControlUpdate', () => {
 
 describe('processControlUpdate', () => {
   it('прокидывает очередь Lieferando: кнопка размера → requestLieferandoCommand', async () => {
-    const row: MenuSizeRow = { id: 's36', name: '36 cm', label: '', active: false, stoppedUntil: null };
+    const row: MenuSizeRow = { id: 's36', name: '36 cm', label: '', active: false, botStop: { until: null } };
     (buildMenuStopPort as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+      getMode: vi.fn(async () => 'indefinite'),
+      setMode: vi.fn(async (m: string) => m),
       listSizes: vi.fn(async () => [row]),
       setSizeActive: vi.fn(async () => row),
       listCategories: vi.fn(async () => []),
@@ -751,7 +881,13 @@ describe('processControlUpdate', () => {
         webhookSecret: '',
       });
       expect(res.handled).toBe(true);
-      expect(requestLieferandoCommand).toHaveBeenCalledWith('off', { kind: 'size', label: '36 cm' });
+      // режим «бессрочно» (порт вернул запись без срока) → origin для отчёта агента
+      expect(requestLieferandoCommand).toHaveBeenCalledWith(
+        'off',
+        { kind: 'size', label: '36 cm' },
+        expect.any(Date),
+        { origin: 'indefinite' }
+      );
       const urls = fetchMock.mock.calls.map((c: any[]) => String(c[0]));
       expect(urls.some((u) => u.endsWith('/answerCallbackQuery'))).toBe(true);
       expect(urls.some((u) => u.endsWith('/editMessageText'))).toBe(true);

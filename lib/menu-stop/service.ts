@@ -2,7 +2,8 @@
  * Стоп размеров и позиций из Telegram-стоп-бота — серверная часть (БД).
  * Правило и типы — в ./state; здесь только чтение/запись флагов и ключа
  * `menuStopBot`. Экраны бота ходят сюда через MenuStopPort (см. buildMenuStopPort),
- * крон — через expireMenuStops.
+ * ночной крон — через expireMenuStops/resetMenuStopMode, утренний —
+ * через reconcileIndefiniteMenuStops.
  */
 import { Product } from '../models/product.model';
 import { Category } from '../models/category.model';
@@ -11,12 +12,18 @@ import { getSetting, setSetting } from '../settings';
 import { syncSizeVariationToProducts } from '../size-variation-sync';
 import {
   MENU_STOP_KEY,
+  dayKeyInTimeZone,
   endOfBusinessDay,
   expiredMenuStops,
+  indefiniteMenuStops,
   readMenuStopState,
+  reapplyDue,
+  type MenuBotStop,
   type MenuCategoryRow,
   type MenuItemRow,
   type MenuSizeRow,
+  type MenuStopMode,
+  type MenuStopNamed,
   type MenuStopPort,
   type MenuStopState,
 } from './state';
@@ -31,13 +38,21 @@ async function writeState(state: MenuStopState): Promise<void> {
   await setSetting(MENU_STOP_KEY, state);
 }
 
-/** До какого времени действует стоп, поставленный сейчас. */
-async function stopUntil(now: Date): Promise<string> {
+/**
+ * До какого времени действует стоп, поставленный сейчас: конец рабочего дня,
+ * а в режиме «бессрочно» — null (снимается только кнопкой «включить»).
+ */
+async function stopUntil(state: MenuStopState, now: Date): Promise<string | null> {
+  if (state.mode === 'indefinite') return null;
   const settings = (await getSetting<Record<string, any>>(STORE_SETTINGS_KEY, {})) || {};
   return endOfBusinessDay(settings, now).toISOString();
 }
 
 const idOf = (doc: any): string => String(doc?._id ?? doc?.id ?? '');
+
+/** Подсказка «кем выключено» — только для выключенных строк и только если ботом. */
+const botStopOf = (off: boolean, entry: { until: string | null } | undefined): MenuBotStop =>
+  off && entry ? { until: entry.until } : null;
 
 function sizeRow(variation: any, state: MenuStopState): MenuSizeRow {
   const id = idOf(variation);
@@ -47,7 +62,7 @@ function sizeRow(variation: any, state: MenuStopState): MenuSizeRow {
     name: String(variation?.name ?? ''),
     label: String(variation?.label ?? ''),
     active,
-    stoppedUntil: !active && state.sizes[id] ? state.sizes[id].until : null,
+    botStop: botStopOf(!active, state.sizes[id]),
   };
 }
 
@@ -59,8 +74,31 @@ function itemRow(product: any, state: MenuStopState): MenuItemRow {
     name: String(product?.name ?? ''),
     categoryId: String(product?.category ?? ''),
     available,
-    stoppedUntil: !available && state.products[id] ? state.products[id].until : null,
+    botStop: botStopOf(!available, state.products[id]),
   };
+}
+
+// --- режим кнопок ----------------------------------------------------------------
+
+export async function getMenuStopMode(): Promise<MenuStopMode> {
+  return (await readState()).mode;
+}
+
+export async function setMenuStopMode(mode: MenuStopMode): Promise<MenuStopMode> {
+  const state = await readState();
+  if (state.mode !== mode) await writeState({ ...state, mode });
+  return mode;
+}
+
+/**
+ * Ночной крон: режим возвращается на «до конца дня», чтобы завтрашний тап по
+ * закончившейся позиции не выключил её навсегда. Возвращает, был ли сброс.
+ */
+export async function resetMenuStopMode(): Promise<boolean> {
+  const state = await readState();
+  if (state.mode === 'day') return false;
+  await writeState({ ...state, mode: 'day' });
+  return true;
 }
 
 // --- размеры (библиотека) --------------------------------------------------------
@@ -96,7 +134,10 @@ export async function setSizeActive(
   if (active) {
     delete state.sizes[variationId];
   } else {
-    state.sizes[variationId] = { until: await stopUntil(now), name: String(variation.name ?? '') };
+    state.sizes[variationId] = {
+      until: await stopUntil(state, now),
+      name: String(variation.name ?? ''),
+    };
   }
   await writeState(state);
   return sizeRow(variation, state);
@@ -166,7 +207,10 @@ export async function setProductAvailable(
   if (available) {
     delete state.products[productId];
   } else {
-    state.products[productId] = { until: await stopUntil(now), name: String(product.name ?? '') };
+    state.products[productId] = {
+      until: await stopUntil(state, now),
+      name: String(product.name ?? ''),
+    };
   }
   await writeState(state);
   return itemRow(product, state);
@@ -220,13 +264,96 @@ export async function expireMenuStops(
     delete state.products[id];
   }
 
-  await writeState({ sizes: state.sizes, products: state.products });
+  await writeState({ ...state, sizes: state.sizes, products: state.products });
   return { sizes, products };
+}
+
+// --- бессрочный стоп-лист (утренний крон) ----------------------------------------
+
+/**
+ * Бессрочные записи бота, сверенные с живыми флагами: если размер/позицию уже
+ * включили руками (админка/POS) или удалили, запись снимается — иначе утренний
+ * крон выключал бы её на Lieferando каждый день, хотя на сайте она давно
+ * продаётся. Возвращает то, что действительно выключено и держится ботом.
+ */
+export async function reconcileIndefiniteMenuStops(): Promise<{
+  sizes: MenuStopNamed[];
+  products: MenuStopNamed[];
+}> {
+  const state = await readState();
+  const wanted = indefiniteMenuStops(state);
+  if (!wanted.sizes.length && !wanted.products.length) return { sizes: [], products: [] };
+
+  const variations = wanted.sizes.length
+    ? ((await SizeVariation.find({ _id: { $in: wanted.sizes.map((s) => s.id) } })
+        .select('name active')
+        .lean()) as any[])
+    : [];
+  const products = wanted.products.length
+    ? ((await Product.find({ _id: { $in: wanted.products.map((p) => p.id) } })
+        .select('name available')
+        .lean()) as any[])
+    : [];
+  const liveSize = new Map(variations.map((v) => [idOf(v), v]));
+  const liveProduct = new Map(products.map((p) => [idOf(p), p]));
+
+  let dirty = false;
+  const sizes: MenuStopNamed[] = [];
+  for (const entry of wanted.sizes) {
+    const live = liveSize.get(entry.id);
+    if (live && live.active === false) {
+      sizes.push({ id: entry.id, name: String(live.name || entry.name || entry.id) });
+    } else {
+      delete state.sizes[entry.id];
+      dirty = true;
+    }
+  }
+  const items: MenuStopNamed[] = [];
+  for (const entry of wanted.products) {
+    const live = liveProduct.get(entry.id);
+    if (live && live.available === false) {
+      items.push({ id: entry.id, name: String(live.name || entry.name || entry.id) });
+    } else {
+      delete state.products[entry.id];
+      dirty = true;
+    }
+  }
+  if (dirty) await writeState(state);
+  return { sizes, products: items };
+}
+
+/**
+ * Утренний триггер из поллинга агента: если сегодня ещё не перевыключали и
+ * уже пора (reapplyDue), отмечает день выполненным и возвращает true. Отметка
+ * ставится ДО запуска — два параллельных поллинга не запустят перевыключение
+ * дважды (дубль команд и так не страшен: очередь дедупит по цели, а вот две
+ * сводки в группе — шум).
+ */
+export async function claimDailyReapply(now: Date = new Date()): Promise<boolean> {
+  const [state, settings] = await Promise.all([
+    readState(),
+    getSetting<Record<string, any>>(STORE_SETTINGS_KEY, {}).then((v) => v || {}),
+  ]);
+  if (!reapplyDue(state, settings, now)) return false;
+  await writeState({ ...state, reapplyDay: dayKeyInTimeZone(settings.ordersTimeZone || 'Europe/Berlin', now) });
+  return true;
+}
+
+/** Ручной запуск (крон-роут) тоже отмечает день — чтобы триггер из поллинга не повторил сводку. */
+export async function markDailyReapply(now: Date = new Date()): Promise<void> {
+  const [state, settings] = await Promise.all([
+    readState(),
+    getSetting<Record<string, any>>(STORE_SETTINGS_KEY, {}).then((v) => v || {}),
+  ]);
+  const day = dayKeyInTimeZone(settings.ordersTimeZone || 'Europe/Berlin', now);
+  if (state.reapplyDay !== day) await writeState({ ...state, reapplyDay: day });
 }
 
 /** Живой порт для экранов бота (lib/telegram-control.ts → processControlUpdate). */
 export function buildMenuStopPort(): MenuStopPort {
   return {
+    getMode: () => getMenuStopMode(),
+    setMode: (mode) => setMenuStopMode(mode),
     listSizes: () => listMenuSizes(),
     setSizeActive: (id, active) => setSizeActive(id, active),
     listCategories: () => listMenuCategories(),

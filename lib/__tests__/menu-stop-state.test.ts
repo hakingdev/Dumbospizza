@@ -2,16 +2,21 @@
 import { describe, it, expect } from 'vitest';
 import {
   EMPTY_MENU_STOP_STATE,
+  REAPPLY_AFTER_MINUTES,
+  dayKeyInTimeZone,
   endOfBusinessDay,
   expiredMenuStops,
+  indefiniteMenuStops,
   paginate,
   readMenuStopState,
+  reapplyDue,
   soldOutOrderMessage,
 } from '../menu-stop/state';
 
 /**
- * Стоп размеров/позиций из стоп-бота — чистая часть: разбор ключа menuStopBot,
- * «до конца дня» по графику приёма, просроченные записи, пагинация, текст гостю.
+ * Стоп размеров/позиций из стоп-бота — чистая часть: разбор ключа menuStopBot
+ * (в т.ч. бессрочные записи и режим), «до конца дня» по графику приёма,
+ * просроченные/бессрочные записи, утренний триггер, пагинация, текст гостю.
  */
 
 describe('readMenuStopState', () => {
@@ -28,6 +33,25 @@ describe('readMenuStopState', () => {
     });
     expect(s.sizes).toEqual({ a: { until: '2026-11-02T20:30:00.000Z', name: '36 cm' } });
     expect(s.products).toEqual({ p1: { until: '2026-11-02T20:30:00.000Z', name: '' } });
+    expect(s.mode).toBe('day');
+    expect(s.reapplyDay).toBeNull();
+  });
+
+  it('бессрочные записи: until=null (канон) или indefinite=true; режим и день перевыключения', () => {
+    const s = readMenuStopState({
+      mode: 'indefinite',
+      reapplyDay: '2026-11-03',
+      sizes: { a: { until: null, name: '36 cm' }, b: { indefinite: true, name: '40 cm' } },
+      products: { p1: { until: undefined, name: 'x' } }, // ни срока, ни флага — мусор
+    });
+    expect(s.sizes).toEqual({ a: { until: null, name: '36 cm' }, b: { until: null, name: '40 cm' } });
+    expect(s.products).toEqual({});
+    expect(s.mode).toBe('indefinite');
+    expect(s.reapplyDay).toBe('2026-11-03');
+    expect(readMenuStopState({ mode: 'forever', reapplyDay: 'yesterday' })).toMatchObject({
+      mode: 'day',
+      reapplyDay: null,
+    });
   });
 });
 
@@ -75,20 +99,60 @@ describe('endOfBusinessDay', () => {
   });
 });
 
-describe('expiredMenuStops', () => {
+describe('expiredMenuStops / indefiniteMenuStops', () => {
   const now = new Date('2026-11-03T03:00:00.000Z');
-  it('отдаёт только записи с прошедшим until', () => {
+  it('отдаёт только записи с прошедшим until; бессрочные не истекают никогда', () => {
     const state = readMenuStopState({
       sizes: {
         old: { until: '2026-11-02T20:30:00.000Z', name: '36 cm' },
         fresh: { until: '2026-11-03T20:30:00.000Z', name: '40 cm' },
+        forever: { until: null, name: '24 Stk' },
       },
-      products: { p: { until: '2026-11-03T03:00:00.000Z', name: 'Hawaiian' } }, // ровно сейчас — тоже
+      products: {
+        p: { until: '2026-11-03T03:00:00.000Z', name: 'Hawaiian' }, // ровно сейчас — тоже
+        q: { until: null, name: 'Vegan philly' },
+      },
     });
     expect(expiredMenuStops(state, now)).toEqual({ sizes: ['old'], products: ['p'] });
+    expect(expiredMenuStops(state, new Date('2099-01-01T00:00:00Z'))).toEqual({
+      sizes: ['old', 'fresh'],
+      products: ['p'],
+    });
+    expect(indefiniteMenuStops(state)).toEqual({
+      sizes: [{ id: 'forever', name: '24 Stk' }],
+      products: [{ id: 'q', name: 'Vegan philly' }],
+    });
   });
   it('пусто → пусто', () => {
     expect(expiredMenuStops(EMPTY_MENU_STOP_STATE, now)).toEqual({ sizes: [], products: [] });
+    expect(indefiniteMenuStops(EMPTY_MENU_STOP_STATE)).toEqual({ sizes: [], products: [] });
+  });
+});
+
+describe('reapplyDue (утренний триггер из поллинга агента)', () => {
+  const settings = { ordersTimeZone: 'Europe/Berlin' };
+  it('порог — 08:30 по Берлину', () => {
+    expect(REAPPLY_AFTER_MINUTES).toBe(8 * 60 + 30);
+  });
+  it('до порога — рано, после порога и сегодня ещё не делали — пора', () => {
+    const early = new Date('2026-11-03T07:00:00.000Z'); // 08:00 Берлин (зима)
+    const late = new Date('2026-11-03T07:31:00.000Z'); // 08:31 Берлин
+    expect(reapplyDue({ reapplyDay: null }, settings, early)).toBe(false);
+    expect(reapplyDue({ reapplyDay: null }, settings, late)).toBe(true);
+    expect(reapplyDue({ reapplyDay: '2026-11-02' }, settings, late)).toBe(true);
+  });
+  it('сегодня уже делали — не повторяем до завтра', () => {
+    const late = new Date('2026-11-03T12:00:00.000Z');
+    expect(reapplyDue({ reapplyDay: '2026-11-03' }, settings, late)).toBe(false);
+    expect(reapplyDue({ reapplyDay: '2026-11-03' }, settings, new Date('2026-11-04T08:00:00.000Z'))).toBe(true);
+  });
+  it('день считается в зоне ресторана, не в UTC', () => {
+    // 23:30 UTC 3.11 = 00:30 Берлин 4.11 — ещё до порога нового дня
+    expect(dayKeyInTimeZone('Europe/Berlin', new Date('2026-11-03T23:30:00.000Z'))).toBe('2026-11-04');
+    expect(reapplyDue({ reapplyDay: '2026-11-03' }, settings, new Date('2026-11-03T23:30:00.000Z'))).toBe(false);
+    // летом порог сдвигается вместе с зоной: 06:45 UTC = 08:45 CEST
+    expect(reapplyDue({ reapplyDay: null }, settings, new Date('2026-07-01T06:45:00.000Z'))).toBe(true);
+    expect(reapplyDue({ reapplyDay: null }, {}, new Date('2026-07-01T06:15:00.000Z'))).toBe(false);
   });
 });
 
