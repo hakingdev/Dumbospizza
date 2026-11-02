@@ -276,16 +276,19 @@ describe('buildPanel', () => {
     expect(panel.keyboard.inline_keyboard.flat().map((b) => b.text)).toContain('⛔ 24 Stk');
   });
 
-  it('экран размеров: тумблер режима вверху показывает текущий режим и переключает на другой', () => {
+  it('экран размеров: ряд режима вверху — оба варианта, текущий с галочкой', () => {
     const sizes: MenuSizeRow[] = [{ id: 'a', name: '30 cm', label: '', active: true, botStop: null }];
     const day = buildPanel({ type: 'sizes', sizes, mode: 'day' }, state());
     expect(day.keyboard.inline_keyboard[0]).toEqual([
-      { text: 'Режим: ⏳ до конца дня', callback_data: ctrlMenuMode('indefinite', { screen: 'sizes' }) },
+      { text: '✓ ⏳ До конца дня', callback_data: ctrlMenuMode('day', { screen: 'sizes' }) },
+      { text: '⛔ Бессрочно', callback_data: ctrlMenuMode('indefinite', { screen: 'sizes' }) },
     ]);
     expect(day.text).toContain('включится само в конце рабочего дня');
+    expect(day.text).toContain('нажмите «⛔ Бессрочно» вверху');
     const inf = buildPanel({ type: 'sizes', sizes, mode: 'indefinite' }, state());
     expect(inf.keyboard.inline_keyboard[0]).toEqual([
-      { text: 'Режим: ⛔ бессрочно', callback_data: ctrlMenuMode('day', { screen: 'sizes' }) },
+      { text: '⏳ До конца дня', callback_data: ctrlMenuMode('day', { screen: 'sizes' }) },
+      { text: '✓ ⛔ Бессрочно', callback_data: ctrlMenuMode('indefinite', { screen: 'sizes' }) },
     ]);
     expect(inf.text).toContain('Режим «бессрочно»');
     expect(inf.text).toContain('перевыключает его каждое утро');
@@ -315,10 +318,14 @@ describe('buildPanel', () => {
     expect(data).toContain(ctrlItemsCategory('cat', 2));
     expect(data).toContain(ctrlItemsEnableAll('cat', 1));
     expect(data).toContain(ITEMS_MENU);
-    // тумблер режима возвращает на ту же страницу категории
+    // ряд режима возвращает на ту же страницу категории
     expect(panel.keyboard.inline_keyboard[0]).toEqual([
       {
-        text: 'Режим: ⏳ до конца дня',
+        text: '✓ ⏳ До конца дня',
+        callback_data: ctrlMenuMode('day', { screen: 'items', categoryId: 'cat', page: 1 }),
+      },
+      {
+        text: '⛔ Бессрочно',
         callback_data: ctrlMenuMode('indefinite', { screen: 'items', categoryId: 'cat', page: 1 }),
       },
     ]);
@@ -702,7 +709,7 @@ describe('handleControlUpdate', () => {
     expect(toast).toContain('⛔ 36 cm: выключен на сайте бессрочно');
     // экран перерисован с режимом из порта
     const panel = (deps.editPanel as any).mock.calls[0][2];
-    expect(panel.keyboard.inline_keyboard[0][0].text).toBe('Режим: ⛔ бессрочно');
+    expect(panel.keyboard.inline_keyboard[0].map((b: any) => b.text)).toEqual(['⏳ До конца дня', '✓ ⛔ Бессрочно']);
 
     await handleControlUpdate(cbUpdate(ctrlItemSet('p1', false, 0)), deps);
     expect(queueLieferando).toHaveBeenLastCalledWith(

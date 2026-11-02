@@ -21,7 +21,7 @@
  * Экраны «🍕 Размеры» и «📋 Позиции» — стоп-лист сайта (lib/menu-stop): те же
  * флаги, что админка и POS (библиотека размеров `active`, товар `available`),
  * тем же нажатием — команда агенту Lieferando (dep queueLieferando). Режим
- * кнопок (тумблер вверху экрана, хранится в ключе menuStopBot): ⏳ «до конца
+ * кнопок (ряд выбора вверху экрана, хранится в ключе menuStopBot): ⏳ «до конца
  * дня» (по умолчанию, включится само) или ⛔ «бессрочно» (до ручного
  * включения; на Lieferando перевыключается каждое утро — lib/menu-stop/reapply).
  *
@@ -568,17 +568,25 @@ function rowIcon(on: boolean, botStop: MenuBotStop): string {
 
 const MENU_HINT = 'Нажмите на строку, чтобы переключить её на сайте и на Lieferando.';
 const MODE_HINTS: Record<MenuStopMode, string> = {
-  day: 'ℹ️ Режим ⏳ «до конца дня»: выключенное ботом включится само в конце рабочего дня.',
+  day:
+    'ℹ️ Режим ⏳ «до конца дня»: выключенное ботом включится само в конце рабочего дня. ' +
+    'Чтобы выключать насовсем — нажмите «⛔ Бессрочно» вверху, затем позицию.',
   indefinite:
     '⛔ Режим «бессрочно»: выключенное останется выключенным, пока не включите кнопкой; ' +
     'на Lieferando бот перевыключает его каждое утро. Ночью режим сам вернётся на «до конца дня».',
 };
 
-/** Кнопка-тумблер режима: показывает ТЕКУЩИЙ режим, нажатие переключает на другой. */
-function modeButton(mode: MenuStopMode, back: MenuStopBack): { text: string; callback_data: string } {
-  return mode === 'indefinite'
-    ? { text: 'Режим: ⛔ бессрочно', callback_data: ctrlMenuMode('day', back) }
-    : { text: 'Режим: ⏳ до конца дня', callback_data: ctrlMenuMode('indefinite', back) };
+/**
+ * Ряд выбора режима — два явных варианта, текущий отмечен галочкой. Одна
+ * кнопка-тумблер («Режим: ⏳ до конца дня») читалась как надпись-статус, и
+ * персонал не находил, где выключить бессрочно.
+ */
+function modeRow(mode: MenuStopMode, back: MenuStopBack): Array<{ text: string; callback_data: string }> {
+  const mark = (own: MenuStopMode, label: string) => (mode === own ? `✓ ${label}` : label);
+  return [
+    { text: mark('day', '⏳ До конца дня'), callback_data: ctrlMenuMode('day', back) },
+    { text: mark('indefinite', '⛔ Бессрочно'), callback_data: ctrlMenuMode('indefinite', back) },
+  ];
 }
 
 /** Кнопки по две в ряд — списки короткие, а экран вытягивать не хочется. */
@@ -608,7 +616,7 @@ export function buildSizesText(
 export function buildSizesKeyboard(sizes: MenuSizeRow[], mode: MenuStopMode): ControlPanel['keyboard'] {
   return {
     inline_keyboard: [
-      [modeButton(mode, { screen: 'sizes' })],
+      modeRow(mode, { screen: 'sizes' }),
       ...pairRows(
         sizes.map((s) => ({
           text: `${rowIcon(s.active, s.botStop)} ${s.name}`,
@@ -695,7 +703,7 @@ export function buildItemsKeyboard(
 ): ControlPanel['keyboard'] {
   const { page: p, pages, slice } = paginate(items, page, ITEMS_PAGE_SIZE);
   const rows: ControlPanel['keyboard']['inline_keyboard'] = [
-    [modeButton(mode, { screen: 'items', categoryId, page: p })],
+    modeRow(mode, { screen: 'items', categoryId, page: p }),
     ...slice.map((i) => [
       {
         text: `${rowIcon(i.available, i.botStop)} ${i.name}`,
