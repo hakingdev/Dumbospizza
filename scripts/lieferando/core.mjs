@@ -20,7 +20,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PROFILE_DIR = path.join(__dirname, 'profile');
+// LIEFERANDO_PROFILE_DIR — другой профиль браузера (тесты переноса сессии, сервер)
+const PROFILE_DIR = process.env.LIEFERANDO_PROFILE_DIR || path.join(__dirname, 'profile');
 const STATE_FILE = path.join(__dirname, 'state', 'disabled.json');
 
 export const HUB_URL = 'https://partner-hub.takeaway.com/';
@@ -58,6 +59,15 @@ export function saveState(state) {
 
 // --- браузер --------------------------------------------------------------------
 
+/** Режим браузера для ручных команд: HEADLESS=1/0 из env, иначе — с окном,
+ *  кроме Linux-сервера без дисплея (там окно открыть некуда). */
+export function defaultHeadless() {
+  if (process.env.HEADLESS != null && process.env.HEADLESS !== '') {
+    return process.env.HEADLESS !== '0';
+  }
+  return process.platform === 'linux' && !process.env.DISPLAY;
+}
+
 export async function openBrowser({ headless = false } = {}) {
   const context = await chromium.launchPersistentContext(PROFILE_DIR, {
     headless,
@@ -68,16 +78,41 @@ export async function openBrowser({ headless = false } = {}) {
   return { context, page };
 }
 
+/** Какой ресторан выбирать на экране /choose-business (у аккаунта их несколько). */
+const BUSINESS = process.env.LIEFERANDO_BUSINESS || 'Dumbo Slice';
+
+/**
+ * Hub после входа (и после переноса сессии на другую машину) показывает
+ * «Businesses — select which business you would like to continue with».
+ * Выбираем наш по названию; true = экран был и мы его прошли.
+ */
+async function chooseBusinessIfAsked(page, log = console.log) {
+  if (!/\/choose-business/.test(page.url())) return false;
+  log(`Hub просит выбрать ресторан — выбираю «${BUSINESS}»…`);
+  await dismissCookieBanner(page, log);
+  const re = new RegExp(escapeRe(BUSINESS), 'i');
+  const entry = page.locator('a, button, li, [role="button"]').filter({ hasText: re }).first();
+  if (await entry.count()) await entry.click({ timeout: 10000 });
+  else await page.getByText(re).first().click({ timeout: 10000 });
+  await page.waitForURL((u) => !/\/choose-business/.test(String(u)), { timeout: 15000 });
+  return true;
+}
+
 export async function openMenu(page) {
   debugShots = 0; // лимит скриншотов — на один прогон, а не на жизнь процесса
   await page.goto(MENU_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(1500); // даём редиректу на /choose-business случиться
+  if (await chooseBusinessIfAsked(page)) {
+    await page.goto(MENU_URL, { waitUntil: 'domcontentloaded' });
+  }
   const ok = await page
     .waitForSelector(SEL.categoryBtn, { timeout: 30000 })
     .then(() => true)
     .catch(() => false);
   if (!ok) {
     throw new Error(
-      'Категории не загрузились — скорее всего, сессия истекла. На этом ПК: node toggle.mjs login'
+      `Категории не загрузились (url: ${page.url()}) — скорее всего, сессия истекла. ` +
+        'Вход: node toggle.mjs login, либо перенос сессии: export-session / import-session'
     );
   }
   directClicks = false;
@@ -460,9 +495,80 @@ export async function runOn({ headless = false, log = console.log } = {}) {
 
 /** Открыть окно для ручного входа; закрытие окна = конец. */
 export async function runLogin() {
+  if (defaultHeadless()) {
+    console.log(
+      'Здесь нет дисплея — войти руками нельзя. Перенесите сессию с машины, где вход уже сделан:\n' +
+        '  там:   node toggle.mjs export-session   → session.json\n' +
+        '  здесь: node toggle.mjs import-session session.json'
+    );
+    process.exit(1);
+  }
   const { context, page } = await openBrowser({ headless: false });
   await page.goto(HUB_URL);
   console.log('Войдите в Partner Hub в открывшемся окне.');
   console.log('Когда увидите кабинет — просто закройте окно браузера.');
   await context.waitForEvent('close', { timeout: 0 }).catch(() => {});
+}
+
+/**
+ * Перенос сессии Hub на другую машину (например, на Linux-сервер без экрана).
+ * Папку profile/ между ОС копировать нельзя — cookies там зашифрованы ключами
+ * ОС; Playwright же отдаёт их расшифрованными через storageState.
+ * session.json = доступ к кабинету Lieferando, после импорта удалить.
+ */
+export async function exportSession({ file, log = console.log } = {}) {
+  const { context, page } = await openBrowser({ headless: true });
+  try {
+    // storageState берёт localStorage только у origin'ов, открытых в сессии
+    await page.goto(HUB_URL, { waitUntil: 'domcontentloaded' }).catch(() => {});
+    await page.waitForTimeout(1500);
+    const state = await context.storageState();
+    fs.writeFileSync(file, JSON.stringify(state, null, 2));
+    const hub = state.cookies.filter((c) => /takeaway|justeat|lieferando/i.test(c.domain)).length;
+    log(`Сессия сохранена в ${file}: cookies ${state.cookies.length} (Hub: ${hub}), origins ${state.origins.length}.`);
+    if (!hub) log('⚠️ Cookies Partner Hub не найдены — на этой машине сессии нет (node toggle.mjs login).');
+    log('⚠️ Файл даёт доступ к кабинету Lieferando — после импорта на сервере удалите его.');
+  } finally {
+    await context.close();
+  }
+}
+
+export async function importSession({ file, headless = defaultHeadless(), log = console.log } = {}) {
+  const state = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const { context, page } = await openBrowser({ headless });
+  try {
+    await context.addCookies(state.cookies || []);
+    // localStorage пишем init-скриптом при первом заходе на origin — это
+    // внедряется через CDP до скриптов страницы и не упирается в CSP.
+    if (state.origins?.length) {
+      await context.addInitScript((origins) => {
+        const o = origins.find((x) => x.origin === location.origin);
+        if (!o || localStorage.getItem('__lief_session_imported')) return;
+        for (const { name, value } of o.localStorage) localStorage.setItem(name, value);
+        localStorage.setItem('__lief_session_imported', '1');
+      }, state.origins);
+    }
+    await page.goto(HUB_URL, { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(3000);
+    log(`Импортировано: cookies ${state.cookies?.length || 0}, origins ${state.origins?.length || 0}. Проверяю вход…`);
+    let ok = true;
+    let why = '';
+    try {
+      await openMenu(page);
+    } catch (e) {
+      ok = false;
+      why = String(e?.message || e).split('\n')[0];
+    }
+    if (ok) {
+      log('✅ Сессия принята: меню Partner Hub открывается. Дальше: node toggle.mjs list');
+      fs.rmSync(file, { force: true });
+      log(`${file} удалён.`);
+    } else {
+      await debugScreenshot(page, 'import-session', log);
+      log(`❌ Hub не принял сессию с этой машины: ${why}\n   См. скриншот в debug/; возможно, ботозащита или сессия уже истекла.`);
+      process.exitCode = 1;
+    }
+  } finally {
+    await context.close();
+  }
 }

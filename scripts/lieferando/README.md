@@ -73,3 +73,21 @@ node toggle.mjs on     # включить обратно ровно то, что
 
 Отключить: `LIEFERANDO_NO_SELF_UPDATE=1` в `.env`.
 Версия агента видна в строке «Агент на связи (…, v xxxx)» в панели бота.
+
+## Linux-сервер (VDS) — ноябрь 2026
+
+Агент может жить на Ubuntu-сервере без экрана вместо кассового ПК.
+Установка: `scp -r scripts/lieferando root@СЕРВЕР:/root/lieferando` →
+`bash /root/lieferando/setup-linux.sh` (Node 22, Chromium, пользователь
+`lieferando`, `/opt/lieferando`, systemd-сервис `lieferando-agent`).
+
+Вход в Hub без экрана: на машине, где сессия уже есть (касса, агент
+остановлен), `node toggle.mjs export-session` → `session.json` → на сервер →
+`lief import-session session.json` (проверит, что Hub пускает, и удалит файл).
+`session.json` = доступ к кабинету Lieferando, не пересылать в открытом виде.
+
+Если Hub не пускает headless с IP дата-центра: `HEADLESS=0` в `.env` —
+сервис уже запускается под `xvfb-run`, окно откроется на виртуальном дисплее.
+
+Обёртка `lief <команда>` = `node toggle.mjs` от имени сервисного пользователя.
+Логи: `journalctl -fu lieferando-agent`.
