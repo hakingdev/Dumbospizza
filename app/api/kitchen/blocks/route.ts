@@ -4,6 +4,9 @@ import { getSetting, getMewsPosEnabled } from '../../../../lib/settings';
 import { getCategories } from '../../../../lib/db/utils';
 import { fetchMewsPosCategories } from '../../../../lib/mews-pos/sync';
 import { getCategoryHours } from '../../../../lib/categories/category-hours';
+import { Product } from '../../../../lib/models/product.model';
+import { readSizeVariationStates } from '../../../../lib/size-variation-sync';
+import { normalizedSizeName } from '../../../../lib/size-variation-state';
 import {
   DEFAULT_WORKSHOP_BLOCK_MESSAGE,
   WORKSHOPS,
@@ -30,6 +33,9 @@ export const dynamic = 'force-dynamic';
  * собирает сам — только для тех цехов, чьи позиции реально лежат в корзине.
  * Сюда же — окна категорий по графику: витрина опрашивает этот адрес раз в
  * минуту, так серые бургеры «оживают» в 17:00 без перезагрузки.
+ * И стоп-лист позиций/размеров (стоп-бот, админка, POS): id снятых с продажи
+ * товаров и ключи выключенных размеров библиотеки — корзина живёт в браузере
+ * сутки, и строку, выключенную ПОСЛЕ её добавления, иначе отклонит только сервер.
  */
 export async function GET() {
   try {
@@ -39,6 +45,22 @@ export async function GET() {
 
     const blocks = readWorkshopBlocks(settings);
     const blockedWorkshops = activeWorkshopBlocks(blocks, now);
+
+    // Стоп-лист: все available=false (не только из бота) + неактивные размеры
+    // библиотеки (тот же 60-секундный кэш, что и гидрация товаров).
+    const [soldOutProducts, sizeVariations] = await Promise.all([
+      Product.find({ available: false }).select('available').lean(),
+      readSizeVariationStates(),
+    ]);
+    const soldOutProductIds = (soldOutProducts as any[]).map((product) => String(product._id));
+    const inactiveSizeKeys = Array.from(
+      new Set(
+        sizeVariations
+          .filter((variation) => variation.active === false)
+          .map((variation) => normalizedSizeName(variation.name))
+          .filter(Boolean)
+      )
+    );
     const template = settings[WORKSHOP_BLOCK_MESSAGE_KEY] || DEFAULT_WORKSHOP_BLOCK_MESSAGE;
 
     /** categoryId → остановленный цех, которому она принадлежит. */
@@ -81,6 +103,10 @@ export async function GET() {
          * open — можно ли заказать СЕЙЧАС (по часам сервера, с часами ресторана).
          */
         categoryHours: await getCategoryHours(),
+        /** Товары с available=false — корзина/чекаут помечают такие строки. */
+        soldOutProductIds,
+        /** Ключи (normalizedSizeName) размеров библиотеки с active=false. */
+        inactiveSizeKeys,
         message:
           blockedWorkshops.length > 0
             ? buildWorkshopBlockMessage(blockedWorkshops, {

@@ -137,7 +137,13 @@
     "terms_agb": "AGB (условиями)",
     "terms_and_the": "и",
     "terms_privacy": "политикой конфиденциальности",
-    "terms_suffix": "."
+    "terms_suffix": ".",
+    "sold_out_today": "Сегодня распродано",
+    "size_unavailable_today": "Размер сегодня недоступен",
+    "sold_out_summary_title": "Больше недоступно:",
+    "sold_out_hint": "Удалите недоступные товары, чтобы продолжить.",
+    "remove_unavailable": "Удалить недоступные товары",
+    "sold_out_cta": "Товары недоступны"
   },
   "delivery_check": {
     "alert_address": "Введите адрес",

@@ -5,7 +5,7 @@ import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ChevronLeft, Clock, CreditCard, Truck, Check, Landmark, Loader2, MapPin, Minus, Percent, Plus, Trash2, User, Wallet } from 'lucide-react'
-import { useCart, loyaltyRedeemBaseAmount } from '../../../lib/contexts/CartContext'
+import { useCart, loyaltyRedeemBaseAmount, type CartItem } from '../../../lib/contexts/CartContext'
 import { storageSet } from '../../../lib/safe-storage'
 import CouponInput from '../../../components/cart/CouponInput'
 import { getConflictingPromotions } from '../../../lib/promotions/coupon-conflict'
@@ -24,6 +24,13 @@ import { evaluateOrderHours } from '../../../lib/opening-schedule'
 import { useKitchenBlocks } from '../../../lib/contexts/KitchenBlocksContext'
 import { scheduleClosedCartMessage } from '../../../lib/categories/availability'
 import { ScheduleClosedItemNote } from '../../../components/cart/ScheduleClosedNotice'
+import { SoldOutItemNote, SoldOutSummary } from '../../../components/cart/SoldOutNotice'
+import {
+  linesFromOrderRejection,
+  soldOutCartMessage,
+  type SoldOutLine,
+  type SoldOutReason,
+} from '../../../lib/menu-stop/sold-out'
 import {
   WORKSHOP_BLOCK_HEADLINE,
   formatBlockTemplate,
@@ -193,8 +200,14 @@ export default function CheckoutPage() {
   const [orderSettings, setOrderSettings] = useState<any>(null)
   const [orderBlocked, setOrderBlocked] = useState(false)
   const [orderBlockMessage, setOrderBlockMessage] = useState('')
+  // Чем вызвана пауза: для стоп-листа баннер свой (перечень строк + «убрать»),
+  // общий амбер-баннер при нём не дублируем.
+  const [orderBlockKind, setOrderBlockKind] = useState<'kitchen' | 'global' | 'hours' | 'schedule' | 'sold_out' | null>(null)
+  // Строки, которые сервер уже отклонил (403 unavailableProductIds / 400 про
+  // размер): помечаем именно их, пока гость не уберёт их из корзины.
+  const [serverRejectedLines, setServerRejectedLines] = useState<Record<string, SoldOutReason>>({})
   // Остановленные цеха (стоп-бот) — общее состояние витрины, одно на всё приложение.
-  const { blockedWorkshopsForItems, messageFor: kitchenMessageFor, scheduleClosureFor, scheduleClosuresForItems } = useKitchenBlocks()
+  const { blockedWorkshopsForItems, messageFor: kitchenMessageFor, scheduleClosureFor, scheduleClosuresForItems, soldOutReasonFor, soldOutLinesIn } = useKitchenBlocks()
   const deliveryFacts = useDeliveryFacts()
 
   // Meta Pixel: начало оформления — один раз, когда корзина гидратирована и не пуста
@@ -373,6 +386,22 @@ export default function CheckoutPage() {
     [scheduleClosuresForItems, state.items]
   )
 
+  /**
+   * Строки стоп-листа: товар снят с продажи или размер выключен (стоп-бот,
+   * админка, POS) — по опросу /api/kitchen/blocks плюс то, что сервер уже
+   * отклонил при отправке. Сервер такую строку не примет — без неё заказ пройдёт.
+   */
+  const soldOutLinesInCart = useMemo<SoldOutLine<CartItem>[]>(() => {
+    const polled = soldOutLinesIn(state.items)
+    const seen = new Set(polled.map((line) => line.item.id))
+    const rejected = state.items
+      .filter((item) => serverRejectedLines[item.id] && !seen.has(item.id))
+      .map((item) => ({ item, reason: serverRejectedLines[item.id] }))
+    return [...polled, ...rejected]
+  }, [soldOutLinesIn, state.items, serverRejectedLines])
+  const soldOutReasonForLine = (item: CartItem): SoldOutReason | null =>
+    soldOutReasonFor(item) || serverRejectedLines[item.id] || null
+
   useEffect(() => {
     const evaluateOrderBlock = () => {
       const settings = orderSettings || {}
@@ -385,12 +414,14 @@ export default function CheckoutPage() {
       // срок: при «весь приём 10 мин + суши 30 мин» обещать 10 минут нельзя.
       if (blockedWorkshopsInCart.length > 0) {
         setOrderBlocked(true)
+        setOrderBlockKind('kitchen')
         setOrderBlockMessage(kitchenMessageFor(blockedWorkshopsInCart))
         return
       }
 
       if (blockedUntil && blockedUntil.getTime() > now.getTime()) {
         setOrderBlocked(true)
+        setOrderBlockKind('global')
         // {minutes}/@ и {time} в тексте из админки — как в сообщении про цех.
         setOrderBlockMessage(formatBlockTemplate(blockReason, blockedUntil.toISOString(), now))
         return
@@ -403,6 +434,7 @@ export default function CheckoutPage() {
       })
       if (!orderHours.accepting) {
         setOrderBlocked(true)
+        setOrderBlockKind('hours')
         setOrderBlockMessage(orderHours.message || '')
         return
       }
@@ -410,18 +442,28 @@ export default function CheckoutPage() {
       // Ресторан открыт, но часть корзины вне времени продажи — без неё заказ пройдёт.
       if (closedWindowsInCart.length > 0) {
         setOrderBlocked(true)
+        setOrderBlockKind('schedule')
         setOrderBlockMessage(scheduleClosedCartMessage(closedWindowsInCart))
         return
       }
 
+      // Стоп-лист: товар сняли / размер выключили, пока корзина лежала в браузере.
+      if (soldOutLinesInCart.length > 0) {
+        setOrderBlocked(true)
+        setOrderBlockKind('sold_out')
+        setOrderBlockMessage(soldOutCartMessage(soldOutLinesInCart))
+        return
+      }
+
       setOrderBlocked(false)
+      setOrderBlockKind(null)
       setOrderBlockMessage('')
     }
 
     evaluateOrderBlock()
     const interval = setInterval(evaluateOrderBlock, 60 * 1000)
     return () => clearInterval(interval)
-  }, [orderSettings, blockedWorkshopsInCart, kitchenMessageFor, closedWindowsInCart])
+  }, [orderSettings, blockedWorkshopsInCart, kitchenMessageFor, closedWindowsInCart, soldOutLinesInCart])
   
   // Sync local state with cart context (only when values actually change)
   useEffect(() => {
@@ -782,6 +824,12 @@ export default function CheckoutPage() {
     if (quantity < 1) removeItem(itemId)
     else updateItem(itemId, { quantity })
   }
+  // «Nicht verfügbare Artikel entfernen» из баннера стоп-листа: убираем все
+  // такие строки и снимаем ошибку отправки, которая о них говорила.
+  const removeSoldOutLines = () => {
+    soldOutLinesInCart.forEach((line) => removeItem(line.item.id))
+    setErrors(prev => { const n = { ...prev }; delete n.submit; return n })
+  }
 
   const chooseMinOrderSurcharge = (accept: boolean) => {
     setAcceptMinOrderSurcharge(accept)
@@ -991,6 +1039,15 @@ export default function CheckoutPage() {
       console.log('Order response:', data)
       
       if (!response.ok || !data.success) {
+        // Стоп-лист сработал на сервере (403 unavailableProductIds / 400 про
+        // размер): помечаем именно эти строки, а не только общий текст ошибки.
+        const rejectedLines = linesFromOrderRejection(state.items, response.status, data)
+        if (rejectedLines.length > 0) {
+          setServerRejectedLines(prev => ({
+            ...prev,
+            ...Object.fromEntries(rejectedLines.map((line) => [line.item.id, line.reason])),
+          }))
+        }
         const errorMessage = data.error || t('checkout.errors.order_failed', 'Bestellung konnte nicht erstellt werden')
         console.error('Order creation failed:', errorMessage)
         throw new Error(errorMessage)
@@ -1261,7 +1318,7 @@ export default function CheckoutPage() {
       
       {/* Пауза приёма (весь приём или цех) — видно на КАЖДОМ шаге, а не только
           перед оплатой: стоп мог начаться уже с наполненной корзиной. */}
-      {orderBlocked && (
+      {orderBlocked && orderBlockKind !== 'sold_out' && (
         <div className="mb-6 flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4">
           <span className="text-2xl leading-none" aria-hidden="true">
             ⏸️
@@ -1269,6 +1326,13 @@ export default function CheckoutPage() {
           <p className="text-sm leading-6 text-amber-900">{orderBlockMessage}</p>
         </div>
       )}
+      {/* Стоп-лист: перечень строк, которые сервер не примет, и «убрать все». */}
+      <SoldOutSummary
+        lines={soldOutLinesInCart}
+        onRemoveAll={itemsLocked ? undefined : removeSoldOutLines}
+        t={t}
+        className="mb-6"
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2">
@@ -1587,8 +1651,13 @@ export default function CheckoutPage() {
                   className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
                   onClick={handleNextStep}
                   disabled={orderBlocked || (deliveryType === 'delivery' && !deliveryGate.allowed)}
+                  title={orderBlockKind === 'sold_out' ? orderBlockMessage : undefined}
                 >
-                  {orderBlocked ? WORKSHOP_BLOCK_HEADLINE : t('common.next', 'Weiter')}
+                  {orderBlocked
+                    ? orderBlockKind === 'sold_out'
+                      ? t('cart.sold_out_cta', 'Artikel nicht verfügbar')
+                      : WORKSHOP_BLOCK_HEADLINE
+                    : t('common.next', 'Weiter')}
                 </button>
               </div>
             </div>
@@ -1881,6 +1950,7 @@ export default function CheckoutPage() {
                   className="btn-primary disabled:opacity-50"
                   onClick={handleSubmitOrder}
                   disabled={isSubmitting || orderBlocked || (deliveryType === 'delivery' && !deliveryGate.allowed)}
+                  title={orderBlockKind === 'sold_out' ? orderBlockMessage : undefined}
                 >
                   {isSubmitting ? (
                     <>
@@ -1920,12 +1990,23 @@ export default function CheckoutPage() {
                     );
                   
                     const closedWindow = scheduleClosureFor(item);
+                    const soldOutReason = soldOutReasonForLine(item);
                     return (
                       <div
                         key={`${item.id}-${item.size?.id || 'no-size'}-${index}`}
-                        className={`rounded-lg p-3 ${closedWindow ? 'bg-amber-50 ring-1 ring-amber-200' : 'bg-gray-50'}`}
+                        data-testid="cart-line"
+                        data-sold-out={soldOutReason || undefined}
+                        className={`rounded-lg p-3 ${
+                          soldOutReason
+                            ? 'bg-red-50 ring-1 ring-red-200'
+                            : closedWindow
+                              ? 'bg-amber-50 ring-1 ring-amber-200'
+                              : 'bg-gray-50'
+                        }`}
                       >
-                        {closedWindow && (
+                        {soldOutReason ? (
+                          <SoldOutItemNote reason={soldOutReason} onRemove={() => removeItem(item.id)} t={t} />
+                        ) : closedWindow && (
                           <ScheduleClosedItemNote window={closedWindow} onRemove={() => removeItem(item.id)} />
                         )}
                         <div className="flex justify-between items-start">

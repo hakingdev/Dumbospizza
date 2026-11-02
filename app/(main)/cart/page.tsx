@@ -17,6 +17,7 @@ import { useKitchenBlocks } from '../../../lib/contexts/KitchenBlocksContext'
 import { WORKSHOP_BLOCK_HEADLINE } from '../../../lib/kitchen/workshops'
 import { SCHEDULE_CLOSED_HEADLINE } from '../../../lib/categories/availability'
 import { ScheduleClosedItemNote, ScheduleClosedSummary } from '../../../components/cart/ScheduleClosedNotice'
+import { SoldOutItemNote, SoldOutSummary } from '../../../components/cart/SoldOutNotice'
 import { getConflictingPromotions } from '../../../lib/promotions/coupon-conflict'
 import { PROMO_CONFLICT_MESSAGE } from '../../../components/cart/PromoConflictDialog'
 import { REPEAT_SKIPPED_STORAGE_KEY } from '../../../lib/orders/repeat-notice'
@@ -119,11 +120,19 @@ export default function CartPage() {
   const couponOrderAmount = state.items.reduce((s, i) => s + i.price * i.quantity, 0);
 
   // Стоп цеха мог начаться уже после наполнения корзины.
-  const { blockedWorkshopFor, blockedWorkshopsForItems, messageFor, showNotice, scheduleClosureFor, scheduleClosuresForItems } = useKitchenBlocks();
+  const { blockedWorkshopFor, blockedWorkshopsForItems, messageFor, showNotice, scheduleClosureFor, scheduleClosuresForItems, soldOutReasonFor, soldOutLinesIn } = useKitchenBlocks();
   const blockedInCart = blockedWorkshopsForItems(state.items);
   // Окно категории могло закрыться, пока товар лежал в корзине (бургер в 21:50 → 22:05).
   const closedInCart = scheduleClosuresForItems(state.items);
-  const checkoutBlocked = blockedInCart.length > 0 || closedInCart.length > 0;
+  // Стоп-лист (стоп-бот/админка/POS): товар сняли или размер выключили уже после
+  // добавления — сервер такую строку отклонит, предупреждаем до оформления.
+  const soldOutInCart = soldOutLinesIn(state.items);
+  const removeSoldOutLines = () => soldOutInCart.forEach((line) => removeItem(line.item.id));
+  const checkoutBlocked = blockedInCart.length > 0 || closedInCart.length > 0 || soldOutInCart.length > 0;
+  const checkoutHint =
+    soldOutInCart.length > 0 && blockedInCart.length === 0
+      ? t('cart.sold_out_hint', 'Bitte entfernen Sie die nicht verfügbaren Artikel, um fortzufahren.')
+      : undefined;
 
   const handleProceedToCheckout = () => {
     // Цех встал уже с наполненной корзиной — дальше не пускаем.
@@ -131,7 +140,7 @@ export default function CartPage() {
       showNotice(blockedInCart);
       return;
     }
-    if (closedInCart.length > 0) return;
+    if (closedInCart.length > 0 || soldOutInCart.length > 0) return;
     // Награда BOGO опциональна — не блокируем оформление.
     if (needsGiftSelection) {
       openGiftModal();
@@ -215,9 +224,18 @@ export default function CartPage() {
               {/* Невидимый h2: без него после h1 «Warenkorb» сразу шли h3 позиций */}
               <h2 className="sr-only">{t('cart.items', 'Artikel im Warenkorb')}</h2>
               <ul className="divide-y divide-gray-200">
-                {state.items.map((item) => (
-                  <li key={item.id} className={`p-4 ${blockedWorkshopFor(item) || scheduleClosureFor(item) ? 'bg-amber-50' : ''}`}>
-                    {blockedWorkshopFor(item) ? (
+                {state.items.map((item) => {
+                  const soldOutReason = soldOutReasonFor(item);
+                  return (
+                  <li
+                    key={item.id}
+                    data-testid="cart-line"
+                    data-sold-out={soldOutReason || undefined}
+                    className={`p-4 ${soldOutReason ? 'bg-red-50' : blockedWorkshopFor(item) || scheduleClosureFor(item) ? 'bg-amber-50' : ''}`}
+                  >
+                    {soldOutReason ? (
+                      <SoldOutItemNote reason={soldOutReason} onRemove={() => removeItem(item.id)} t={t} />
+                    ) : blockedWorkshopFor(item) ? (
                       <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-700">
                         ⏸️ {WORKSHOP_BLOCK_HEADLINE}
                       </p>
@@ -300,7 +318,8 @@ export default function CartPage() {
                       </div>
                     </div>
                   </li>
-                ))}
+                  );
+                })}
               </ul>
               {/* Награды акции — строками рядом с товарами */}
               <div className="p-4 pt-0 space-y-2">
@@ -408,11 +427,16 @@ export default function CartPage() {
 
               <ScheduleClosedSummary windows={closedInCart} className="mb-4" />
 
+              <SoldOutSummary lines={soldOutInCart} onRemoveAll={removeSoldOutLines} t={t} className="mb-4" />
+
               <button
                 type="button"
                 onClick={handleProceedToCheckout}
                 disabled={checkoutBlocked}
-                className={`w-full mb-4 flex items-center justify-center ${
+                title={checkoutHint}
+                aria-describedby={checkoutHint ? 'cart-checkout-hint' : undefined}
+                data-testid="cart-checkout"
+                className={`w-full flex items-center justify-center ${checkoutHint ? 'mb-2' : 'mb-4'} ${
                   checkoutBlocked
                     ? 'min-h-[48px] cursor-not-allowed rounded-lg bg-gray-200 font-medium text-gray-600'
                     : 'btn-primary'
@@ -422,8 +446,15 @@ export default function CartPage() {
                   ? WORKSHOP_BLOCK_HEADLINE
                   : closedInCart.length > 0
                     ? SCHEDULE_CLOSED_HEADLINE
-                    : t('cart.proceed_to_checkout')}
+                    : soldOutInCart.length > 0
+                      ? t('cart.sold_out_cta', 'Artikel nicht verfügbar')
+                      : t('cart.proceed_to_checkout')}
               </button>
+              {checkoutHint && (
+                <p id="cart-checkout-hint" className="mb-4 text-center text-xs leading-5 text-gray-600">
+                  {checkoutHint}
+                </p>
+              )}
               
               {/* No registration required message */}
               <div className="flex items-center justify-center text-center text-sm text-gray-600 mb-4 bg-gray-50 p-2 rounded">
