@@ -195,6 +195,11 @@ export interface MenuCategoryRow {
   name: string;
   itemCount: number;
   stoppedCount: number;
+  /**
+   * Категория есть только на Lieferando (из снимка каталога, lib/lieferando/catalog):
+   * id — hub-c<хэш>, позиции в ней — только Hub-строки.
+   */
+  hubOnly?: boolean;
 }
 
 export interface MenuItemRow {
@@ -203,6 +208,20 @@ export interface MenuItemRow {
   categoryId: string;
   available: boolean;
   botStop: MenuBotStop;
+  /**
+   * Позиция есть только на Lieferando (нет товара на сайте): id — hub-i<хэш>,
+   * name — точное имя из Hub, available — общий переключатель по снимку.
+   * Кнопка ставит агенту команду item с этим именем; на сайте переключать нечего.
+   */
+  hubOnly?: boolean;
+}
+
+/** Экран категории: строки сайта + Hub-строки без пары (hubOnly) и время снимка Hub. */
+export interface MenuCategoryItems {
+  category: MenuCategoryRow | null;
+  items: MenuItemRow[];
+  /** takenAt снимка каталога Lieferando, если в списке есть Hub-строки */
+  hubSnapshotAt?: string | null;
 }
 
 /** Порт, через который экраны бота ходят к флагам (живая реализация — ./service). */
@@ -213,12 +232,15 @@ export interface MenuStopPort {
   listSizes(): PromiseLike<MenuSizeRow[]>;
   /** Выключение берёт срок из текущего режима; включение снимает запись бота. */
   setSizeActive(variationId: string, active: boolean): PromiseLike<MenuSizeRow | null>;
+  /** Категории сайта + виртуальные категории Hub (hubOnly), где есть строки без пары. */
   listCategories(): PromiseLike<MenuCategoryRow[]>;
-  listCategoryItems(
-    categoryId: string
-  ): PromiseLike<{ category: MenuCategoryRow | null; items: MenuItemRow[] }>;
+  listCategoryItems(categoryId: string): PromiseLike<MenuCategoryItems>;
+  /**
+   * id товара сайта — флаг available (+ запись бота); id hub-i… — только
+   * состояние в снимке Lieferando (оптимистично) и запись бота в режиме «бессрочно».
+   */
   setItemAvailable(productId: string, available: boolean): PromiseLike<MenuItemRow | null>;
-  /** Включает все выключенные позиции категории; возвращает включённые. */
+  /** Включает все выключенные позиции категории (и Hub-строки без пары); возвращает включённые. */
   enableCategoryItems(categoryId: string): PromiseLike<MenuItemRow[]>;
 }
 
@@ -227,12 +249,13 @@ export interface MenuStopPort {
  * `LieferandoTarget` из lib/lieferando-makilove.ts: size — имя размера сайта
  * («30 cm», «ca. 27x37»), агент матчит варианты Hub по числам; item — имена
  * товаров сайта, агент матчит строки Hub нормализованно (без «Pizza»,
- * «(rund)», регистра).
+ * «(rund)», регистра); catalog — снимок каталога Hub (ничего не переключает).
  */
 export type LieferandoMenuTarget =
   | { kind: 'makilove' }
   | { kind: 'size'; label: string }
-  | { kind: 'item'; names: string[] };
+  | { kind: 'item'; names: string[] }
+  | { kind: 'catalog' };
 
 /** Страница списка: номер зажимается в [0, pages-1], пустой список — одна страница. */
 export function paginate<T>(

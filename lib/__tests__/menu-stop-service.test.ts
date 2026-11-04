@@ -195,3 +195,140 @@ describe('claimDailyReapply / markDailyReapply (утренний триггер 
     expect(mSet).toHaveBeenCalledTimes(1);
   });
 });
+
+// --- позиции только на Lieferando (снимок каталога Hub в ключе lieferandoCatalog) ----
+
+import { enableCategoryItems, listCategoryItems, listMenuCategories } from '../menu-stop/service';
+import { LIEFERANDO_CATALOG_KEY, hubCategoryId, hubItemId } from '../lieferando/catalog';
+
+describe('Hub-строки без пары на сайте', () => {
+  const catalog = () => ({
+    takenAt: '2026-11-04T08:00:00.000Z',
+    receivedAt: '2026-11-04T08:01:00.000Z',
+    failedCategories: [],
+    hubOnlyKeys: [],
+    mismatchKeys: [],
+    categories: [
+      {
+        name: 'Angebot',
+        items: [
+          { name: 'Gyoza Gemüse Vegetarische (7 Stück)', on: true, variations: [] },
+          { name: 'Neu: Sushi Balls Lachs Panko 7stk', on: false, variations: [] },
+        ],
+      },
+      {
+        name: 'Burger',
+        items: [
+          { name: 'Dry Aged Burger', on: true, variations: [] },
+          { name: 'Shrimp Party Burger', on: false, variations: [] },
+        ],
+      },
+    ],
+  });
+  const BURGER_ID = hubCategoryId('Burger');
+  const SUSHI_ID = hubItemId('Neu: Sushi Balls Lachs Panko 7stk');
+  const SHRIMP_ID = hubItemId('Shrimp Party Burger');
+
+  /** settings по ключам: стоп-лист бота, настройки магазина, снимок каталога (изменяемый). */
+  const withCatalog = (menuStop: any, cat: any = catalog()) => {
+    let stored = cat;
+    mGet.mockImplementation(async (key: string, fallback: any) =>
+      key === MENU_STOP_KEY ? menuStop : key === 'storeSettings' ? STORE : key === LIEFERANDO_CATALOG_KEY ? stored : fallback
+    );
+    mSet.mockImplementation(async (key: string, value: any) => {
+      if (key === LIEFERANDO_CATALOG_KEY) stored = value;
+    });
+    return () => stored;
+  };
+  const siteProducts = [{ _id: 'p1', name: 'Gyoza Gemüse (7 Stück)', category: 'angebot1', available: true }];
+
+  beforeEach(() => {
+    models.category.find.mockImplementation(() =>
+      models.chain([{ _id: 'angebot1', name: 'Angebot', active: true }])
+    );
+    models.product.find.mockImplementation(() => models.chain(siteProducts));
+  });
+
+  it('listMenuCategories: Angebot считает свой Hub-довесок, Burger — виртуальная категория', async () => {
+    withCatalog({ sizes: {}, products: {} });
+    const rows = await listMenuCategories(NOW);
+    expect(rows).toEqual([
+      { id: 'angebot1', name: 'Angebot', itemCount: 2, stoppedCount: 1 },
+      { id: BURGER_ID, name: 'Burger', itemCount: 2, stoppedCount: 1, hubOnly: true },
+    ]);
+  });
+
+  it('без снимка каталога экран как раньше', async () => {
+    settings({ sizes: {}, products: {} }, STORE);
+    const rows = await listMenuCategories(NOW);
+    expect(rows).toEqual([{ id: 'angebot1', name: 'Angebot', itemCount: 1, stoppedCount: 0 }]);
+  });
+
+  it('listCategoryItems: Hub-строки ниже товаров сайта (Angebot) и целиком в виртуальной (Burger)', async () => {
+    withCatalog({ sizes: {}, products: { [SHRIMP_ID]: { until: null, name: 'Shrimp Party Burger' } } });
+    models.category.findById.mockReturnValue({ lean: async () => ({ _id: 'angebot1', name: 'Angebot' }) });
+    const angebot = await listCategoryItems('angebot1', NOW);
+    expect(angebot.items.map((i) => [i.id, i.name, i.available, i.hubOnly ?? false])).toEqual([
+      ['p1', 'Gyoza Gemüse (7 Stück)', true, false],
+      [SUSHI_ID, 'Neu: Sushi Balls Lachs Panko 7stk', false, true],
+    ]);
+    expect(angebot.hubSnapshotAt).toBe('2026-11-04T08:00:00.000Z');
+    expect(angebot.category).toMatchObject({ itemCount: 2, stoppedCount: 1 });
+
+    const burger = await listCategoryItems(BURGER_ID, NOW);
+    expect(burger.category).toEqual({ id: BURGER_ID, name: 'Burger', itemCount: 2, stoppedCount: 1, hubOnly: true });
+    expect(burger.items.map((i) => [i.name, i.available, i.botStop])).toEqual([
+      ['Dry Aged Burger', true, null],
+      ['Shrimp Party Burger', false, { until: null }], // бессрочная запись бота
+    ]);
+    expect((await listCategoryItems('hub-c00000000', NOW)).category).toBeNull();
+  });
+
+  it('setProductAvailable(hub-i…): снимок обновлён оптимистично, запись бота только в «бессрочно»', async () => {
+    const stored = withCatalog({ mode: 'indefinite', sizes: {}, products: {} });
+    const row = await setProductAvailable(SHRIMP_ID, false, NOW);
+    expect(models.product.findByIdAndUpdate).not.toHaveBeenCalled();
+    expect(row).toMatchObject({ id: SHRIMP_ID, name: 'Shrimp Party Burger', available: false, hubOnly: true, categoryId: BURGER_ID, botStop: { until: null } });
+    expect(written().products[SHRIMP_ID]).toEqual({ until: null, name: 'Shrimp Party Burger' });
+
+    const on = await setProductAvailable(SHRIMP_ID, true, NOW);
+    expect(on).toMatchObject({ available: true, botStop: null });
+    expect(written().products).toEqual({});
+    expect(stored().categories[1].items[1].on).toBe(true);
+
+    // Hub-довесок категории сайта возвращает id ЭТОЙ категории — экран перерисуется там
+    const sushi = await setProductAvailable(SUSHI_ID, true, NOW);
+    expect(sushi?.categoryId).toBe('angebot1');
+    expect(await setProductAvailable('hub-i00000000', false, NOW)).toBeNull();
+  });
+
+  it('setProductAvailable(hub-i…) в режиме «до конца дня»: записи бота нет — Hub включит сам', async () => {
+    withCatalog({ mode: 'day', sizes: {}, products: {} });
+    const row = await setProductAvailable(SHRIMP_ID, false, NOW);
+    expect(row).toMatchObject({ available: false, botStop: null });
+    expect(written().products).toEqual({});
+  });
+
+  it('enableCategoryItems: виртуальная категория включает Hub-строки без записи в товары', async () => {
+    const stored = withCatalog({ sizes: {}, products: { [SHRIMP_ID]: { until: null, name: 'Shrimp Party Burger' } } });
+    const enabled = await enableCategoryItems(BURGER_ID);
+    expect(models.product.updateMany).not.toHaveBeenCalled();
+    expect(enabled.map((i) => [i.name, i.available, i.hubOnly])).toEqual([['Shrimp Party Burger', true, true]]);
+    expect(written().products).toEqual({});
+    expect(stored().categories[1].items[1].on).toBe(true);
+  });
+
+  it('reconcileIndefiniteMenuStops: бессрочная Hub-запись держится, пока строка есть в снимке', async () => {
+    withCatalog({
+      mode: 'indefinite',
+      sizes: {},
+      products: {
+        [SHRIMP_ID]: { until: null, name: 'Shrimp Party Burger' },
+        'hub-i00000000': { until: null, name: 'Удалённый бургер' },
+      },
+    });
+    const r = await reconcileIndefiniteMenuStops();
+    expect(r.products).toEqual([{ id: SHRIMP_ID, name: 'Shrimp Party Burger' }]);
+    expect(Object.keys(written().products)).toEqual([SHRIMP_ID]);
+  });
+});

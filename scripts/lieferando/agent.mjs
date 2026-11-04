@@ -5,15 +5,26 @@
  * { id, action: off|on, target }, прокликивает переключатели в Partner Hub
  * (core.mjs) и отчитывается POST'ом — сервер шлёт итог в Telegram-группу
  * стоп-бота. Цели (target.kind): makilove — все позиции MakiLove (runOff/runOn);
- * size — размер у всех строк вне MakiLove; item — позиции по именам (runSet).
- * Заголовок X-Agent-Caps: targets говорит серверу, что size/item нам можно
- * отдавать (старому агенту без него сервер их не отдаёт).
+ * size — размер у всех строк вне MakiLove; item — позиции по именам (runSet);
+ * catalog — снимок всего каталога Hub (runCatalog, ничего не переключает),
+ * который уходит POST'ом на /api/lieferando/agent/catalog — сервер сверяет его
+ * с сайтом и пишет в группу только изменения.
+ * Заголовок X-Agent-Caps: targets catalog говорит серверу, что size/item и
+ * catalog нам можно отдавать (старому агенту без них сервер их не отдаёт).
+ *
+ * Снимок каталога агент снимает и САМ раз в сутки — в CATALOG_HOUR по
+ * Europe/Berlin (по умолчанию 09:00), когда очередь пуста. Цикл агента строго
+ * последовательный, поэтому второй браузер рядом с утренним перевыключением
+ * бессрочного стоп-листа (сервер ставит его в очередь после 08:30) не
+ * откроется: сначала команды, потом каталог.
  *
  * env (можно в .env рядом, см. README):
  *   LIEFERANDO_AGENT_SECRET — общий секрет (или PRINT_AGENT_SECRET, как у печати)
  *   API_BASE_URL            — по умолчанию https://www.dumbospizza.de (строго www!
  *                             apex отвечает 308 и POST теряется — как у print-agent)
  *   LIEFERANDO_POLL_MS      — период поллинга, по умолчанию 20000
+ *   LIEFERANDO_CATALOG_HOUR — час (Europe/Berlin) ежедневного снимка каталога,
+ *                             по умолчанию 9; -1 — выключить
  *   HEADLESS                — 1 (по умолч.) без окна; 0 — с окном, если
  *                             ботозащита Hub не пускает headless
  *
@@ -26,25 +37,19 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { runOff, runOn, runSet } from './core.mjs';
+import { STATE_DIR, loadDotEnv, postCatalog, runCatalog, runOff, runOn, runSet } from './core.mjs';
 
-// .env рядом со скриптом (KEY=value построчно) — чтобы на кассовом ПК не
-// настраивать переменные окружения; реальный env имеет приоритет.
-try {
-  const envFile = path.join(path.dirname(fileURLToPath(import.meta.url)), '.env');
-  for (const line of fs.readFileSync(envFile, 'utf8').split(/\r?\n/)) {
-    const m = /^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/.exec(line);
-    if (m && !(m[1] in process.env)) process.env[m[1]] = m[2].replace(/^["']|["']$/g, '');
-  }
-} catch {
-  /* .env нет — ок, работаем от переменных окружения */
-}
+loadDotEnv();
 
 const API_BASE_URL = (process.env.API_BASE_URL || 'https://www.dumbospizza.de').replace(/\/$/, '');
 const SECRET = process.env.LIEFERANDO_AGENT_SECRET || process.env.PRINT_AGENT_SECRET || '';
 const AGENT_ID = process.env.LIEFERANDO_AGENT_ID || os.hostname();
 const POLL_MS = Math.max(5000, Number(process.env.LIEFERANDO_POLL_MS) || 20000);
 const HEADLESS = process.env.HEADLESS !== '0';
+const CATALOG_HOUR = process.env.LIEFERANDO_CATALOG_HOUR == null || process.env.LIEFERANDO_CATALOG_HOUR === ''
+  ? 9
+  : Number(process.env.LIEFERANDO_CATALOG_HOUR);
+const CATALOG_TZ = process.env.LIEFERANDO_TZ || 'Europe/Berlin';
 
 if (!SECRET) {
   console.error('Нет секрета: задайте LIEFERANDO_AGENT_SECRET (или PRINT_AGENT_SECRET).');
@@ -128,8 +133,8 @@ const HEADERS = {
   'X-Lieferando-Agent-Key': SECRET,
   'X-Lieferando-Agent-Id': AGENT_ID,
   'X-Agent-Version': '',
-  // умеем цели size/item — без этого сервер отдаёт только команды MakiLove
-  'X-Agent-Caps': 'targets',
+  // умеем цели size/item и снимок каталога — без этого сервер отдаёт только команды MakiLove
+  'X-Agent-Caps': 'targets catalog',
   'Content-Type': 'application/json',
 };
 HEADERS['X-Agent-Version'] = localVersion();
@@ -155,7 +160,9 @@ const describeTarget = (t) =>
     ? `размер «${t.label}»`
     : t.kind === 'item'
       ? `позиции: ${t.names.join(', ')}`
-      : 'MakiLove';
+      : t.kind === 'catalog'
+        ? 'снимок каталога'
+        : 'MakiLove';
 
 /** Диспетчер по виду цели. Команда без target — старый формат, т.е. MakiLove. */
 function runCommand(command) {
@@ -169,6 +176,11 @@ function runCommand(command) {
 async function execute(command) {
   const target = command.target || { kind: 'makilove' };
   log(`Команда: ${command.action} — ${describeTarget(target)} (id ${command.id})`);
+  if (target.kind === 'catalog') {
+    // Снимок уходит на свой эндпоинт; он же закрывает команду в очереди по id.
+    await takeCatalog({ id: command.id, reason: 'command' });
+    return;
+  }
   let result;
   try {
     const r = await runCommand(command);
@@ -193,8 +205,95 @@ async function execute(command) {
   }
 }
 
+// --- снимок каталога -------------------------------------------------------------
+
+/**
+ * Снять каталог и отправить на сервер. Сбой снятия (сессия истекла, Hub лёг)
+ * тоже уходит на сервер — он напишет в группу; сбой отправки — только в лог
+ * (команда из очереди протухнет и будет отдана заново, ежедневный снимок
+ * повторится завтра).
+ */
+async function takeCatalog({ id = null, reason }) {
+  let body;
+  try {
+    const snap = await runCatalog({ headless: HEADLESS, log });
+    body = {
+      ok: snap.ok,
+      takenAt: snap.takenAt,
+      categories: snap.categories,
+      failedCategories: snap.failedCategories,
+      error: snap.ok ? '' : snap.message || 'каталог пуст',
+    };
+  } catch (e) {
+    log('ОШИБКА снимка каталога:', e.message);
+    body = { ok: false, error: e.message?.slice(0, 300) || 'неизвестная ошибка' };
+  }
+  try {
+    await postCatalog(
+      { ...body, id, reason, agentId: AGENT_ID },
+      { apiBaseUrl: API_BASE_URL, secret: SECRET, agentId: AGENT_ID, version: HEADERS['X-Agent-Version'] }
+    );
+    log(`Снимок каталога отправлен: ok=${body.ok}${body.ok ? `, категорий ${body.categories.length}` : ''}`);
+  } catch (e) {
+    log('Не смог отправить снимок каталога:', e.message);
+  }
+}
+
+// Ежедневный снимок: день последнего запуска помним и в файле — перезапуск
+// агента в 09:30 не должен снимать каталог второй раз.
+const CATALOG_DAY_FILE = path.join(STATE_DIR, 'catalog-day.json');
+
+function readCatalogDay() {
+  try {
+    const day = JSON.parse(fs.readFileSync(CATALOG_DAY_FILE, 'utf8'))?.day;
+    return typeof day === 'string' ? day : '';
+  } catch {
+    return '';
+  }
+}
+
+function writeCatalogDay(day) {
+  try {
+    fs.mkdirSync(STATE_DIR, { recursive: true });
+    fs.writeFileSync(CATALOG_DAY_FILE, JSON.stringify({ day }));
+  } catch (e) {
+    log('Не смог записать день снимка каталога:', e.message);
+  }
+}
+
+/** Дата и час в зоне ресторана: { day: 'YYYY-MM-DD', hour } */
+export function localDayHour(now = new Date(), timeZone = CATALOG_TZ) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(now);
+  const get = (type) => parts.find((p) => p.type === type)?.value || '';
+  return { day: `${get('year')}-${get('month')}-${get('day')}`, hour: Number(get('hour')) };
+}
+
+let lastCatalogDay = readCatalogDay();
+
+/** Пора ли снимать ежедневный каталог: час настал и сегодня ещё не снимали. */
+function catalogDue(now = new Date()) {
+  if (!Number.isFinite(CATALOG_HOUR) || CATALOG_HOUR < 0) return false;
+  const { day, hour } = localDayHour(now);
+  return hour >= CATALOG_HOUR && lastCatalogDay !== day;
+}
+
+async function dailyCatalog() {
+  // день отмечаем ДО запуска: упавший снимок не должен зациклить агента
+  lastCatalogDay = localDayHour().day;
+  writeCatalogDay(lastCatalogDay);
+  log(`Ежедневный снимок каталога (${CATALOG_HOUR}:00 ${CATALOG_TZ})…`);
+  await takeCatalog({ reason: 'daily' });
+}
+
 log(
-  `Агент Lieferando запущен: ${API_BASE_URL}, id=${AGENT_ID}, v=${HEADERS['X-Agent-Version']}, poll=${POLL_MS}ms, headless=${HEADLESS}, автообновление=${SELF_UPDATE ? 'вкл' : 'ВЫКЛ'}`
+  `Агент Lieferando запущен: ${API_BASE_URL}, id=${AGENT_ID}, v=${HEADERS['X-Agent-Version']}, poll=${POLL_MS}ms, headless=${HEADLESS}, автообновление=${SELF_UPDATE ? 'вкл' : 'ВЫКЛ'}, каталог=${CATALOG_HOUR >= 0 ? `${CATALOG_HOUR}:00 ${CATALOG_TZ}` : 'выкл'}`
 );
 // Простой последовательный цикл: пока команда выполняется — не поллим.
 let nextUpdateCheckAt = 0; // первый раз — сразу при старте
@@ -210,6 +309,7 @@ for (;;) {
   try {
     const command = await poll();
     if (command) await execute(command);
+    else if (catalogDue()) await dailyCatalog(); // только при пустой очереди — команды важнее
   } catch (e) {
     log('Поллинг не удался:', e.message); // сеть/деплой — просто ждём следующего тика
   }

@@ -24,6 +24,10 @@
  * кнопок (ряд выбора вверху экрана, хранится в ключе menuStopBot): ⏳ «до конца
  * дня» (по умолчанию, включится само) или ⛔ «бессрочно» (до ручного
  * включения; на Lieferando перевыключается каждое утро — lib/menu-stop/reapply).
+ * Позиции, которых нет на сайте, но есть в Lieferando (снимок каталога,
+ * lib/lieferando/catalog), показаны там же с пометкой 🛵 — их кнопка ставит
+ * агенту команду с точным именем из Hub; «🛵 Сверить с Lieferando» заказывает
+ * агенту свежий снимок.
  *
  * Отдельный токен/секрет/чат от бота статусов заказов (lib/telegram.ts).
  * Работает через прямой fetch к Bot API — без node-telegram-bot-api и без
@@ -45,6 +49,7 @@ import {
   paginate,
   type LieferandoMenuTarget,
   type MenuBotStop,
+  type MenuCategoryItems,
   type MenuCategoryRow,
   type MenuItemRow,
   type MenuSizeRow,
@@ -91,9 +96,12 @@ export const LIEF_MENU = 'ctrl_lief_menu';
 export const LIEF_OFF = 'ctrl_lief_off';
 export const LIEF_ON = 'ctrl_lief_on';
 export const LIEF_STATUS = 'ctrl_lief_status';
+/** Кнопка на экране «📋 Позиции»: заказать агенту свежий снимок каталога Hub. */
+export const LIEF_CATALOG = 'ctrl_lief_catalog';
 
 // Экраны «🍕 Размеры» и «📋 Позиции» — стоп-лист сайта (lib/menu-stop) и команда
-// агенту Lieferando тем же нажатием. id — 24-hex: callback_data остаётся ≤ 64 байт.
+// агенту Lieferando тем же нажатием. id — 24-hex (у Hub-строк без пары на сайте —
+// hub-i<8hex>, у виртуальных категорий Hub — hub-c<8hex>): callback_data ≤ 64 байт.
 export const SIZES_MENU = 'ctrl_sz_menu';
 export const ITEMS_MENU = 'ctrl_it_menu';
 export const ctrlSizeSet = (variationId: string, active: boolean) =>
@@ -146,7 +154,8 @@ export type ControlAction =
   | { type: 'items_category'; categoryId: string; page: number }
   | { type: 'item_set'; productId: string; available: boolean; page: number }
   | { type: 'items_enable_all'; categoryId: string; page: number }
-  | { type: 'menu_mode'; mode: MenuStopMode; back: MenuStopBack };
+  | { type: 'menu_mode'; mode: MenuStopMode; back: MenuStopBack }
+  | { type: 'catalog_sync' };
 
 /** Действия экранов «Размеры»/«Позиции» — отдельный конвейер (lib/menu-stop). */
 export type MenuStopAction = Extract<
@@ -159,7 +168,8 @@ export type MenuStopAction = Extract<
       | 'items_category'
       | 'item_set'
       | 'items_enable_all'
-      | 'menu_mode';
+      | 'menu_mode'
+      | 'catalog_sync';
   }
 >;
 
@@ -240,6 +250,8 @@ export function parseControlAction(data: unknown): ControlAction | null {
       return { type: 'sizes_menu' };
     case ITEMS_MENU:
       return { type: 'items_menu' };
+    case LIEF_CATALOG:
+      return { type: 'catalog_sync' };
   }
 
   // Стоп-лист: id — 24-hex (на всякий случай пускаем до 36 символов, UUID).
@@ -552,9 +564,9 @@ export function buildLieferandoText(
 /** parse_mode HTML: имя товара с «&» или «<» иначе ломает всё сообщение. */
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-/** Чем и до когда выключено: ботом — «до HH:MM» / «бессрочно», иначе руками (админка/POS). */
-function stoppedNote(botStop: MenuBotStop, timeZone: string): string {
-  if (!botStop) return 'выключен (админка/POS)';
+/** Чем и до когда выключено: ботом — «до HH:MM» / «бессрочно», иначе руками (админка/POS, либо в Hub). */
+function stoppedNote(botStop: MenuBotStop, timeZone: string, hubOnly = false): string {
+  if (!botStop) return hubOnly ? 'выключен на Lieferando' : 'выключен (админка/POS)';
   return botStop.until === null
     ? 'выключен ботом бессрочно'
     : `выключен ботом до ${formatTime(new Date(botStop.until), timeZone)}`;
@@ -640,9 +652,13 @@ export function buildItemCategoriesText(
   if (!categories.length) lines.push('Активных категорий нет.');
   for (const c of categories) {
     lines.push(
-      `${c.stoppedCount ? '🔴' : '🟢'} ${esc(c.name)} — ${c.itemCount}` +
-        (c.stoppedCount ? `, выключено: ${c.stoppedCount}` : '')
+      `${c.stoppedCount ? '🔴' : '🟢'} ${c.hubOnly ? '🛵 ' : ''}${esc(c.name)} — ${c.itemCount}` +
+        (c.stoppedCount ? `, выключено: ${c.stoppedCount}` : '') +
+        (c.hubOnly ? ' (только Lieferando)' : '')
     );
+  }
+  if (categories.some((c) => c.hubOnly)) {
+    lines.push('', '🛵 — категория есть только на Lieferando (по снимку каталога).');
   }
   lines.push('', 'Выберите категорию.', `Обновлено ${formatTimeSec(now, timeZone)}`);
   return lines.join('\n');
@@ -653,10 +669,11 @@ export function buildItemCategoriesKeyboard(categories: MenuCategoryRow[]): Cont
     inline_keyboard: [
       ...pairRows(
         categories.map((c) => ({
-          text: `${c.name}${c.stoppedCount ? ` (🔴 ${c.stoppedCount})` : ''}`,
+          text: `${c.hubOnly ? '🛵 ' : ''}${c.name}${c.stoppedCount ? ` (🔴 ${c.stoppedCount})` : ''}`,
           callback_data: ctrlItemsCategory(c.id, 0),
         }))
       ),
+      [{ text: '🛵 Сверить с Lieferando', callback_data: LIEF_CATALOG }],
       [
         { text: '🔄 Обновить', callback_data: ITEMS_MENU },
         { text: '⬅️ Назад', callback_data: CTRL_ROOT },
@@ -671,7 +688,8 @@ export function buildItemsText(
   page: number,
   mode: MenuStopMode,
   now: Date = new Date(),
-  timeZone = TZ
+  timeZone = TZ,
+  hubSnapshotAt?: string | null
 ): string {
   if (!category) return '📋 Категория не найдена — возможно, её удалили в админке.';
   const { page: p, pages, slice } = paginate(items, page, ITEMS_PAGE_SIZE);
@@ -685,11 +703,14 @@ export function buildItemsText(
   if (!items.length) lines.push('В категории нет позиций.');
   for (const i of slice) {
     const icon = rowIcon(i.available, i.botStop);
+    const title = `${i.hubOnly ? '🛵 ' : ''}${esc(i.name)}`;
     lines.push(
-      i.available
-        ? `${icon} ${esc(i.name)}`
-        : `${icon} ${esc(i.name)} — ${stoppedNote(i.botStop, timeZone)}`
+      i.available ? `${icon} ${title}` : `${icon} ${title} — ${stoppedNote(i.botStop, timeZone, i.hubOnly)}`
     );
+  }
+  if (items.some((i) => i.hubOnly)) {
+    const at = hubSnapshotAt ? ` (снимок ${formatTime(new Date(hubSnapshotAt), timeZone)})` : '';
+    lines.push('', `🛵 — только на Lieferando, на сайте такого товара нет${at}: переключается только там.`);
   }
   lines.push('', MENU_HINT, MODE_HINTS[mode], `Обновлено ${formatTimeSec(now, timeZone)}`);
   return lines.join('\n');
@@ -706,7 +727,7 @@ export function buildItemsKeyboard(
     modeRow(mode, { screen: 'items', categoryId, page: p }),
     ...slice.map((i) => [
       {
-        text: `${rowIcon(i.available, i.botStop)} ${i.name}`,
+        text: `${rowIcon(i.available, i.botStop)} ${i.hubOnly ? '🛵 ' : ''}${i.name}`,
         callback_data: ctrlItemSet(i.id, !i.available, p),
       },
     ]),
@@ -743,6 +764,8 @@ export function buildPanel(
         items: MenuItemRow[];
         page: number;
         mode: MenuStopMode;
+        /** takenAt снимка Lieferando — если в списке есть Hub-строки без пары */
+        hubSnapshotAt?: string | null;
       },
   state: BlockState,
   now: Date = new Date(),
@@ -771,7 +794,7 @@ export function buildPanel(
   }
   if (view.type === 'items') {
     return {
-      text: buildItemsText(view.category, view.items, view.page, view.mode, now, timeZone),
+      text: buildItemsText(view.category, view.items, view.page, view.mode, now, timeZone, view.hubSnapshotAt),
       keyboard: view.category
         ? buildItemsKeyboard(view.categoryId, view.items, view.page, view.mode)
         : {
@@ -825,6 +848,7 @@ const MENU_STOP_TYPES: ReadonlySet<ControlAction['type']> = new Set<ControlActio
   'item_set',
   'items_enable_all',
   'menu_mode',
+  'catalog_sync',
 ]);
 
 export function isMenuStopAction(action: ControlAction): action is MenuStopAction {
@@ -868,12 +892,10 @@ async function menuStopScreen(
       now
     );
   const itemsPanel = async (categoryId: string, page: number) => {
-    const [{ category, items }, mode] = await Promise.all([
-      menu.listCategoryItems(categoryId),
-      menu.getMode(),
-    ]);
+    const [screen, mode] = await Promise.all([menu.listCategoryItems(categoryId), menu.getMode()]);
+    const { category, items, hubSnapshotAt }: MenuCategoryItems = screen;
     return buildPanel(
-      { type: 'items', categoryId, category, items, page, mode },
+      { type: 'items', categoryId, category, items, page, mode, hubSnapshotAt },
       EMPTY_BLOCK_STATE,
       now
     );
@@ -909,14 +931,19 @@ async function menuStopScreen(
     case 'item_set': {
       const row = await menu.setItemAvailable(action.productId, action.available);
       if (!row) return { panel: await categoriesPanel(), toast: '⚠️ Позиция не найдена' };
+      // Hub-строка без пары на сайте: имя — точное из Hub, на сайте переключать нечего.
       const lief = await lieferando(
         action.available ? 'on' : 'off',
         { kind: 'item', names: [row.name] },
         !action.available && isIndefinite(row.botStop)
       );
-      const toast = action.available
-        ? `🟢 ${row.name}: включена на сайте · ${lief}`
-        : `${rowIcon(false, row.botStop)} ${row.name}: выключена на сайте ${offNote(row.botStop)} · ${lief}`;
+      const toast = row.hubOnly
+        ? action.available
+          ? `🟢 ${row.name}: только Lieferando · ${lief}`
+          : `${rowIcon(false, row.botStop)} ${row.name}: только Lieferando, ${isIndefinite(row.botStop) ? 'бессрочно' : 'до утра'} · ${lief}`
+        : action.available
+          ? `🟢 ${row.name}: включена на сайте · ${lief}`
+          : `${rowIcon(false, row.botStop)} ${row.name}: выключена на сайте ${offNote(row.botStop)} · ${lief}`;
       return { panel: await itemsPanel(row.categoryId, action.page), toast };
     }
     case 'items_enable_all': {
@@ -941,6 +968,14 @@ async function menuStopScreen(
           ? await sizesPanel()
           : await itemsPanel(action.back.categoryId, action.back.page);
       return { panel, toast };
+    }
+    case 'catalog_sync': {
+      // Снимок снимает агент (2–3 мин); сводку в группу шлёт сервер, только если есть изменения.
+      const lief = await lieferando('on', { kind: 'catalog' }, false);
+      const toast = queueLieferando
+        ? `${lief} · снимок каталога займёт пару минут, сводка придёт в группу при изменениях`
+        : lief;
+      return { panel: await categoriesPanel(), toast };
     }
   }
 }
