@@ -16,6 +16,7 @@ import {
   readLieferandoState,
   readLieferandoTarget,
   reportLieferandoResult,
+  requestLieferandoCatalog,
   requestLieferandoCommand,
   requestLieferandoToggle,
   EMPTY_LIEFERANDO_STATE,
@@ -519,5 +520,55 @@ describe('formatLieferandoReport', () => {
     expect(
       formatLieferandoReport(res({ action: 'on', target: SIZE_30, count: 0, ok: false, message: 'сессия истекла' }))
     ).toBe('🛵❌ Lieferando: команда «включить» (размер «30 cm») НЕ выполнена.\nсессия истекла');
+  });
+});
+
+// --- снимок каталога (target.kind = 'catalog') -----------------------------------------
+
+describe('команда catalog', () => {
+  const CATALOG: LieferandoTarget = { kind: 'catalog' };
+
+  it('цель читается, ключ и описание', () => {
+    expect(readLieferandoTarget({ kind: 'catalog' })).toEqual(CATALOG);
+    expect(lieferandoTargetKey(CATALOG)).toBe('catalog');
+    expect(describeLieferandoTarget(CATALOG)).toBe('снимок каталога');
+  });
+
+  it('requestLieferandoCatalog ставит одну команду (повтор заменяет), чужие цели не трогает', async () => {
+    mGet.mockResolvedValue({ commands: [cmd('c1', 'off', SIZE_30)] });
+    await requestLieferandoCatalog(NOW);
+    expect(written().commands.map((c: any) => c.target)).toEqual([SIZE_30, CATALOG]);
+    mGet.mockResolvedValue(written());
+    await requestLieferandoCatalog(NOW);
+    expect(written().commands.map((c: any) => c.target)).toEqual([SIZE_30, CATALOG]);
+    expect(written().commands[1].action).toBe('on');
+  });
+
+  it('отдаётся только агенту с caps catalog; без него — следующая подходящая команда', async () => {
+    mGet.mockResolvedValue({ commands: [cmd('c1', 'on', CATALOG), cmd('c2', 'off', MAKI)] });
+    const old = await claimLieferandoCommand('pc-old', NOW, null, { supportsTargets: true });
+    expect(old.command?.id).toBe('c2');
+    expect(written().commands.map((c: any) => c.id)).toEqual(['c1']);
+
+    mGet.mockResolvedValue({ commands: [cmd('c1', 'on', CATALOG), cmd('c2', 'off', MAKI)] });
+    const fresh = await claimLieferandoCommand('vds', NOW, null, { supportsTargets: true, supportsCatalog: true });
+    expect(fresh.command?.id).toBe('c1');
+  });
+
+  it('отчёт по снимку в группу не шлётся (сводку шлёт эндпоинт каталога); текст на всякий случай есть', () => {
+    const base: LieferandoResult = {
+      id: 'c1',
+      action: 'on',
+      target: CATALOG,
+      ok: true,
+      count: 143,
+      failed: 0,
+      message: '',
+      finishedAt: 'x',
+    };
+    expect(lieferandoReportWanted(base)).toBe(false);
+    expect(lieferandoReportWanted({ ...base, ok: false })).toBe(false);
+    expect(formatLieferandoReport(base)).toContain('снимок каталога снят — позиций: 143');
+    expect(formatLieferandoReport({ ...base, ok: false, message: 'сессия истекла' })).toContain('НЕ снят');
   });
 });

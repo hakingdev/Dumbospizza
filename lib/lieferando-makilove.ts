@@ -12,7 +12,10 @@
  *   size     — один размер у всех пицц/позиций вне MakiLove («30 cm», «ca. 27x37»);
  *   item     — конкретные позиции по именам сайта (агент матчит Hub-строки
  *              нормализованно: без «Pizza», «(rund)», регистра — выключает
- *              и Detroit-версию, и «(rund)»).
+ *              и Detroit-версию, и «(rund)»);
+ *   catalog  — снимок всего каталога Hub (ничего не переключает); агент шлёт
+ *              его на /api/lieferando/agent/catalog, сервер сверяет с сайтом
+ *              (lib/lieferando/catalog). action у такой команды формальный ('on').
  *
  * Всё состояние — в одном ключе настроек (НЕ в storeSettings, чтобы не
  * пересекаться read-modify-write'ом с блокировками цехов):
@@ -54,9 +57,11 @@ export type LieferandoAction = 'off' | 'on';
 export type LieferandoTarget =
   | { kind: 'makilove' }
   | { kind: 'size'; label: string }
-  | { kind: 'item'; names: string[] };
+  | { kind: 'item'; names: string[] }
+  | { kind: 'catalog' };
 
 export const MAKILOVE_TARGET: LieferandoTarget = { kind: 'makilove' };
+export const CATALOG_TARGET: LieferandoTarget = { kind: 'catalog' };
 
 /**
  * Откуда команда: кнопка бота (по умолчанию, в БД не пишется), кнопка в режиме
@@ -143,6 +148,7 @@ export function readLieferandoTarget(raw: unknown): LieferandoTarget | null {
   if (!raw || typeof raw !== 'object') return null;
   const t = raw as Record<string, unknown>;
   if (t.kind === 'makilove') return { kind: 'makilove' };
+  if (t.kind === 'catalog') return { kind: 'catalog' };
   if (t.kind === 'size' && typeof t.label === 'string' && t.label.trim()) {
     return { kind: 'size', label: t.label.trim() };
   }
@@ -162,6 +168,8 @@ export function lieferandoTargetKey(target: LieferandoTarget): string {
   switch (target.kind) {
     case 'makilove':
       return 'makilove';
+    case 'catalog':
+      return 'catalog';
     case 'size':
       return `size:${fold(target.label)}`;
     case 'item':
@@ -177,6 +185,8 @@ export function describeLieferandoTarget(target: LieferandoTarget): string {
   switch (target.kind) {
     case 'makilove':
       return 'MakiLove';
+    case 'catalog':
+      return 'снимок каталога';
     case 'size':
       return `размер «${target.label}»`;
     case 'item':
@@ -312,6 +322,14 @@ export async function requestLieferandoToggle(
   return requestLieferandoCommand(action, MAKILOVE_TARGET, now);
 }
 
+/** Кнопка «Сверить с Lieferando» (или ручной запуск): снимок каталога агентом. */
+export async function requestLieferandoCatalog(
+  now: Date = new Date(),
+  options: RequestOptions = {}
+): Promise<LieferandoState> {
+  return requestLieferandoCommand('on', CATALOG_TARGET, now, options);
+}
+
 export interface ClaimOptions {
   /**
    * Агент умеет цели size/item (заголовок X-Agent-Caps: targets). Старому
@@ -319,6 +337,20 @@ export interface ClaimOptions {
    * как «MakiLove off/on». Они ждут в очереди обновлённого агента.
    */
   supportsTargets?: boolean;
+  /** Агент умеет снимок каталога (X-Agent-Caps: catalog) — иначе команда ждёт в очереди. */
+  supportsCatalog?: boolean;
+}
+
+/** Какому агенту можно отдать команду (по его X-Agent-Caps). */
+export function commandEligible(target: LieferandoTarget, options: ClaimOptions): boolean {
+  switch (target.kind) {
+    case 'makilove':
+      return true;
+    case 'catalog':
+      return Boolean(options.supportsCatalog);
+    default:
+      return Boolean(options.supportsTargets);
+  }
 }
 
 /**
@@ -335,7 +367,7 @@ export async function claimLieferandoCommand(
 ): Promise<{ command: LieferandoCommand | null; state: LieferandoState }> {
   const state = await getLieferandoState();
   const nowIso = now.toISOString();
-  const eligible = (c: LieferandoCommand) => options.supportsTargets || c.target.kind === 'makilove';
+  const eligible = (c: LieferandoCommand) => commandEligible(c.target, options);
 
   let claimed: LieferandoCommand | null = null;
   let next: Omit<LieferandoState, 'command'> = {
@@ -403,6 +435,8 @@ const foundRows = (r: LieferandoResult) => r.count + (r.already ?? 0);
  * только если что-то не выключилось или не нашлось.
  */
 export function lieferandoReportWanted(r: LieferandoResult): boolean {
+  // Снимок каталога: сводку (и сообщение о сбое) шлёт сам эндпоинт каталога.
+  if (r.target.kind === 'catalog') return false;
   if (r.origin !== 'reapply') return true;
   return !r.ok || r.failed > 0 || (r.notFound?.length ?? 0) > 0 || foundRows(r) === 0;
 }
@@ -444,6 +478,13 @@ function formatLieferandoReportBody(r: LieferandoResult): string {
           ? `🛵 Lieferando: MakiLove <b>включён</b> — позиций: ${r.count}.`
           : '🛵 Lieferando: MakiLove <b>включён</b> — скрытых скриптом позиций не было.') +
           (r.failed ? `\n⚠️ Не удалось: ${r.failed}.` : '');
+  }
+
+  if (r.target.kind === 'catalog') {
+    return r.ok
+      ? `🛵📋 Lieferando: снимок каталога снят — позиций: ${r.count}.` +
+          (r.failed ? `\n⚠️ Не открылись категории: ${r.failed}. ${r.message}` : '')
+      : `🛵❌ Lieferando: снимок каталога НЕ снят.\n${r.message || 'Причина неизвестна.'}`;
   }
 
   const what = describeLieferandoTarget(r.target);

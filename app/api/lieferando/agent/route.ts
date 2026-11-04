@@ -11,19 +11,23 @@ import {
 } from '../../../../lib/lieferando-makilove';
 import { sendControlMessage } from '../../../../lib/telegram-control';
 import { maybeReapplyIndefiniteStops } from '../../../../lib/menu-stop/reapply-live';
+import { patchCatalogWithResult } from '../../../../lib/lieferando/catalog-store';
 
 /**
  * Обмен с агентом Lieferando (scripts/lieferando/agent.mjs на VDS/кассе).
  *
  * GET  — поллинг: агент забирает команду { id, action, target } (и heartbeat'ится).
- *        Заголовок X-Agent-Caps: targets — агент умеет цели size/item; без него
- *        (старый агент до самообновления) отдаём только команды MakiLove.
+ *        Заголовок X-Agent-Caps: targets — агент умеет цели size/item, catalog —
+ *        снимок каталога; без них (старый агент до самообновления) отдаём
+ *        только команды MakiLove.
  *        Тем же поллингом раз в день (после 08:30 по Берлину) ставится
  *        перевыключение бессрочного стоп-листа (lib/menu-stop/reapply-live) —
  *        Hub к утру включает всё обратно.
  * POST — отчёт о выполнении → сохраняем + сообщение в группу стоп-бота
  *        (утреннее перевыключение бессрочного стоп-листа при успехе молчит —
- *        сводку шлёт сам крон, см. lieferandoReportWanted).
+ *        сводку шлёт сам крон, см. lieferandoReportWanted); успешный отчёт по
+ *        позициям/MakiLove ещё и обновляет снимок каталога (экран бота не ждёт
+ *        завтрашнего). Снимок каталога агент шлёт на ./catalog.
  *
  * Auth: заголовок X-Lieferando-Agent-Key. Секрет — LIEFERANDO_AGENT_SECRET,
  * с фолбэком на PRINT_AGENT_SECRET (тот же ПК, тот же уровень доверия), чтобы
@@ -54,6 +58,7 @@ export async function GET(request: NextRequest) {
     const now = new Date();
     const { command } = await claimLieferandoCommand(agentId, now, agentVersion, {
       supportsTargets: caps.includes('targets'),
+      supportsCatalog: caps.includes('catalog'),
     });
     // Утренний триггер — только агенту с целями size/item (старый выполнил бы их как MakiLove).
     if (caps.includes('targets')) await maybeReapplyIndefiniteStops(now);
@@ -107,6 +112,12 @@ export async function POST(request: NextRequest) {
     // Отчёт в группу — best-effort: провал Telegram не должен ронять отчёт.
     if (state.lastResult && lieferandoReportWanted(state.lastResult)) {
       await sendControlMessage(formatLieferandoReport(state.lastResult));
+    }
+    // Снимок каталога — тоже best-effort: экран «📋 Позиции» показывает Hub-строки по нему.
+    if (state.lastResult?.ok) {
+      await patchCatalogWithResult(state.lastResult).catch((e) =>
+        console.error('[lieferando-agent] catalog patch failed:', (e as Error)?.message)
+      );
     }
 
     return NextResponse.json({ success: true });

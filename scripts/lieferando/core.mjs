@@ -17,7 +17,10 @@
  *   позиция (runSet, kind:'item') — общий переключатель строки, чьё имя
  *     совпадает с именем сайта нормализованно (без «Pizza», «(rund)»,
  *     регистра, пунктуации) — itemKey(); «Hawaiian» переключает и
- *     «Hawaiian Pizza», и «Hawaiian Pizza (rund)».
+ *     «Hawaiian Pizza», и «Hawaiian Pizza (rund)»;
+ *   каталог (runCatalog) — ничего не переключает: снимает ВСЕ категории Hub
+ *     (имя строки, общий переключатель, варианты) для ежедневной сверки с
+ *     сайтом на сервере (lib/lieferando/catalog.ts).
  *
  * ⚠️ Особенность Hub: выключение действует «до конца дня» — на следующий день
  * Lieferando сам вернёт позиции/размеры в продажу.
@@ -33,7 +36,24 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // LIEFERANDO_PROFILE_DIR — другой профиль браузера (тесты переноса сессии, сервер)
 const PROFILE_DIR = process.env.LIEFERANDO_PROFILE_DIR || path.join(__dirname, 'profile');
-const STATE_FILE = path.join(__dirname, 'state', 'disabled.json');
+export const STATE_DIR = path.join(__dirname, 'state');
+const STATE_FILE = path.join(STATE_DIR, 'disabled.json');
+
+/**
+ * .env рядом со скриптами (KEY=value построчно) — чтобы на VDS/кассе не
+ * настраивать переменные окружения; реальный env имеет приоритет.
+ * Зовут agent.mjs и toggle.mjs (команде catalog --post нужны секрет и URL).
+ */
+export function loadDotEnv() {
+  try {
+    for (const line of fs.readFileSync(path.join(__dirname, '.env'), 'utf8').split(/\r?\n/)) {
+      const m = /^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/.exec(line);
+      if (m && !(m[1] in process.env)) process.env[m[1]] = m[2].replace(/^["']|["']$/g, '');
+    }
+  } catch {
+    /* .env нет — ок, работаем от переменных окружения */
+  }
+}
 
 export const HUB_URL = 'https://partner-hub.takeaway.com/';
 const MENU_URL = 'https://partner-hub.takeaway.com/menu/item-availability';
@@ -62,6 +82,11 @@ export function sizeKey(label) {
  * «(rund)», маркетингового «Neu:», регистра, пунктуации и пробелов.
  *   «Hawaiian» ≡ «Hawaiian Pizza» ≡ «Hawaiian Pizza (rund)»;
  *   «Katz's Corner» ≡ «Katz’s Corner (rund)»; «Hot Dog Pizza» ≡ «Hotdog-Pizza».
+ *
+ * ⚠️ ЭТАЛОН: тело функции ДОЛЖНО совпадать с lib/lieferando/item-key.ts
+ * (сервер сверяет каталог Hub с сайтом той же нормализацией; тождество
+ * сторожит тест lib/__tests__/lieferando-item-key.test.ts). Меняешь здесь —
+ * меняй и там.
  */
 export function itemKey(name) {
   return (
@@ -372,6 +397,53 @@ async function collectPaneRows(page, { withVariations = false } = {}) {
     out.push(entry);
   }
   return out;
+}
+
+/**
+ * Строки текущей категории для снимка каталога (ничего не кликаем):
+ *   [{ name, on, variations: [{ text, on }] }]
+ * Быстрый путь — один evaluateAll на категорию вместо сотен round-trip'ов
+ * локаторов (CSP Hub page.evaluate не мешает — зонд 02.11.2026). Если evaluate
+ * всё же упадёт — медленный путь через collectPaneRows.
+ */
+async function readPaneRows(page, log = console.log) {
+  try {
+    return await page.locator(SEL.itemRow).evaluateAll(
+      (rows, sel) =>
+        rows
+          .map((row) => {
+            const name = (row.querySelector(sel.itemName)?.textContent || '').trim();
+            const inputs = Array.from(row.querySelectorAll(sel.toggleInput));
+            const general =
+              inputs.find((el) => !el.closest(sel.variation) && !el.closest(sel.group)) || null;
+            const variations = Array.from(row.querySelectorAll(sel.variation))
+              .map((v) => {
+                const input = v.querySelector(sel.toggleInput);
+                return {
+                  text: (v.textContent || '').replace(/\s+/g, ' ').trim(),
+                  on: input ? Boolean(input.checked) : null,
+                };
+              })
+              .filter((v) => v.on !== null && v.text);
+            return { name, on: general ? Boolean(general.checked) : null, variations };
+          })
+          .filter((r) => r.name && r.on !== null),
+      {
+        itemName: SEL.itemName,
+        toggleInput: SEL.toggleInput,
+        variation: SEL.variation,
+        group: '[data-test-id="group"]',
+      }
+    );
+  } catch (e) {
+    log(`    evaluate не сработал (${failReason(e)}) — читаю строки локаторами`);
+    const rows = await collectPaneRows(page, { withVariations: true });
+    return rows.map((r) => ({
+      name: r.name,
+      on: r.general.checked,
+      variations: r.variations.map((v) => ({ text: v.text, on: v.checked })),
+    }));
+  }
 }
 
 /** Если Hub показал модалку подтверждения — жмём согласие. */
@@ -721,6 +793,71 @@ export async function runSet({ target, available, headless = false, dryRun = fal
   } finally {
     await context.close();
   }
+}
+
+/**
+ * Снимок каталога Hub — ничего не переключает. Обходит ВСЕ категории (и
+ * MakiLove) и возвращает:
+ *   { ok, takenAt, categories: [{ name, items: [{ name, on, variations: [{ text, on }] }] }],
+ *     failedCategories, count, failed, message }
+ * ok = хоть одна категория прочитана; не открывшиеся — в failedCategories
+ * (сервер подставит их строки из прошлого снимка, чтобы они не выглядели
+ * «пропавшими»). Сервер сверяет снимок с товарами сайта (itemKey) и шлёт в
+ * группу стоп-бота только изменения.
+ */
+export async function runCatalog({ headless = false, log = console.log } = {}) {
+  const { context, page } = await openBrowser({ headless });
+  try {
+    await openMenu(page);
+    const categories = [];
+    const failedCategories = await walkCategories(
+      page,
+      () => true,
+      async (cat) => {
+        const items = await readPaneRows(page, log);
+        categories.push({ name: cat, items });
+        const off = items.filter((i) => !i.on).length;
+        log(`  ${cat}: ${items.length}${off ? ` (выкл: ${off})` : ''}`);
+      },
+      log
+    );
+    const count = categories.reduce((n, c) => n + c.items.length, 0);
+    log(
+      `\nКаталог: ${categories.length} категорий, ${count} позиций` +
+        (failedCategories.length ? `\n⚠️ Не открылись категории: ${failedCategories.join(', ')}` : '')
+    );
+    return {
+      ok: categories.length > 0,
+      takenAt: new Date().toISOString(),
+      categories,
+      failedCategories,
+      count,
+      failed: failedCategories.length,
+      message: failedCategories.length ? `не открылись категории: ${failedCategories.join(', ')}` : '',
+    };
+  } finally {
+    await context.close();
+  }
+}
+
+/**
+ * Отправить снимок каталога (или отчёт о сбое) на сервер:
+ * POST /api/lieferando/agent/catalog. Тот же секрет, что у поллинга.
+ * body: { id?, reason, agentId, ok, takenAt, categories, failedCategories, error? }
+ */
+export async function postCatalog(body, { apiBaseUrl, secret, agentId, version = '' }) {
+  const res = await fetch(`${apiBaseUrl.replace(/\/$/, '')}/api/lieferando/agent/catalog`, {
+    method: 'POST',
+    headers: {
+      'X-Lieferando-Agent-Key': secret,
+      'X-Lieferando-Agent-Id': agentId,
+      'X-Agent-Version': version,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`POST catalog ${res.status}`);
+  return res.json().catch(() => ({}));
 }
 
 /** Открыть окно для ручного входа; закрытие окна = конец. */

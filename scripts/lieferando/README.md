@@ -17,10 +17,29 @@
 |---|---|---|
 | `makilove` | все позиции категорий «Makilove …» | «makilove» в имени категории/позиции |
 | `size` (`label`) | вариант строки (`[data-test-id="variation"]`) у всех строк вне MakiLove | по числам подписи: «30 cm» ↔ «30 cm», «ca. 27x37» ↔ «Ca. 27×37 cm (entspricht ca. Ø 36 cm Pizza)», «6 Stk» ↔ «6stk» |
-| `item` (`names[]`) | общий переключатель строки | имя без «Pizza», «(rund)», «Neu:», регистра и пунктуации: «Hawaiian» → и «Hawaiian Pizza», и «Hawaiian Pizza (rund)» |
+| `item` (`names[]`) | общий переключатель строки | имя без «Pizza», «(rund)», «Neu:», веса/порции, vegetarisch/vegan, регистра и пунктуации: «Hawaiian» → и «Hawaiian Pizza», и «Hawaiian Pizza (rund)» |
+| `catalog` | ничего — снимок всех категорий (имя, общий переключатель, варианты) | — ; снимок уходит POST'ом на `/api/lieferando/agent/catalog` |
 
-Сервер отдаёт `size`/`item` только агенту с заголовком `X-Agent-Caps: targets`
-(старый агент до самообновления выполнил бы их как MakiLove off/on).
+Сервер отдаёт `size`/`item` только агенту с заголовком `X-Agent-Caps: targets`,
+`catalog` — с `catalog` (старый агент до самообновления выполнил бы их как
+MakiLove off/on).
+
+## Ежедневная сверка каталога (ноябрь 2026)
+
+Агент сам снимает каталог Hub раз в сутки — в `LIEFERANDO_CATALOG_HOUR`
+(по умолчанию 9:00 Europe/Berlin), когда очередь пуста; день последнего
+снимка — в `state/catalog-day.json`. Цикл агента последовательный, поэтому с
+утренним перевыключением бессрочного стоп-листа (сервер ставит его после 08:30)
+второй браузер не откроется. Сервер (`lib/lieferando/catalog.ts`) сверяет
+снимок с товарами сайта той же нормализацией имён (`itemKey` — копия в
+`lib/lieferando/item-key.ts`, тождество сторожит тест) и шлёт в группу
+стоп-бота **только изменения**: новое в Hub без пары на сайте, пропавшее из
+Hub, несовпадающие имена. Позиции только из Hub (Burger, «Neu: Sushi
+Balls…») появляются в боте на экране «📋 Позиции» с пометкой 🛵. Кнопка
+«🛵 Сверить с Lieferando» там же ставит команду `catalog` вне расписания.
+
+Вручную: `node toggle.mjs catalog` → `state/catalog.json`; с `--post` — ещё и
+на сервер (нужны секрет и `API_BASE_URL`, как у агента).
 
 ## Установка на кассовом ПК (один раз)
 
@@ -45,6 +64,7 @@ npm run agent
 | `LIEFERANDO_AGENT_SECRET` | `PRINT_AGENT_SECRET` | общий секрет с сервером |
 | `API_BASE_URL` | `https://www.dumbospizza.de` | строго **www** — apex отдаёт 308 |
 | `LIEFERANDO_POLL_MS` | `20000` | период поллинга |
+| `LIEFERANDO_CATALOG_HOUR` | `9` | час (Europe/Berlin) ежедневного снимка каталога; `-1` — выключить |
 | `HEADLESS` | `1` | `0` — с окном, если ботозащита Hub не пускает headless |
 
 Запускать вместе с print-agent (тот же автозапуск). Если агент молчит дольше
@@ -60,6 +80,7 @@ node toggle.mjs find-size "30 cm"         # dry run: где есть разме�
 node toggle.mjs set-size "30 cm" off      # выключить размер у всех строк вне MakiLove (on — включить)
 node toggle.mjs find-item "Hawaiian"      # dry run: какие строки Hub совпадают с именем сайта
 node toggle.mjs set-item "Hawaiian" off   # общий переключатель этих строк (несколько имён — через запятую)
+node toggle.mjs catalog [--post]          # снимок всего каталога (ничего не переключает) → state/catalog.json [и на сервер]
 ```
 
 ## Важно знать

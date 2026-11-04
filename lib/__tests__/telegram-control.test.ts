@@ -43,6 +43,7 @@ import {
   LIEF_ON,
   SIZES_MENU,
   ITEMS_MENU,
+  LIEF_CATALOG,
   ITEMS_PAGE_SIZE,
   ctrlSizeSet,
   ctrlItemsCategory,
@@ -901,5 +902,133 @@ describe('processControlUpdate', () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+// --- позиции только на Lieferando (снимок каталога Hub) ------------------------
+
+describe('экран «Позиции» с Hub-строками без пары на сайте', () => {
+  const hubCat: MenuCategoryRow = {
+    id: 'hub-c1a2b3c4d',
+    name: 'Burger',
+    itemCount: 2,
+    stoppedCount: 1,
+    hubOnly: true,
+  };
+  const hubRows: MenuItemRow[] = [
+    { id: 'hub-i0a1b2c3d', name: 'Dry Aged Burger', categoryId: 'hub-c1a2b3c4d', available: true, botStop: null, hubOnly: true },
+    { id: 'hub-i0a1b2c3e', name: 'Shrimp Party Burger', categoryId: 'hub-c1a2b3c4d', available: false, botStop: null, hubOnly: true },
+  ];
+  const makeMenu = (over: Record<string, any> = {}) => ({
+    getMode: vi.fn(async () => 'day' as const),
+    setMode: vi.fn(async (mode: 'day' | 'indefinite') => mode),
+    listSizes: vi.fn(async () => []),
+    setSizeActive: vi.fn(async () => null),
+    listCategories: vi.fn(async () => [
+      { id: 'cat1', name: 'Pizza', itemCount: 2, stoppedCount: 0 },
+      hubCat,
+    ]),
+    listCategoryItems: vi.fn(async () => ({ category: hubCat, items: hubRows, hubSnapshotAt: '2026-11-04T08:00:00.000Z' })),
+    setItemAvailable: vi.fn(async (id: string, available: boolean) =>
+      id === 'hub-i0a1b2c3d' ? { ...hubRows[0], available, botStop: null } : null
+    ),
+    enableCategoryItems: vi.fn(async () => [{ ...hubRows[1], available: true }]),
+    ...over,
+  });
+
+  it('callback: виртуальная категория и Hub-позиция парсятся как обычные id; кнопка сверки', () => {
+    expect(parseControlAction(ctrlItemsCategory('hub-c1a2b3c4d', 0))).toEqual({
+      type: 'items_category',
+      categoryId: 'hub-c1a2b3c4d',
+      page: 0,
+    });
+    expect(parseControlAction(ctrlItemSet('hub-i0a1b2c3d', false, 1))).toEqual({
+      type: 'item_set',
+      productId: 'hub-i0a1b2c3d',
+      available: false,
+      page: 1,
+    });
+    expect(parseControlAction(ctrlItemsEnableAll('hub-c1a2b3c4d', 0))).toEqual({
+      type: 'items_enable_all',
+      categoryId: 'hub-c1a2b3c4d',
+      page: 0,
+    });
+    expect(parseControlAction(LIEF_CATALOG)).toEqual({ type: 'catalog_sync' });
+    expect(Buffer.byteLength(ctrlItemSet('hub-i0a1b2c3d', false, 99))).toBeLessThanOrEqual(64);
+  });
+
+  it('список категорий: 🛵 у виртуальной, кнопка «Сверить с Lieferando»', async () => {
+    const deps = makeDeps({ menu: makeMenu() });
+    await handleControlUpdate(cbUpdate(ITEMS_MENU), deps);
+    const panel = (deps.editPanel as any).mock.calls[0][2];
+    expect(panel.text).toContain('🔴 🛵 Burger — 2, выключено: 1 (только Lieferando)');
+    expect(panel.text).toContain('🟢 Pizza — 2');
+    const buttons = panel.keyboard.inline_keyboard.flat();
+    expect(buttons.find((b: any) => b.callback_data === ctrlItemsCategory('hub-c1a2b3c4d', 0)).text).toBe('🛵 Burger (🔴 1)');
+    expect(buttons.some((b: any) => b.callback_data === LIEF_CATALOG)).toBe(true);
+  });
+
+  it('экран категории: строки с 🛵, подсказка со временем снимка, кнопки на те же id', async () => {
+    const deps = makeDeps({ menu: makeMenu() });
+    await handleControlUpdate(cbUpdate(ctrlItemsCategory('hub-c1a2b3c4d', 0)), deps);
+    const panel = (deps.editPanel as any).mock.calls[0][2];
+    expect(panel.text).toContain('🟢 🛵 Dry Aged Burger');
+    expect(panel.text).toContain('🔴 🛵 Shrimp Party Burger — выключен на Lieferando');
+    expect(panel.text).toContain('🛵 — только на Lieferando, на сайте такого товара нет (снимок 09:00)');
+    const buttons = panel.keyboard.inline_keyboard.flat();
+    expect(buttons.find((b: any) => b.callback_data === ctrlItemSet('hub-i0a1b2c3d', false, 0)).text).toBe(
+      '🟢 🛵 Dry Aged Burger'
+    );
+  });
+
+  it('выключить Hub-позицию: без флага сайта, команда агенту с точным именем из Hub, тост «только Lieferando»', async () => {
+    const menu = makeMenu();
+    const queueLieferando = vi.fn(async () => ({}));
+    const deps = makeDeps({ menu, queueLieferando });
+    const res = await handleControlUpdate(cbUpdate(ctrlItemSet('hub-i0a1b2c3d', false, 0)), deps);
+    expect(menu.setItemAvailable).toHaveBeenCalledWith('hub-i0a1b2c3d', false);
+    expect(queueLieferando).toHaveBeenCalledWith('off', { kind: 'item', names: ['Dry Aged Burger'] }, { indefinite: false });
+    const toast = (deps.answerCallbackQuery as any).mock.calls[0][1];
+    expect(toast).toContain('Dry Aged Burger: только Lieferando, до утра');
+    expect(toast).toContain('📤 Lieferando');
+    expect(res).toEqual({ handled: true, reason: 'menu_stop' });
+  });
+
+  it('выключить Hub-позицию в режиме «бессрочно»: порт вернул запись без срока → indefinite', async () => {
+    const menu = makeMenu({
+      setItemAvailable: vi.fn(async () => ({ ...hubRows[0], available: false, botStop: { until: null } })),
+    });
+    const queueLieferando = vi.fn(async () => ({}));
+    const deps = makeDeps({ menu, queueLieferando });
+    await handleControlUpdate(cbUpdate(ctrlItemSet('hub-i0a1b2c3d', false, 0)), deps);
+    expect(queueLieferando).toHaveBeenCalledWith('off', { kind: 'item', names: ['Dry Aged Burger'] }, { indefinite: true });
+    expect((deps.answerCallbackQuery as any).mock.calls[0][1]).toContain('⛔ Dry Aged Burger: только Lieferando, бессрочно');
+  });
+
+  it('«включить всё» в виртуальной категории: одна команда с именами Hub', async () => {
+    const menu = makeMenu();
+    const queueLieferando = vi.fn(async () => ({}));
+    const deps = makeDeps({ menu, queueLieferando });
+    await handleControlUpdate(cbUpdate(ctrlItemsEnableAll('hub-c1a2b3c4d', 0)), deps);
+    expect(menu.enableCategoryItems).toHaveBeenCalledWith('hub-c1a2b3c4d');
+    expect(queueLieferando).toHaveBeenCalledWith('on', { kind: 'item', names: ['Shrimp Party Burger'] }, { indefinite: false });
+  });
+
+  it('«Сверить с Lieferando»: команда catalog агенту, экран категорий, тост', async () => {
+    const menu = makeMenu();
+    const queueLieferando = vi.fn(async () => ({}));
+    const deps = makeDeps({ menu, queueLieferando });
+    const res = await handleControlUpdate(cbUpdate(LIEF_CATALOG), deps);
+    expect(queueLieferando).toHaveBeenCalledWith('on', { kind: 'catalog' }, { indefinite: false });
+    expect(menu.listCategories).toHaveBeenCalled();
+    expect((deps.answerCallbackQuery as any).mock.calls[0][1]).toContain('снимок каталога');
+    expect(res).toEqual({ handled: true, reason: 'menu_stop' });
+  });
+
+  it('«Сверить с Lieferando» без очереди: тост «не настроен», экран всё равно рисуем', async () => {
+    const deps = makeDeps({ menu: makeMenu() });
+    await handleControlUpdate(cbUpdate(LIEF_CATALOG), deps);
+    expect((deps.answerCallbackQuery as any).mock.calls[0][1]).toBe('Lieferando не настроен');
+    expect(deps.editPanel).toHaveBeenCalledTimes(1);
   });
 });
