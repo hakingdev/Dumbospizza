@@ -64,14 +64,25 @@ export function sizeKey(label) {
  *   «Katz's Corner» ≡ «Katz’s Corner (rund)»; «Hot Dog Pizza» ≡ «Hotdog-Pizza».
  */
 export function itemKey(name) {
-  return String(name || '')
-    .normalize('NFKC')
-    .toLowerCase()
-    .replace(/^\s*neu\s*:/, ' ')
-    .replace(/\(\s*rund\s*\)/g, ' ')
-    .replace(/\bpizza\b/g, ' ')
-    .replace(/[’'`´"„“”.,;:!?&+\-–—/\\()]/g, ' ')
-    .replace(/\s+/g, '');
+  return (
+    String(name || '')
+      .normalize('NFKC')
+      .toLowerCase()
+      .replace(/^\s*neu\s*:/, ' ')
+      .replace(/\(\s*rund\s*\)/g, ' ')
+      .replace(/\bpizza\b/g, ' ')
+      // Сайт и Hub по-разному дописывают вес/порцию и «vegetarisch»:
+      // «Tiger-Drache» ↔ «Tiger-Drache 340g», «Gourmet Pizza (vegetarisch)» ↔
+      // «Gourmet Pizza», «Gyoza Gemüse (7 Stück)» ↔ «Gyoza Gemüse Vegetarische
+      // (7 Stück)» — всё это одна позиция. Сверка 04.11.2026: без этого 5 из
+      // 117 общих позиций не находились.
+      // (объём ml/l НЕ срезаем: напитки различаются именно им — 0,33 L ≠ 1,0 L)
+      .replace(/\b\d+(?:[.,]\d+)?\s*(?:g|kg|st|stk|stück|pcs)\b\.?/g, ' ')
+      .replace(/\b(?:vegetarische?|vegan(?:e|er|es)?)\b/g, ' ')
+      .replace(/\bpommes\s+frites\b/g, 'fries')
+      .replace(/[’'`´"„“”.,;:!?&+\-–—/\\()]/g, ' ')
+      .replace(/\s+/g, '')
+  );
 }
 
 // Селекторы сняты с реального DOM Partner Hub (август 2026; варианты — ноябрь 2026).
