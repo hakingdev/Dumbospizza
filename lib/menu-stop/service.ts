@@ -10,6 +10,12 @@
  * (lib/lieferando/catalog-store): в категории сайта с тем же именем — ниже
  * товаров сайта, иначе — в виртуальной категории hub-c…. Их кнопка переключает
  * только снимок (оптимистично) и ставит агенту команду; флага на сайте нет.
+ *
+ * Из того же снимка экран берёт ещё две вещи для товаров САЙТА:
+ *   - состояние на Lieferando (MenuItemRow.hub) — расхождение с флагом сайта видно сразу;
+ *   - «гостей» (MenuItemRow.guestFrom): товар живёт в другой категории сайта, но
+ *     на Lieferando лежит в категории с именем как у этой — показываем и здесь
+ *     (гёдза: сайт «MakiLove Sushi», Hub «Angebot»), иначе её ищут и не находят.
  */
 import { Product } from '../models/product.model';
 import { Category } from '../models/category.model';
@@ -20,18 +26,23 @@ import {
   findHubCategory,
   findHubItems,
   hubCategoryId,
+  hubKeysByCategory,
   hubOnlyByCategory,
+  hubStateByKey,
   isHubCategoryId,
   isHubItemId,
   normalizeCategoryName,
+  type HubItemState,
   type HubOnlyRow,
   type LieferandoCatalogRecord,
 } from '../lieferando/catalog';
 import {
   getLieferandoCatalogRecord,
   loadSiteItemKeys,
+  patchCatalogWithResult,
   setStoredHubItemOn,
 } from '../lieferando/catalog-store';
+import { itemKey } from '../lieferando/item-key';
 import {
   MENU_STOP_KEY,
   dayKeyInTimeZone,
@@ -89,16 +100,20 @@ function sizeRow(variation: any, state: MenuStopState): MenuSizeRow {
   };
 }
 
-function itemRow(product: any, state: MenuStopState): MenuItemRow {
+function itemRow(product: any, state: MenuStopState, hub?: HubExtras | null): MenuItemRow {
   const id = idOf(product);
   const available = product?.available !== false;
-  return {
+  const name = String(product?.name ?? '');
+  const row: MenuItemRow = {
     id,
-    name: String(product?.name ?? ''),
+    name,
     categoryId: String(product?.category ?? ''),
     available,
     botStop: botStopOf(!available, state.products[id]),
   };
+  const hubState = hub?.stateByKey.get(itemKey(name));
+  if (hubState) row.hub = hubState;
+  return row;
 }
 
 // --- режим кнопок ----------------------------------------------------------------
@@ -172,6 +187,10 @@ export async function setSizeActive(
 interface HubExtras {
   catalog: LieferandoCatalogRecord;
   byCategory: Map<string, { name: string; rows: HubOnlyRow[] }>;
+  /** общий переключатель на Lieferando по ключу имени */
+  stateByKey: Map<string, HubItemState>;
+  /** ключи имён строк Hub по нормализованному имени категории Hub */
+  keysByCategory: Map<string, Set<string>>;
 }
 
 /** null — снимка каталога ещё нет (агент не снимал) — тогда экран как раньше. */
@@ -183,8 +202,58 @@ async function loadHubExtras(): Promise<HubExtras | null> {
   hubOnlyByCategory(catalog, siteKeys).forEach((rows, name) => {
     byCategory.set(normalizeCategoryName(name), { name, rows });
   });
-  return { catalog, byCategory };
+  return {
+    catalog,
+    byCategory,
+    stateByKey: hubStateByKey(catalog),
+    keysByCategory: hubKeysByCategory(catalog),
+  };
 }
+
+/**
+ * «Гости» категории: товары сайта из ДРУГИХ активных категорий, чьи строки на
+ * Lieferando лежат в категории Hub с именем как у этой. Позиции, у которых в
+ * самой категории уже есть товар с тем же именем, гостями не дублируются.
+ */
+function guestProducts(
+  categoryId: string,
+  categoryName: string,
+  allProducts: any[],
+  activeCategoryNames: Map<string, string>,
+  hub: HubExtras | null
+): any[] {
+  const keysHere = hub?.keysByCategory.get(normalizeCategoryName(categoryName));
+  if (!keysHere || !keysHere.size) return [];
+  const own = new Set<string>();
+  for (const p of allProducts) {
+    if (String(p?.category ?? '') === categoryId) own.add(itemKey(p?.name));
+  }
+  return allProducts
+    .filter((p) => {
+      const cat = String(p?.category ?? '');
+      if (cat === categoryId || !activeCategoryNames.has(cat)) return false;
+      const key = itemKey(p?.name);
+      return Boolean(key) && keysHere.has(key) && !own.has(key);
+    })
+    .sort((a, b) => String(a?.name ?? '').localeCompare(String(b?.name ?? ''), 'de'));
+}
+
+function guestRow(
+  product: any,
+  screenCategoryId: string,
+  activeCategoryNames: Map<string, string>,
+  state: MenuStopState,
+  hub: HubExtras | null
+): MenuItemRow {
+  return {
+    ...itemRow(product, state, hub),
+    categoryId: screenCategoryId,
+    guestFrom: activeCategoryNames.get(String(product?.category ?? '')) ?? '',
+  };
+}
+
+const namesById = (categories: any[]): Map<string, string> =>
+  new Map(categories.map((c) => [idOf(c), String(c?.name ?? '')] as [string, string]));
 
 function hubItemRow(row: HubOnlyRow, categoryId: string, state: MenuStopState): MenuItemRow {
   return {
@@ -216,9 +285,10 @@ export async function listMenuCategories(now: Date = new Date()): Promise<MenuCa
   await expireMenuStops(now);
   const [categories, products, hub] = await Promise.all([
     Category.find({ active: true }).sort({ order: 1 }).lean(),
-    Product.find({}).select('category available').lean(),
+    Product.find({}).select('name category available').lean(),
     loadHubExtras(),
   ]);
+  const activeNames = namesById(categories as any[]);
   const stats = new Map<string, { total: number; stopped: number }>();
   for (const product of products as any[]) {
     const key = String(product.category ?? '');
@@ -233,11 +303,15 @@ export async function listMenuCategories(now: Date = new Date()): Promise<MenuCa
     const name = String(category.name ?? '');
     const extra = hub?.byCategory.get(normalizeCategoryName(name));
     if (extra) seenHub.add(normalizeCategoryName(name));
+    const guests = guestProducts(idOf(category), name, products as any[], activeNames, hub);
     return {
       id: idOf(category),
       name,
-      itemCount: stat.total + (extra?.rows.length ?? 0),
-      stoppedCount: stat.stopped + (extra?.rows.filter((r) => !r.on).length ?? 0),
+      itemCount: stat.total + guests.length + (extra?.rows.length ?? 0),
+      stoppedCount:
+        stat.stopped +
+        guests.filter((p) => p.available === false).length +
+        (extra?.rows.filter((r) => !r.on).length ?? 0),
     };
   });
   hub?.byCategory.forEach(({ name, rows: extra }, norm) => {
@@ -284,8 +358,20 @@ export async function listCategoryItems(
     readState(),
     loadHubExtras(),
   ]);
-  const items = (products as any[]).map((p) => itemRow(p, state));
-  const extra = category && hub ? hub.byCategory.get(normalizeCategoryName(String((category as any).name ?? ''))) : null;
+  const categoryName = String((category as any)?.name ?? '');
+  // фильтр по категории повторяем в JS: гости ниже берутся из полного списка
+  const items = (products as any[])
+    .filter((p) => String(p?.category ?? categoryId) === categoryId)
+    .map((p) => itemRow(p, state, hub));
+  if (category && hub?.keysByCategory.get(normalizeCategoryName(categoryName))?.size) {
+    const { all, activeNames } = await loadGuestPool();
+    items.push(
+      ...guestProducts(categoryId, categoryName, all, activeNames, hub).map((p) =>
+        guestRow(p, categoryId, activeNames, state, hub)
+      )
+    );
+  }
+  const extra = category && hub ? hub.byCategory.get(normalizeCategoryName(categoryName)) : null;
   if (extra) items.push(...extra.rows.map((r) => hubItemRow(r, categoryId, state)));
   return {
     category: category
@@ -297,8 +383,37 @@ export async function listCategoryItems(
         }
       : null,
     items,
-    hubSnapshotAt: extra ? hub!.catalog.takenAt : null,
+    hubSnapshotAt: hub && items.some((i) => i.hubOnly || i.hub || i.guestFrom) ? hub.catalog.takenAt : null,
   };
+}
+
+/** Все товары и имена активных категорий — откуда выбираются «гости» экрана. */
+async function loadGuestPool(): Promise<{ all: any[]; activeNames: Map<string, string> }> {
+  const [all, categories] = await Promise.all([
+    Product.find({}).select('name category available').lean(),
+    Category.find({ active: true }).select('name').lean(),
+  ]);
+  return { all: all as any[], activeNames: namesById(categories as any[]) };
+}
+
+/**
+ * Категория сайта, где позиция показана гостем (по раскладке Lieferando) —
+ * чтобы кнопка, нажатая на том экране, перерисовала его же, а не унесла в
+ * «родную» категорию товара. null — гостем нигде не показана.
+ */
+export async function hubPlacementCategoryId(productId: string): Promise<string | null> {
+  if (isHubItemId(productId)) return null;
+  const hub = await loadHubExtras();
+  if (!hub) return null;
+  const { all, activeNames } = await loadGuestPool();
+  const product = all.find((p) => idOf(p) === productId);
+  if (!product) return null;
+  let found: string | null = null;
+  activeNames.forEach((name, id) => {
+    if (found) return;
+    if (guestProducts(id, name, all, activeNames, hub).some((p) => idOf(p) === productId)) found = id;
+  });
+  return found;
 }
 
 /**
@@ -340,7 +455,24 @@ export async function setProductAvailable(
     };
   }
   await writeState(state);
-  return itemRow(product, state);
+  // Команда агенту уже в пути: отмечаем позицию в снимке Hub сразу, иначе до
+  // отчёта агента экран минуту показывал бы «на Lieferando состояние другое».
+  await patchHubSnapshot(available, [String(product.name ?? '')]);
+  return itemRow(product, state, await loadHubExtras());
+}
+
+/** Оптимистичная правка общих переключателей в снимке каталога; сбой не мешает флагу сайта. */
+async function patchHubSnapshot(available: boolean, names: string[]): Promise<void> {
+  if (!names.length) return;
+  try {
+    await patchCatalogWithResult({
+      ok: true,
+      action: available ? 'on' : 'off',
+      target: { kind: 'item', names },
+    });
+  } catch {
+    /* снимок поправит отчёт агента или следующий обход каталога */
+  }
 }
 
 /**
@@ -352,21 +484,35 @@ export async function enableCategoryItems(categoryId: string): Promise<MenuItemR
   const state = await readState();
   let dirty = false;
 
+  const hub = await loadHubExtras();
+
   if (!isHubCategoryId(categoryId)) {
-    const stopped = (await Product.find({ category: categoryId, available: false })
-      .select('name category available')
-      .sort({ name: 1 })
-      .lean()) as any[];
+    const own = (
+      (await Product.find({ category: categoryId, available: false })
+        .select('name category available')
+        .sort({ name: 1 })
+        .lean()) as any[]
+    ).filter((p) => String(p?.category ?? categoryId) === categoryId && p?.available === false);
+    // гости экрана (лежат в этой категории на Lieferando) — тоже «всё в категории»
+    let guests: any[] = [];
+    if (hub) {
+      const { all, activeNames } = await loadGuestPool();
+      const categoryName = activeNames.get(categoryId) ?? '';
+      guests = categoryName
+        ? guestProducts(categoryId, categoryName, all, activeNames, hub).filter((p) => p?.available === false)
+        : [];
+    }
+    const stopped = [...own, ...guests];
     if (stopped.length) {
       const ids = stopped.map(idOf);
       await Product.updateMany({ _id: { $in: ids } }, { available: true });
       for (const id of ids) delete state.products[id];
       dirty = true;
       enabled.push(...stopped.map((p) => itemRow({ ...p, available: true }, state)));
+      await patchHubSnapshot(true, stopped.map((p) => String(p?.name ?? '')).filter(Boolean));
     }
   }
 
-  const hub = await loadHubExtras();
   if (hub) {
     const hubCategory = isHubCategoryId(categoryId)
       ? findHubCategory(hub.catalog, categoryId)?.name
@@ -526,5 +672,6 @@ export function buildMenuStopPort(): MenuStopPort {
     listCategoryItems: (id) => listCategoryItems(id),
     setItemAvailable: (id, available) => setProductAvailable(id, available),
     enableCategoryItems: (id) => enableCategoryItems(id),
+    hubPlacementCategoryId: (id) => hubPlacementCategoryId(id),
   };
 }

@@ -395,3 +395,40 @@ describe('hubOnlyByCategory (строки для экрана бота)', () => 
     expect(rows.get('Runde Pizza')?.[0].id).toBe(hubItemId('Dry Aged Burger'));
   });
 });
+
+// --- раскладка и состояние Hub для экрана бота ---------------------------------------
+
+import { hubKeysByCategory, hubStateByKey, normalizeCategoryName } from '../lieferando/catalog';
+
+describe('hubStateByKey / hubKeysByCategory', () => {
+  const snapshot = {
+    takenAt: '2026-11-12T08:00:00.000Z',
+    failedCategories: [],
+    categories: [
+      {
+        name: 'Angebot',
+        items: [
+          { name: 'Gyoza Gemüse Vegetarische (7 Stück)', on: true, variations: [] },
+          { name: 'Gyoza Hähnchen & Gemüse (7 Stück)', on: false, variations: [] },
+        ],
+      },
+      { name: 'Pizza', items: [{ name: 'Hawaiian Pizza', on: true, variations: [] }] },
+      { name: 'Runde Pizza', items: [{ name: 'Hawaiian Pizza (rund)', on: false, variations: [] }] },
+    ],
+  };
+
+  it('состояние по ключу имени: вкл / выкл / вперемешку (Detroit и «(rund)» под одним ключом)', () => {
+    const state = hubStateByKey(snapshot);
+    expect(state.get(itemKey('Gyoza Gemüse (7 Stück)'))).toBe('on'); // имя сайта — тот же ключ
+    expect(state.get(itemKey('Gyoza Hähnchen & Gemüse (7 Stück)'))).toBe('off');
+    expect(state.get(itemKey('Hawaiian'))).toBe('mixed');
+    expect(state.get(itemKey('Нет такой'))).toBeUndefined();
+  });
+
+  it('ключи по категории Hub: гёдза лежит в «Angebot», хотя на сайте она в суши', () => {
+    const keys = hubKeysByCategory(snapshot);
+    expect(keys.get(normalizeCategoryName('angebot'))?.has(itemKey('Gyoza Gemüse (7 Stück)'))).toBe(true);
+    expect(keys.get(normalizeCategoryName('Pizza'))?.has(itemKey('Hawaiian'))).toBe(true);
+    expect(keys.get(normalizeCategoryName('Burger'))).toBeUndefined();
+  });
+});

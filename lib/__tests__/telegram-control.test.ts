@@ -1032,3 +1032,106 @@ describe('экран «Позиции» с Hub-строками без пары 
     expect(deps.editPanel).toHaveBeenCalledTimes(1);
   });
 });
+
+// --- раскладка Lieferando: «гости» и расхождение состояния с Hub ------------------------
+
+import { hubMismatchNote } from '../telegram-control';
+
+describe('экран «Позиции»: позиция там, где она лежит на Lieferando, и её состояние там', () => {
+  const angebot: MenuCategoryRow = { id: 'angebot1', name: 'Angebot', itemCount: 3, stoppedCount: 1 };
+  const rows: MenuItemRow[] = [
+    { id: 'a1', name: 'Fisherman Slice', categoryId: 'angebot1', available: true, botStop: null, hub: 'on' },
+    { id: 'g1', name: 'Gyoza Gemüse', categoryId: 'angebot1', available: true, botStop: null, hub: 'off', guestFrom: 'MakiLove Sushi' },
+    { id: 'g2', name: 'Gyoza Korean', categoryId: 'angebot1', available: false, botStop: null, hub: 'on', guestFrom: 'MakiLove Sushi' },
+  ];
+  const makeMenu = (over: Record<string, any> = {}) => ({
+    getMode: vi.fn(async () => 'day' as const),
+    setMode: vi.fn(async (mode: 'day' | 'indefinite') => mode),
+    listSizes: vi.fn(async () => []),
+    setSizeActive: vi.fn(async () => null),
+    listCategories: vi.fn(async () => [angebot]),
+    listCategoryItems: vi.fn(async () => ({ category: angebot, items: rows, hubSnapshotAt: '2026-11-12T14:00:00.000Z' })),
+    // порт отдаёт строку с «родной» категорией товара
+    setItemAvailable: vi.fn(async (id: string, available: boolean) => ({
+      id,
+      name: 'Gyoza Gemüse',
+      categoryId: 'maki1',
+      available,
+      botStop: null,
+    })),
+    enableCategoryItems: vi.fn(async () => []),
+    hubPlacementCategoryId: vi.fn(async () => 'angebot1'),
+    ...over,
+  });
+
+  it('hubMismatchNote: пометка только при расхождении', () => {
+    expect(hubMismatchNote({ available: true, hub: 'on' })).toBe('');
+    expect(hubMismatchNote({ available: false, hub: 'off' })).toBe('');
+    expect(hubMismatchNote({ available: true, hub: 'off' })).toBe('на Lieferando выключена');
+    expect(hubMismatchNote({ available: false, hub: 'on' })).toBe('на Lieferando включена');
+    expect(hubMismatchNote({ available: true, hub: 'mixed' })).toBe('на Lieferando включена частично');
+    expect(hubMismatchNote({ available: true })).toBe('');
+    expect(hubMismatchNote({ available: false, hub: 'on', hubOnly: true })).toBe('');
+  });
+
+  it('callback гостя: флаг _g парсится, обычная кнопка — без него, длина в лимите', () => {
+    expect(ctrlItemSet('6a36b89f81aa8a3a2c6e4989', false, 2, true)).toBe('ctrl_it_off_6a36b89f81aa8a3a2c6e4989_2_g');
+    expect(parseControlAction(ctrlItemSet('6a36b89f81aa8a3a2c6e4989', false, 2, true))).toEqual({
+      type: 'item_set',
+      productId: '6a36b89f81aa8a3a2c6e4989',
+      available: false,
+      page: 2,
+      guest: true,
+    });
+    expect(parseControlAction(ctrlItemSet('6a36b89f81aa8a3a2c6e4989', true, 0))).toEqual({
+      type: 'item_set',
+      productId: '6a36b89f81aa8a3a2c6e4989',
+      available: true,
+      page: 0,
+    });
+    expect(Buffer.byteLength(ctrlItemSet('6a36b89f81aa8a3a2c6e4989', false, 999, true))).toBeLessThanOrEqual(64);
+  });
+
+  it('текст: гость с категорией сайта, ⚠️ при расхождении, подсказка со временем снимка', async () => {
+    const deps = makeDeps({ menu: makeMenu() });
+    await handleControlUpdate(cbUpdate(ctrlItemsCategory('angebot1', 0)), deps);
+    const panel = (deps.editPanel as any).mock.calls[0][2];
+    expect(panel.text).toContain('🟢 Fisherman Slice\n');
+    expect(panel.text).toContain('🟢 Gyoza Gemüse · на сайте в «MakiLove Sushi» · ⚠️ на Lieferando выключена');
+    expect(panel.text).toContain('🔴 Gyoza Korean — выключен (админка/POS) · на сайте в «MakiLove Sushi» · ⚠️ на Lieferando включена');
+    expect(panel.text).toContain('⚠️ — на Lieferando состояние другое, чем на сайте (снимок 15:00). Нажатие по позиции выравнивает');
+    const buttons = panel.keyboard.inline_keyboard.flat();
+    expect(buttons.find((b: any) => b.callback_data === ctrlItemSet('a1', false, 0)).text).toBe('🟢 Fisherman Slice');
+    expect(buttons.find((b: any) => b.callback_data === ctrlItemSet('g1', false, 0, true)).text).toBe('🟢 Gyoza Gemüse ⚠️');
+    expect(buttons.find((b: any) => b.callback_data === ctrlItemSet('g2', true, 0, true)).text).toBe('🔴 Gyoza Korean ⚠️');
+  });
+
+  it('без расхождений — строка «сверено в HH:MM»', () => {
+    const calm: MenuItemRow[] = [{ ...rows[0] }, { ...rows[1], hub: 'on' }];
+    const panel = buildPanel(
+      { type: 'items', categoryId: 'angebot1', category: angebot, items: calm, page: 0, mode: 'day', hubSnapshotAt: '2026-11-12T14:00:00.000Z' },
+      { orders: '', workshops: { pizza: '', sushi: '' } } as any
+    );
+    expect(panel.text).toContain('🛵 Состояние на Lieferando сверено в 15:00 — расхождений с сайтом нет.');
+    expect(panel.text).not.toContain('⚠️');
+  });
+
+  it('нажатие гостя: флаг сайта + команда Lieferando, экран остаётся в Angebot', async () => {
+    const menu = makeMenu();
+    const queueLieferando = vi.fn(async () => ({}));
+    const deps = makeDeps({ menu, queueLieferando });
+    await handleControlUpdate(cbUpdate(ctrlItemSet('g1', false, 0, true)), deps);
+    expect(menu.setItemAvailable).toHaveBeenCalledWith('g1', false);
+    expect(queueLieferando).toHaveBeenCalledWith('off', { kind: 'item', names: ['Gyoza Gemüse'] }, { indefinite: false });
+    expect(menu.hubPlacementCategoryId).toHaveBeenCalledWith('g1');
+    expect(menu.listCategoryItems).toHaveBeenCalledWith('angebot1');
+  });
+
+  it('обычное нажатие (без флага) экран гостя не ищет — перерисовывает «родную» категорию', async () => {
+    const menu = makeMenu();
+    const deps = makeDeps({ menu, queueLieferando: vi.fn(async () => ({})) });
+    await handleControlUpdate(cbUpdate(ctrlItemSet('g1', false, 0)), deps);
+    expect(menu.hubPlacementCategoryId).not.toHaveBeenCalled();
+    expect(menu.listCategoryItems).toHaveBeenCalledWith('maki1');
+  });
+});
