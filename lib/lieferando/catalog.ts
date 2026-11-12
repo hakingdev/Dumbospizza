@@ -524,3 +524,45 @@ export function hubOnlyByCategory(
   }
   return out;
 }
+
+// --- где позиция лежит в Hub и её состояние там (для экрана бота) ---------------------
+
+/** Общий переключатель на Lieferando: все строки с этим ключом включены / выключены / вперемешку. */
+export type HubItemState = 'on' | 'off' | 'mixed';
+
+/**
+ * Состояние общих переключателей Hub по ключу имени (itemKey). У пиццы под
+ * одним ключом две строки — Detroit и «(rund)»: разное состояние = 'mixed'.
+ */
+export function hubStateByKey(catalog: LieferandoCatalog): Map<string, HubItemState> {
+  const out = new Map<string, HubItemState>();
+  for (const c of catalog.categories) {
+    for (const i of c.items) {
+      const key = itemKey(i.name);
+      if (!key) continue;
+      const cur: HubItemState = i.on ? 'on' : 'off';
+      const prev = out.get(key);
+      out.set(key, prev && prev !== cur ? 'mixed' : cur);
+    }
+  }
+  return out;
+}
+
+/**
+ * Ключи имён строк Hub по нормализованному имени категории Hub — чтобы экран
+ * бота показал позицию и там, где она лежит на Lieferando (гёдза: на сайте в
+ * «MakiLove Sushi», в Hub — в «Angebot»).
+ */
+export function hubKeysByCategory(catalog: LieferandoCatalog): Map<string, Set<string>> {
+  const out = new Map<string, Set<string>>();
+  for (const c of catalog.categories) {
+    const norm = normalizeCategoryName(c.name);
+    const keys = out.get(norm) ?? new Set<string>();
+    for (const i of c.items) {
+      const key = itemKey(i.name);
+      if (key) keys.add(key);
+    }
+    if (keys.size) out.set(norm, keys);
+  }
+  return out;
+}

@@ -25,7 +25,7 @@ import { getLieferandoCatalogRecord, loadSiteItems, saveLieferandoCatalogRecord 
 export interface CatalogUpload {
   /** id команды из очереди (агент снимал по кнопке) — закрываем её отчётом; нет = ежедневный/CLI */
   id?: string | null;
-  /** 'command' | 'daily' | 'cli' — только для текста сообщения о сбое */
+  /** 'command' | 'daily' | 'refresh' | 'cli' — текст сообщения о сбое; 'refresh' (ежечасный) о сбое молчит */
   reason?: string;
   agentId?: string;
   ok: boolean;
@@ -59,6 +59,12 @@ export async function receiveCatalogSnapshot(
   if (!upload.ok || !upload.catalog) {
     const error = (upload.error || 'снимок пуст').slice(0, 300);
     await closeCommand(false, 0, 1, error);
+    // Ежечасное обновление упало (сеть, Hub моргнул) — не шумим в группе: прежний
+    // снимок остаётся, а стойкую поломку покажут утренний снимок и команды бота.
+    if (upload.reason === 'refresh') {
+      console.warn('[lieferando-catalog] refresh failed', { agentId: upload.agentId, error });
+      return { stored: false, notified: false, changes: null };
+    }
     const notified = await sendControlMessage(formatCatalogFailure(error, upload.reason));
     return { stored: false, notified, changes: null };
   }

@@ -55,3 +55,43 @@ describe('itemKey', () => {
     expect(itemKey('Pizzabrot')).not.toBe(itemKey('Brot'));
   });
 });
+
+// --- расписание снимков каталога ------------------------------------------------------
+
+import { catalogDue, localDayHour } from '../../scripts/lieferando/core.mjs';
+
+describe('catalogDue — когда агенту снимать каталог Hub', () => {
+  const at = (iso: string) => new Date(iso);
+  // 12.11.2026 — зима, Берлин = UTC+1
+  const base = { hourFrom: 9, everyMin: 60, timeZone: 'Europe/Berlin' };
+
+  it('localDayHour считает день и час в зоне ресторана', () => {
+    expect(localDayHour(at('2026-11-12T23:30:00.000Z'), 'Europe/Berlin')).toEqual({ day: '2026-11-13', hour: 0 });
+  });
+
+  it('до 09:00 — рано, даже если сегодня ещё не снимали', () => {
+    expect(catalogDue({ ...base, now: at('2026-11-12T07:59:00.000Z'), lastDay: '2026-11-11', lastAt: 0 })).toBeNull();
+  });
+
+  it('09:00 и сегодня не снимали → daily', () => {
+    expect(catalogDue({ ...base, now: at('2026-11-12T08:00:10.000Z'), lastDay: '2026-11-11', lastAt: 0 })).toBe('daily');
+  });
+
+  it('в течение дня: через час после последнего снимка → refresh, раньше — нет', () => {
+    const lastAt = at('2026-11-12T08:00:30.000Z').getTime();
+    const day = '2026-11-12';
+    expect(catalogDue({ ...base, now: at('2026-11-12T08:40:00.000Z'), lastDay: day, lastAt })).toBeNull();
+    expect(catalogDue({ ...base, now: at('2026-11-12T09:00:31.000Z'), lastDay: day, lastAt })).toBe('refresh');
+  });
+
+  it('everyMin = 0 — только раз в день; hourFrom = -1 — снимки выключены', () => {
+    const lastAt = at('2026-11-12T08:00:30.000Z').getTime();
+    expect(catalogDue({ ...base, everyMin: 0, now: at('2026-11-12T15:00:00.000Z'), lastDay: '2026-11-12', lastAt })).toBeNull();
+    expect(catalogDue({ ...base, hourFrom: -1, now: at('2026-11-12T15:00:00.000Z'), lastDay: '', lastAt: 0 })).toBeNull();
+  });
+
+  it('после полуночи до 09:00 обновлений нет (ночью Hub никто не трогает)', () => {
+    const lastAt = at('2026-11-12T21:00:00.000Z').getTime();
+    expect(catalogDue({ ...base, now: at('2026-11-13T01:30:00.000Z'), lastDay: '2026-11-12', lastAt })).toBeNull();
+  });
+});
