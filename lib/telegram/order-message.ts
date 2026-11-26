@@ -9,6 +9,7 @@
  */
 import type { OrderEtaAnalysis, OrderGeoAnalysis } from '../eta/types';
 import { stripPromoLabels } from '../orders/gift-label';
+import { orderChannelBadge, type OrderClientInfo } from '../orders/order-client';
 
 export interface OrderNotification {
   orderId: string;
@@ -49,6 +50,16 @@ export interface OrderNotification {
    * времени при поступлении выключена, время ставит кухня с прибора.
    */
   etaAnalysis?: OrderEtaAnalysis | OrderGeoAnalysis;
+  /** Канал заказа (orders.source) — для пометки «📲 App» в шапке. */
+  source?: string | null;
+  /** Платформа/версия приложения (orders.client_info). */
+  clientInfo?: OrderClientInfo | null;
+}
+
+/** « · 📲 App · iOS» для шапки; пусто для сайта и Lieferando. */
+export function channelHeaderSuffix(order: Pick<OrderNotification, 'source' | 'clientInfo'>): string {
+  const badge = orderChannelBadge(order);
+  return badge ? ` · ${badge}` : '';
 }
 
 /** Полная оценка со временем (AI/эвристика) — в отличие от гео-обогащения. */
@@ -199,5 +210,5 @@ ${itemsList
 
 /** Обычное сообщение бота (не форум): заголовок «НОВЫЙ ЗАКАЗ» + тело. */
 export function buildOrderMessageText(order: OrderNotification): string {
-  return `🔔 <b>НОВЫЙ ЗАКАЗ #${order.orderId}</b>\n\n${buildOrderBodyText(order)}`;
+  return `🔔 <b>НОВЫЙ ЗАКАЗ #${order.orderId}</b>${channelHeaderSuffix(order)}\n\n${buildOrderBodyText(order)}`;
 }

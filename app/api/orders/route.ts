@@ -30,6 +30,7 @@ import {
   visibleOrderStatusFilter,
   sweepStaleDraftsThrottled,
 } from '../../../lib/orders/payment-draft';
+import { parseOrderClient } from '../../../lib/orders/order-client';
 import { claimPendingPrintOrders } from '../../../lib/orders/print-queue';
 import { getSetting } from '../../../lib/settings';
 import { evaluateOrderHours } from '../../../lib/opening-schedule';
@@ -627,7 +628,14 @@ export async function POST(request: NextRequest) {
     const SMS_CONSENT_TEXT =
       'Ja, ich möchte Angebote und Aktionen von Dumbos Pizza per SMS erhalten. Abmeldung jederzeit möglich.';
 
+    // Канал заказа (сайт / приложение) — только из заголовков, не из тела:
+    // поле source в orderData игнорируется, иначе клиент мог бы выдать себя
+    // за 'lieferando' и выпасть из выручки/бонусов.
+    const orderClient = parseOrderClient(request.headers);
+
     const orderPayload = {
+      source: orderClient.source,
+      clientInfo: orderClient.clientInfo,
       customerName: orderData.customerName,
       phoneNumber: orderData.phoneNumber,
       email: orderData.email,

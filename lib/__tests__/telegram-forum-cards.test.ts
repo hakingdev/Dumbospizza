@@ -931,3 +931,26 @@ describe('parseCardCallback', () => {
     expect(parseCardCallback(undefined)).toBeNull();
   });
 });
+
+describe('renderCardText — канал заказа', () => {
+  it('карточка заказа из приложения помечена в шапке', () => {
+    const text = renderCardText({
+      order: { ...ORDER.notification, source: 'app', clientInfo: { platform: 'android' } },
+      status: 'cooking',
+      createdAt: ORDER.createdAt,
+      statusHistory: [],
+    });
+    expect(text.split('\n')[0]).toContain('<b>Заказ #260620001</b>');
+    expect(text.split('\n')[0]).toMatch(/ · 📲 App · Android$/);
+  });
+
+  it('карточка заказа с сайта без пометки', () => {
+    const text = renderCardText({
+      order: { ...ORDER.notification, source: 'website' },
+      status: 'cooking',
+      createdAt: ORDER.createdAt,
+      statusHistory: [],
+    });
+    expect(text).not.toContain('📲');
+  });
+});

@@ -21,6 +21,7 @@ import {
 } from './forum';
 import {
   buildOrderBodyText,
+  channelHeaderSuffix,
   escapeHtml,
   type OrderEtaView,
   type OrderNotification,
@@ -117,7 +118,7 @@ export function renderCardText(input: CardTextInput): string {
   // читается как поломка, а не как ожидание действия кухни.
   const waitingHint = waiting ? '\n⏳ Кухня ещё не назначила время' : '';
   const header =
-    `${waiting ? '🆕' : CARD_STATUS_EMOJI[status]} <b>Заказ #${escapeHtml(order.orderId)}</b>${headerTime}` +
+    `${waiting ? '🆕' : CARD_STATUS_EMOJI[status]} <b>Заказ #${escapeHtml(order.orderId)}</b>${headerTime}${channelHeaderSuffix(order)}` +
     `\nСтатус: <b>${waiting ? 'Не принят' : CARD_STATUS_LABELS[status]}</b>${waitingHint}`;
 
   const courierLine = courier ? `\n🧍 Курьер: ${escapeHtml(courier)}` : '';

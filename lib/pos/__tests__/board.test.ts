@@ -79,6 +79,7 @@ describe('канал заказа', () => {
   it('различает Lieferando, сайт и телефон', () => {
     expect(orderChannel({ source: 'lieferando' })).toBe('Lieferando');
     expect(orderChannel({ source: 'website' })).toBe('Website');
+    expect(orderChannel({ source: 'app' })).toBe('App');
     // Заказ без источника завели вручную — это телефонный звонок.
     expect(orderChannel({})).toBe('Telefon');
   });

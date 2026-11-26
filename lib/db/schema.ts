@@ -230,9 +230,13 @@ export const orders = pgTable(
     >(),
     telegramMessageId: bigint('telegram_message_id', { mode: 'number' }),
     mewsOrderId: text('mews_order_id'),
-    // Канал заказа: 'website' — собственный сайт, 'lieferando' — чек Lieferando,
-    // распознанный ботом-диспетчером (lib/lieferando/receipt-import.ts).
+    // Канал заказа: 'website' — собственный сайт, 'app' — наше мобильное
+    // приложение, 'lieferando' — чек Lieferando, распознанный ботом-диспетчером
+    // (lib/lieferando/receipt-import.ts). См. lib/orders/order-source.ts.
     source: text('source').notNull().default('website'),
+    // Платформа и версия приложения для source='app' (заголовки X-App-Platform /
+    // X-App-Version, lib/orders/order-client.ts). У заказов с сайта — NULL.
+    clientInfo: jsonb('client_info').$type<import('../orders/order-client').OrderClientInfo | null>(),
     kitchenPrintStatus: text('kitchen_print_status').default('pending'),
     // Номер задания печати кухонного чека: 0 — первичная печать, +1 на каждый
     // Nachdruck из админки. Входит в идемпотентный ключ агента, поэтому повторная

@@ -120,8 +120,10 @@ export interface IOrder {
     | null;
   telegramMessageId?: number;
   mewsOrderId?: string;
-  /** Канал заказа: сайт или чек Lieferando, распознанный ботом-диспетчером. */
-  source?: 'website' | 'lieferando';
+  /** Канал заказа: сайт, наше приложение или чек Lieferando (бот-диспетчер). */
+  source?: 'website' | 'app' | 'lieferando';
+  /** Платформа/версия приложения (только для source='app'). */
+  clientInfo?: import('../orders/order-client').OrderClientInfo | null;
   kitchenPrintStatus?: 'pending' | 'printing' | 'completed' | 'failed';
   /** Номер задания печати кухонного чека: 0 — первичное, +1 на каждый Nachdruck. */
   kitchenPrintSeq?: number;

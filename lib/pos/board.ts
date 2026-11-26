@@ -199,6 +199,8 @@ export function orderChannel(order: { source?: string | null }): string {
       return 'Lieferando';
     case 'website':
       return 'Website';
+    case 'app':
+      return 'App';
     default:
       return 'Telefon';
   }
