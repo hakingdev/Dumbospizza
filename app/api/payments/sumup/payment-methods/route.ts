@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { listMerchantPaymentMethods } from '../../../../../lib/sumup';
+import {
+  getMerchantPaymentMethodsCached,
+  parseAmountParam,
+} from '../../../../../lib/payments/sumup-allowlist';
 
 /**
  * GET /api/payments/sumup/payment-methods?amount=&currency=
@@ -8,31 +11,17 @@ import { listMerchantPaymentMethods } from '../../../../../lib/sumup';
  * какие группы способов оплаты показывать (пустая группа не рендерится) и
  * какие id уходят в onPaymentMethodsLoad. Секретный ключ остаётся на сервере.
  *
- * Кэш в памяти ~5 минут: список меняется только настройками мерчант-аккаунта,
- * а страница чекаута дёргает эндпоинт при каждом входе на шаг оплаты.
+ * Кэш в памяти ~5 минут (lib/payments/sumup-allowlist).
  * При сбое SumUp — { success:false }: клиент уходит в фолбэк
  * (resolveVisibleGroups(null)), оплата картой не выключается.
  */
-const CACHE_TTL_MS = 5 * 60_000;
-let cache: { key: string; at: number; methods: string[] } | null = null;
-
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
-  const amountRaw = searchParams.get('amount');
-  const amount = amountRaw != null && amountRaw !== '' ? Number(amountRaw) : undefined;
-  const currency = searchParams.get('currency') || 'EUR';
-  const key = `${Number.isFinite(amount) ? amount : ''}:${currency}`;
-
-  if (cache && cache.key === key && Date.now() - cache.at < CACHE_TTL_MS) {
-    return NextResponse.json({ success: true, methods: cache.methods });
-  }
-
   try {
-    const methods = await listMerchantPaymentMethods({
-      amount: Number.isFinite(amount) ? amount : undefined,
-      currency,
+    const methods = await getMerchantPaymentMethodsCached({
+      amount: parseAmountParam(searchParams.get('amount')),
+      currency: searchParams.get('currency') || 'EUR',
     });
-    cache = { key, at: Date.now(), methods };
     return NextResponse.json({ success: true, methods });
   } catch (error) {
     console.error('SumUp list payment methods error:', error);

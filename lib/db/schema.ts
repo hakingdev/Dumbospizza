@@ -626,6 +626,10 @@ export const pushDevices = pgTable(
     phoneNumber: text('phone_number'),
     email: text('email'),
     active: boolean('active').notNull().default(true),
+    /** Согласие на рекламные push (kind: promo). Без него — только order/info. */
+    promoOptIn: boolean('promo_opt_in').notNull().default(false),
+    locale: text('locale'),
+    appVersion: text('app_version'),
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -633,6 +637,64 @@ export const pushDevices = pgTable(
   (t) => ({
     tokenUq: uniqueIndex('push_devices_token_uq').on(t.token),
     activePlatformIdx: index('push_devices_active_platform_idx').on(t.active, t.platform),
+  })
+);
+
+// =====================================================================
+// Push campaigns (вкладка «Push» в admin-v2, отправка через Expo Push API)
+// =====================================================================
+export const pushCampaigns = pgTable(
+  'push_campaigns',
+  {
+    id: id(),
+    title: text('title').notNull(),
+    body: text('body').notNull(),
+    imageUrl: text('image_url'),
+    /** data для приложения: { kind, url?, promoCode?, campaignId? } */
+    data: jsonb('data').$type<Record<string, string>>().notNull().default({}),
+    /** 'all' | 'ios' | 'android' */
+    audience: text('audience').notNull().default('all'),
+    /** 'scheduled' | 'sending' | 'sent' | 'failed' | 'canceled' */
+    status: text('status').notNull().default('scheduled'),
+    scheduledAt: timestamp('scheduled_at', { withTimezone: true, mode: 'date' }),
+    sentAt: timestamp('sent_at', { withTimezone: true, mode: 'date' }),
+    recipientCount: integer('recipient_count').notNull().default(0),
+    /** Expo принял сообщение (ticket ok) */
+    acceptedCount: integer('accepted_count').notNull().default(0),
+    /** Receipt ok — доставлено до APNs/FCM */
+    deliveredCount: integer('delivered_count').notNull().default(0),
+    /** Ошибки тикетов + receipts */
+    errorCount: integer('error_count').notNull().default(0),
+    lastError: text('last_error'),
+    createdBy: text('created_by'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    statusScheduledIdx: index('push_campaigns_status_scheduled_idx').on(t.status, t.scheduledAt),
+  })
+);
+
+// Тикеты Expo по кампании — нужны, чтобы через ~15 мин забрать receipts.
+export const pushTickets = pgTable(
+  'push_tickets',
+  {
+    id: id(),
+    campaignId: text('campaign_id').notNull(),
+    token: text('token').notNull(),
+    /** id тикета Expo (null, если тикет сразу пришёл с ошибкой) */
+    ticketId: text('ticket_id'),
+    /** 'pending' (ждём receipt) | 'delivered' | 'error' */
+    status: text('status').notNull().default('pending'),
+    error: text('error'),
+    checkedAt: timestamp('checked_at', { withTimezone: true, mode: 'date' }),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    campaignIdx: index('push_tickets_campaign_idx').on(t.campaignId),
+    pendingIdx: index('push_tickets_pending_idx')
+      .on(t.createdAt)
+      .where(sql`${t.status} = 'pending'`),
   })
 );
 
@@ -904,6 +966,8 @@ export type OptionGroup = typeof optionGroups.$inferSelect;
 export type Promotion = typeof promotions.$inferSelect;
 export type PromotionCampaignLog = typeof promotionCampaignLogs.$inferSelect;
 export type PushDevice = typeof pushDevices.$inferSelect;
+export type PushCampaign = typeof pushCampaigns.$inferSelect;
+export type PushTicket = typeof pushTickets.$inferSelect;
 export type Setting = typeof settings.$inferSelect;
 export type SizeVariation = typeof sizeVariations.$inferSelect;
 export type WhatsAppQueueRow = typeof whatsappQueue.$inferSelect;
