@@ -87,7 +87,7 @@ Every Expo ticket is stored in `push_tickets`. The cron fetches receipts for tic
 
 ## Database
 
-Migration **`lib/db/migrations/0018_push_campaigns.sql`** (not applied yet). The drizzle journal
+Migration **`lib/db/migrations/0018_push_campaigns.sql`** (applied to prod 2026-11-26 with `node scripts/apply-migration-0018.mjs`). The drizzle journal
 is out of sync with production, so do **not** run `npm run db:migrate`; apply the SQL directly
 (Supabase SQL editor or `psql "$DATABASE_URL" -f lib/db/migrations/0018_push_campaigns.sql`).
 It is idempotent (`IF NOT EXISTS`). It adds:
