@@ -3,7 +3,7 @@
 /**
  * Маркетинг (канва D8, узел 40:1755). Акции, промокоды и баннер — реальные
  * данные (показатели акций — orderCount/revenueTotal из админ-вью, применения
- * промокодов — usageCount); штампкарты и push — демо (таких механик пока нет).
+ * промокодов — usageCount); штампкарты — демо. Push — отдельный раздел /admin-v2/push.
  */
 
 import { useState } from 'react';
@@ -454,14 +454,14 @@ export default function MarketingPage() {
           </div>
           <div className="flex items-center gap-3 border-t border-gray-200 py-2">
             <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2 text-base font-bold leading-6 text-gray-900">
-                Push-уведомления <DemoTag />
-              </div>
+              <div className="text-base font-bold leading-6 text-gray-900">Push-уведомления</div>
               <div className="text-xs leading-4 text-gray-600">
-                Появятся вместе с мобильным приложением
+                Приложение Dumbo Slice · с согласием на рекламу
               </div>
             </div>
-            <Toggle on={false} busy label="Недоступно" onChange={() => {}} />
+            <a href="/admin-v2/push" className={`${btnSoft} h-8 flex-none px-3 text-sm no-underline`}>
+              Создать
+            </a>
           </div>
         </Card>
       </div>

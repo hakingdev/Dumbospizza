@@ -4,6 +4,9 @@ import { pushDevices } from '../db/schema';
 export interface IPushDevice {
   token: string;
   platform: 'android' | 'ios' | 'web';
+  promoOptIn: boolean;
+  locale?: string;
+  appVersion?: string;
   phoneNumber?: string;
   email?: string;
   active: boolean;
