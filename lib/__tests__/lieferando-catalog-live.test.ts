@@ -116,6 +116,18 @@ describe('receiveCatalogSnapshot', () => {
     expect(mSend.mock.calls[0][0]).toContain('Ежедневный снимок каталога Lieferando не удался');
     expect(mSend.mock.calls[0][0]).toContain('сессия истекла');
   });
+
+  it('сбой ежечасного обновления (reason=refresh): прежний снимок остаётся, в группу — тишина', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const r = await receiveCatalogSnapshot(
+      { reason: 'refresh', ok: false, error: 'Hub не ответил', catalog: null },
+      NOW
+    );
+    expect(r).toEqual({ stored: false, notified: false, changes: null });
+    expect(mSave).not.toHaveBeenCalled();
+    expect(mSend).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
 });
 
 describe('POST /api/lieferando/agent/catalog', () => {

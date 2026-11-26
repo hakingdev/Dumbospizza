@@ -88,6 +88,36 @@ export function sizeKey(label) {
  * сторожит тест lib/__tests__/lieferando-item-key.test.ts). Меняешь здесь —
  * меняй и там.
  */
+/** Дата и час в зоне ресторана: { day: 'YYYY-MM-DD', hour } */
+export function localDayHour(now = new Date(), timeZone = 'Europe/Berlin') {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(now);
+  const get = (type) => parts.find((p) => p.type === type)?.value || '';
+  return { day: `${get('year')}-${get('month')}-${get('day')}`, hour: Number(get('hour')) };
+}
+
+/**
+ * Пора ли агенту снимать каталог Hub:
+ *   'daily'   — час hourFrom настал, а сегодня ещё не снимали;
+ *   'refresh' — с последнего снимка прошло everyMin минут (с hourFrom до
+ *               полуночи; ночью Hub никто не трогает); everyMin = 0 — не обновлять;
+ *   null      — рано / снимки выключены (hourFrom < 0).
+ */
+export function catalogDue({ now = new Date(), hourFrom = 9, everyMin = 60, lastDay = '', lastAt = 0, timeZone = 'Europe/Berlin' } = {}) {
+  if (!Number.isFinite(hourFrom) || hourFrom < 0) return null;
+  const { day, hour } = localDayHour(now, timeZone);
+  if (hour < hourFrom) return null;
+  if (lastDay !== day) return 'daily';
+  if (everyMin > 0 && now.getTime() - lastAt >= everyMin * 60_000) return 'refresh';
+  return null;
+}
+
 export function itemKey(name) {
   return (
     String(name || '')

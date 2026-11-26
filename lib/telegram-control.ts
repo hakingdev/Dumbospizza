@@ -108,8 +108,9 @@ export const ctrlSizeSet = (variationId: string, active: boolean) =>
   `ctrl_sz_${active ? 'on' : 'off'}_${variationId}`;
 export const ctrlItemsCategory = (categoryId: string, page = 0) =>
   `ctrl_it_cat_${categoryId}_${page}`;
-export const ctrlItemSet = (productId: string, available: boolean, page = 0) =>
-  `ctrl_it_${available ? 'on' : 'off'}_${productId}_${page}`;
+/** guest — позиция показана «гостем» по раскладке Lieferando: после нажатия вернуться на тот же экран. */
+export const ctrlItemSet = (productId: string, available: boolean, page = 0, guest = false) =>
+  `ctrl_it_${available ? 'on' : 'off'}_${productId}_${page}${guest ? '_g' : ''}`;
 export const ctrlItemsEnableAll = (categoryId: string, page = 0) =>
   `ctrl_it_all_${categoryId}_${page}`;
 /** Позиций на странице экрана категории (у MakiLove их 52). */
@@ -152,7 +153,7 @@ export type ControlAction =
   | { type: 'size_set'; variationId: string; active: boolean }
   | { type: 'items_menu' }
   | { type: 'items_category'; categoryId: string; page: number }
-  | { type: 'item_set'; productId: string; available: boolean; page: number }
+  | { type: 'item_set'; productId: string; available: boolean; page: number; guest?: boolean }
   | { type: 'items_enable_all'; categoryId: string; page: number }
   | { type: 'menu_mode'; mode: MenuStopMode; back: MenuStopBack }
   | { type: 'catalog_sync' };
@@ -259,13 +260,14 @@ export function parseControlAction(data: unknown): ControlAction | null {
   if (sizeSet) return { type: 'size_set', variationId: sizeSet[2], active: sizeSet[1] === 'on' };
   const itemsCat = /^ctrl_it_cat_([A-Za-z0-9-]{1,36})_(\d{1,3})$/.exec(data);
   if (itemsCat) return { type: 'items_category', categoryId: itemsCat[1], page: Number(itemsCat[2]) };
-  const itemSet = /^ctrl_it_(on|off)_([A-Za-z0-9-]{1,36})_(\d{1,3})$/.exec(data);
+  const itemSet = /^ctrl_it_(on|off)_([A-Za-z0-9-]{1,36})_(\d{1,3})(_g)?$/.exec(data);
   if (itemSet) {
     return {
       type: 'item_set',
       productId: itemSet[2],
       available: itemSet[1] === 'on',
       page: Number(itemSet[3]),
+      ...(itemSet[4] ? { guest: true } : {}),
     };
   }
   const itemsAll = /^ctrl_it_all_([A-Za-z0-9-]{1,36})_(\d{1,3})$/.exec(data);
@@ -572,6 +574,18 @@ function stoppedNote(botStop: MenuBotStop, timeZone: string, hubOnly = false): s
     : `выключен ботом до ${formatTime(new Date(botStop.until), timeZone)}`;
 }
 
+/**
+ * Состояние на Lieferando (по снимку каталога) расходится с флагом сайта —
+ * короткая пометка для строки; '' — совпадает или пары в Hub нет.
+ */
+export function hubMismatchNote(i: Pick<MenuItemRow, 'available' | 'hub' | 'hubOnly'>): string {
+  if (i.hubOnly || !i.hub) return '';
+  if (i.hub === 'mixed') return 'на Lieferando включена частично';
+  if (i.available && i.hub === 'off') return 'на Lieferando выключена';
+  if (!i.available && i.hub === 'on') return 'на Lieferando включена';
+  return '';
+}
+
 /** 🟢 включено · 🔴 выключено (до конца дня или руками) · ⛔ выключено ботом бессрочно. */
 function rowIcon(on: boolean, botStop: MenuBotStop): string {
   if (on) return '🟢';
@@ -704,13 +718,26 @@ export function buildItemsText(
   for (const i of slice) {
     const icon = rowIcon(i.available, i.botStop);
     const title = `${i.hubOnly ? '🛵 ' : ''}${esc(i.name)}`;
+    const mismatch = hubMismatchNote(i);
     lines.push(
-      i.available ? `${icon} ${title}` : `${icon} ${title} — ${stoppedNote(i.botStop, timeZone, i.hubOnly)}`
+      (i.available ? `${icon} ${title}` : `${icon} ${title} — ${stoppedNote(i.botStop, timeZone, i.hubOnly)}`) +
+        (i.guestFrom ? ` · на сайте в «${esc(i.guestFrom)}»` : '') +
+        (mismatch ? ` · ⚠️ ${mismatch}` : '')
     );
   }
-  if (items.some((i) => i.hubOnly)) {
-    const at = hubSnapshotAt ? ` (снимок ${formatTime(new Date(hubSnapshotAt), timeZone)})` : '';
+  const at = hubSnapshotAt ? ` (снимок ${formatTime(new Date(hubSnapshotAt), timeZone)})` : '';
+  const hasHubOnly = items.some((i) => i.hubOnly);
+  const hasMismatch = items.some((i) => hubMismatchNote(i));
+  if (hasHubOnly) {
     lines.push('', `🛵 — только на Lieferando, на сайте такого товара нет${at}: переключается только там.`);
+  }
+  if (hasMismatch) {
+    lines.push(
+      '',
+      `⚠️ — на Lieferando состояние другое, чем на сайте${hasHubOnly ? '' : at}. Нажатие по позиции выравнивает: выключит или включит её и там, и там.`
+    );
+  } else if (!hasHubOnly && hubSnapshotAt) {
+    lines.push('', `🛵 Состояние на Lieferando сверено в ${formatTime(new Date(hubSnapshotAt), timeZone)} — расхождений с сайтом нет.`);
   }
   lines.push('', MENU_HINT, MODE_HINTS[mode], `Обновлено ${formatTimeSec(now, timeZone)}`);
   return lines.join('\n');
@@ -727,8 +754,8 @@ export function buildItemsKeyboard(
     modeRow(mode, { screen: 'items', categoryId, page: p }),
     ...slice.map((i) => [
       {
-        text: `${rowIcon(i.available, i.botStop)} ${i.hubOnly ? '🛵 ' : ''}${i.name}`,
-        callback_data: ctrlItemSet(i.id, !i.available, p),
+        text: `${rowIcon(i.available, i.botStop)} ${i.hubOnly ? '🛵 ' : ''}${i.name}${hubMismatchNote(i) ? ' ⚠️' : ''}`,
+        callback_data: ctrlItemSet(i.id, !i.available, p, Boolean(i.guestFrom)),
       },
     ]),
   ];
@@ -764,7 +791,7 @@ export function buildPanel(
         items: MenuItemRow[];
         page: number;
         mode: MenuStopMode;
-        /** takenAt снимка Lieferando — если в списке есть Hub-строки без пары */
+        /** takenAt снимка Lieferando — если он что-то дал экрану (Hub-строки, гости, состояние Hub) */
         hubSnapshotAt?: string | null;
       },
   state: BlockState,
@@ -944,7 +971,10 @@ async function menuStopScreen(
         : action.available
           ? `🟢 ${row.name}: включена на сайте · ${lief}`
           : `${rowIcon(false, row.botStop)} ${row.name}: выключена на сайте ${offNote(row.botStop)} · ${lief}`;
-      return { panel: await itemsPanel(row.categoryId, action.page), toast };
+      // «Гость» (нажали в категории, где позиция лежит на Lieferando) — остаёмся на том экране.
+      const guestScreen =
+        action.guest && menu.hubPlacementCategoryId ? await menu.hubPlacementCategoryId(row.id) : null;
+      return { panel: await itemsPanel(guestScreen || row.categoryId, action.page), toast };
     }
     case 'items_enable_all': {
       const enabled = await menu.enableCategoryItems(action.categoryId);

@@ -332,3 +332,130 @@ describe('Hub-строки без пары на сайте', () => {
     expect(Object.keys(written().products)).toEqual([SHRIMP_ID]);
   });
 });
+
+// --- раскладка Lieferando: «гости» и состояние Hub у товаров сайта -----------------------
+
+import { hubPlacementCategoryId } from '../menu-stop/service';
+
+describe('позиция видна там, где лежит на Lieferando, и показывает его состояние', () => {
+  // Гёдза: на сайте в «MakiLove Sushi», в Hub — в «Angebot» (жалоба 12.11.2026).
+  const catalog = () => ({
+    takenAt: '2026-11-12T08:00:00.000Z',
+    receivedAt: '2026-11-12T08:00:30.000Z',
+    failedCategories: [],
+    hubOnlyKeys: [],
+    mismatchKeys: [],
+    categories: [
+      {
+        name: 'Angebot',
+        items: [
+          { name: "Neu: Fisherman's Slice (Tonno) Pizza", on: true, variations: [] },
+          { name: 'Gyoza Gemüse Vegetarische (7 Stück)', on: true, variations: [] },
+          { name: 'Gyoza Hähnchen & Gemüse (7 Stück)', on: false, variations: [] },
+        ],
+      },
+      { name: 'Makilove Maki', items: [{ name: 'Maki Lachs 150g', on: true, variations: [] }] },
+    ],
+  });
+  const products = () => [
+    { _id: 'a1', name: "Neu: Fisherman's Slice (Tonno) Pizza", category: 'angebot1', available: true },
+    { _id: 'g1', name: 'Gyoza Gemüse (7 Stück)', category: 'maki1', available: true },
+    { _id: 'g2', name: 'Gyoza Hähnchen & Gemüse (7 Stück)', category: 'maki1', available: true },
+    { _id: 'm1', name: 'Maki Lachs 150g', category: 'maki1', available: false },
+    { _id: 'x1', name: 'Gyoza Gemüse (7 Stück)', category: 'hidden1', available: true }, // скрытая категория
+  ];
+  const categories = [
+    { _id: 'angebot1', name: 'Angebot', active: true },
+    { _id: 'maki1', name: 'MakiLove Sushi', active: true },
+  ];
+
+  let rows: any[];
+  const withCatalog = (menuStop: any, cat: any = catalog()) => {
+    let stored = cat;
+    mGet.mockImplementation(async (key: string, fallback: any) =>
+      key === MENU_STOP_KEY ? menuStop : key === 'storeSettings' ? STORE : key === LIEFERANDO_CATALOG_KEY ? stored : fallback
+    );
+    mSet.mockImplementation(async (key: string, value: any) => {
+      if (key === LIEFERANDO_CATALOG_KEY) stored = value;
+    });
+    return () => stored;
+  };
+
+  beforeEach(() => {
+    rows = products();
+    models.category.find.mockImplementation(() => models.chain(categories));
+    models.category.findById.mockImplementation((id: string) => ({
+      lean: async () => categories.find((c) => c._id === id) ?? null,
+    }));
+    models.product.find.mockImplementation(() => models.chain(rows));
+  });
+
+  it('listCategoryItems(Angebot): свой товар + гёдзы-гости с пометкой категории сайта и состоянием Hub', async () => {
+    withCatalog({ sizes: {}, products: {} });
+    const screen = await listCategoryItems('angebot1', NOW);
+    expect(screen.items.map((i) => [i.id, i.categoryId, i.guestFrom ?? null, i.available, i.hub ?? null])).toEqual([
+      ['a1', 'angebot1', null, true, 'on'],
+      ['g1', 'angebot1', 'MakiLove Sushi', true, 'on'],
+      ['g2', 'angebot1', 'MakiLove Sushi', true, 'off'], // на сайте вкл, на Lieferando выкл
+    ]);
+    expect(screen.hubSnapshotAt).toBe('2026-11-12T08:00:00.000Z');
+    expect(screen.category).toMatchObject({ itemCount: 3, stoppedCount: 0 });
+  });
+
+  it('в «родной» категории товары остаются, без пометки гостя; расхождение видно и там', async () => {
+    withCatalog({ sizes: {}, products: {} });
+    const screen = await listCategoryItems('maki1', NOW);
+    expect(screen.items.map((i) => [i.id, i.guestFrom ?? null, i.available, i.hub ?? null])).toEqual([
+      ['g1', null, true, 'on'],
+      ['g2', null, true, 'off'],
+      ['m1', null, false, 'on'], // на сайте выкл, на Lieferando вкл
+    ]);
+  });
+
+  it('listMenuCategories считает гостей в счётчиках категории', async () => {
+    rows[2].available = false; // g2 выключена на сайте
+    withCatalog({ sizes: {}, products: {} });
+    expect(await listMenuCategories(NOW)).toEqual([
+      { id: 'angebot1', name: 'Angebot', itemCount: 3, stoppedCount: 1 },
+      { id: 'maki1', name: 'MakiLove Sushi', itemCount: 3, stoppedCount: 2 },
+    ]);
+  });
+
+  it('без снимка каталога гостей и состояния Hub нет', async () => {
+    settings({ sizes: {}, products: {} }, STORE);
+    const screen = await listCategoryItems('angebot1', NOW);
+    expect(screen.items.map((i) => i.id)).toEqual(['a1']);
+    expect(screen.items[0].hub).toBeUndefined();
+    expect(screen.hubSnapshotAt).toBeNull();
+  });
+
+  it('hubPlacementCategoryId: экран, где позиция показана гостем', async () => {
+    withCatalog({ sizes: {}, products: {} });
+    expect(await hubPlacementCategoryId('g1')).toBe('angebot1');
+    expect(await hubPlacementCategoryId('a1')).toBeNull(); // своя категория
+    expect(await hubPlacementCategoryId('m1')).toBeNull(); // в Hub — в категории без пары на сайте
+    expect(await hubPlacementCategoryId('hub-i12345678')).toBeNull();
+  });
+
+  it('setProductAvailable: снимок Hub правится сразу — экран не мигает «состояние другое»', async () => {
+    const stored = withCatalog({ sizes: {}, products: {} });
+    models.product.findByIdAndUpdate.mockResolvedValue({ _id: 'g1', name: 'Gyoza Gemüse (7 Stück)', category: 'maki1', available: false });
+    const row = await setProductAvailable('g1', false, NOW);
+    expect(row).toMatchObject({ id: 'g1', available: false, hub: 'off' });
+    expect(stored().categories[0].items[1]).toMatchObject({ name: 'Gyoza Gemüse Vegetarische (7 Stück)', on: false });
+  });
+
+  it('«включить всё» в Angebot включает и гостей; снимок Hub тоже', async () => {
+    rows[1].available = false; // g1 (гость Angebot) выключена
+    const stored = withCatalog({ sizes: {}, products: { g1: { until: null, name: 'Gyoza Gemüse (7 Stück)' } } }, (() => {
+      const c = catalog();
+      c.categories[0].items[1].on = false;
+      return c;
+    })());
+    const enabled = await enableCategoryItems('angebot1');
+    expect(enabled.map((i) => i.id)).toEqual(['g1']);
+    expect(models.product.updateMany).toHaveBeenCalledWith({ _id: { $in: ['g1'] } }, { available: true });
+    expect(written().products).toEqual({});
+    expect(stored().categories[0].items[1].on).toBe(true);
+  });
+});

@@ -12,8 +12,11 @@
  * Заголовок X-Agent-Caps: targets catalog говорит серверу, что size/item и
  * catalog нам можно отдавать (старому агенту без них сервер их не отдаёт).
  *
- * Снимок каталога агент снимает и САМ раз в сутки — в CATALOG_HOUR по
- * Europe/Berlin (по умолчанию 09:00), когда очередь пуста. Цикл агента строго
+ * Снимок каталога агент снимает и САМ — первый раз в CATALOG_HOUR по
+ * Europe/Berlin (по умолчанию 09:00), дальше до полуночи каждые
+ * CATALOG_EVERY_MIN минут (по умолчанию 60), когда очередь пуста: экран бота
+ * показывает состояние позиций на Lieferando, а его меняют и руками в Hub,
+ * и сам Hub (утром включает всё обратно). Цикл агента строго
  * последовательный, поэтому второй браузер рядом с утренним перевыключением
  * бессрочного стоп-листа (сервер ставит его в очередь после 08:30) не
  * откроется: сначала команды, потом каталог.
@@ -23,8 +26,10 @@
  *   API_BASE_URL            — по умолчанию https://www.dumbospizza.de (строго www!
  *                             apex отвечает 308 и POST теряется — как у print-agent)
  *   LIEFERANDO_POLL_MS      — период поллинга, по умолчанию 20000
- *   LIEFERANDO_CATALOG_HOUR — час (Europe/Berlin) ежедневного снимка каталога,
- *                             по умолчанию 9; -1 — выключить
+ *   LIEFERANDO_CATALOG_HOUR — час (Europe/Berlin) первого снимка каталога за день,
+ *                             по умолчанию 9; -1 — выключить снимки совсем
+ *   LIEFERANDO_CATALOG_EVERY_MIN — как часто обновлять снимок в течение дня,
+ *                             по умолчанию 60; 0 — только раз в день
  *   HEADLESS                — 1 (по умолч.) без окна; 0 — с окном, если
  *                             ботозащита Hub не пускает headless
  *
@@ -37,7 +42,17 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { STATE_DIR, loadDotEnv, postCatalog, runCatalog, runOff, runOn, runSet } from './core.mjs';
+import {
+  STATE_DIR,
+  catalogDue,
+  loadDotEnv,
+  localDayHour,
+  postCatalog,
+  runCatalog,
+  runOff,
+  runOn,
+  runSet,
+} from './core.mjs';
 
 loadDotEnv();
 
@@ -49,6 +64,10 @@ const HEADLESS = process.env.HEADLESS !== '0';
 const CATALOG_HOUR = process.env.LIEFERANDO_CATALOG_HOUR == null || process.env.LIEFERANDO_CATALOG_HOUR === ''
   ? 9
   : Number(process.env.LIEFERANDO_CATALOG_HOUR);
+const CATALOG_EVERY_MIN =
+  process.env.LIEFERANDO_CATALOG_EVERY_MIN == null || process.env.LIEFERANDO_CATALOG_EVERY_MIN === ''
+    ? 60
+    : Math.max(0, Number(process.env.LIEFERANDO_CATALOG_EVERY_MIN) || 0);
 const CATALOG_TZ = process.env.LIEFERANDO_TZ || 'Europe/Berlin';
 
 if (!SECRET) {
@@ -214,6 +233,9 @@ async function execute(command) {
  * повторится завтра).
  */
 async function takeCatalog({ id = null, reason }) {
+  // любой снимок (и по кнопке бота) сдвигает таймер обновления
+  lastCatalogAt = Date.now();
+  writeCatalogMark();
   let body;
   try {
     const snap = await runCatalog({ headless: HEADLESS, log });
@@ -239,61 +261,56 @@ async function takeCatalog({ id = null, reason }) {
   }
 }
 
-// Ежедневный снимок: день последнего запуска помним и в файле — перезапуск
-// агента в 09:30 не должен снимать каталог второй раз.
+// День первого снимка и время последнего помним и в файле — перезапуск агента
+// (самообновление) не должен снимать каталог лишний раз.
 const CATALOG_DAY_FILE = path.join(STATE_DIR, 'catalog-day.json');
 
-function readCatalogDay() {
+function readCatalogMark() {
   try {
-    const day = JSON.parse(fs.readFileSync(CATALOG_DAY_FILE, 'utf8'))?.day;
-    return typeof day === 'string' ? day : '';
+    const raw = JSON.parse(fs.readFileSync(CATALOG_DAY_FILE, 'utf8'));
+    return {
+      day: typeof raw?.day === 'string' ? raw.day : '',
+      at: Number.isFinite(raw?.at) ? Number(raw.at) : 0,
+    };
   } catch {
-    return '';
+    return { day: '', at: 0 };
   }
 }
 
-function writeCatalogDay(day) {
+function writeCatalogMark() {
   try {
     fs.mkdirSync(STATE_DIR, { recursive: true });
-    fs.writeFileSync(CATALOG_DAY_FILE, JSON.stringify({ day }));
+    fs.writeFileSync(CATALOG_DAY_FILE, JSON.stringify({ day: lastCatalogDay, at: lastCatalogAt }));
   } catch (e) {
-    log('Не смог записать день снимка каталога:', e.message);
+    log('Не смог записать отметку снимка каталога:', e.message);
   }
 }
 
-/** Дата и час в зоне ресторана: { day: 'YYYY-MM-DD', hour } */
-export function localDayHour(now = new Date(), timeZone = CATALOG_TZ) {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    hourCycle: 'h23',
-  }).formatToParts(now);
-  const get = (type) => parts.find((p) => p.type === type)?.value || '';
-  return { day: `${get('year')}-${get('month')}-${get('day')}`, hour: Number(get('hour')) };
-}
+let { day: lastCatalogDay, at: lastCatalogAt } = readCatalogMark();
 
-let lastCatalogDay = readCatalogDay();
+/** Пора ли снимать каталог сейчас ('daily' | 'refresh' | null) — правило в core.mjs catalogDue. */
+const catalogDueNow = () =>
+  catalogDue({
+    hourFrom: CATALOG_HOUR,
+    everyMin: CATALOG_EVERY_MIN,
+    lastDay: lastCatalogDay,
+    lastAt: lastCatalogAt,
+    timeZone: CATALOG_TZ,
+  });
 
-/** Пора ли снимать ежедневный каталог: час настал и сегодня ещё не снимали. */
-function catalogDue(now = new Date()) {
-  if (!Number.isFinite(CATALOG_HOUR) || CATALOG_HOUR < 0) return false;
-  const { day, hour } = localDayHour(now);
-  return hour >= CATALOG_HOUR && lastCatalogDay !== day;
-}
-
-async function dailyCatalog() {
-  // день отмечаем ДО запуска: упавший снимок не должен зациклить агента
-  lastCatalogDay = localDayHour().day;
-  writeCatalogDay(lastCatalogDay);
-  log(`Ежедневный снимок каталога (${CATALOG_HOUR}:00 ${CATALOG_TZ})…`);
-  await takeCatalog({ reason: 'daily' });
+async function scheduledCatalog(reason) {
+  // отметку ставим ДО запуска: упавший снимок не должен зациклить агента
+  lastCatalogDay = localDayHour(new Date(), CATALOG_TZ).day;
+  log(
+    reason === 'daily'
+      ? `Ежедневный снимок каталога (${CATALOG_HOUR}:00 ${CATALOG_TZ})…`
+      : `Обновление снимка каталога (каждые ${CATALOG_EVERY_MIN} мин)…`
+  );
+  await takeCatalog({ reason });
 }
 
 log(
-  `Агент Lieferando запущен: ${API_BASE_URL}, id=${AGENT_ID}, v=${HEADERS['X-Agent-Version']}, poll=${POLL_MS}ms, headless=${HEADLESS}, автообновление=${SELF_UPDATE ? 'вкл' : 'ВЫКЛ'}, каталог=${CATALOG_HOUR >= 0 ? `${CATALOG_HOUR}:00 ${CATALOG_TZ}` : 'выкл'}`
+  `Агент Lieferando запущен: ${API_BASE_URL}, id=${AGENT_ID}, v=${HEADERS['X-Agent-Version']}, poll=${POLL_MS}ms, headless=${HEADLESS}, автообновление=${SELF_UPDATE ? 'вкл' : 'ВЫКЛ'}, каталог=${CATALOG_HOUR >= 0 ? `с ${CATALOG_HOUR}:00 ${CATALOG_TZ}${CATALOG_EVERY_MIN ? `, каждые ${CATALOG_EVERY_MIN} мин` : ''}` : 'выкл'}`
 );
 // Простой последовательный цикл: пока команда выполняется — не поллим.
 let nextUpdateCheckAt = 0; // первый раз — сразу при старте
@@ -309,7 +326,10 @@ for (;;) {
   try {
     const command = await poll();
     if (command) await execute(command);
-    else if (catalogDue()) await dailyCatalog(); // только при пустой очереди — команды важнее
+    else {
+      const due = catalogDueNow(); // только при пустой очереди — команды важнее
+      if (due) await scheduledCatalog(due);
+    }
   } catch (e) {
     log('Поллинг не удался:', e.message); // сеть/деплой — просто ждём следующего тика
   }

@@ -214,13 +214,24 @@ export interface MenuItemRow {
    * Кнопка ставит агенту команду item с этим именем; на сайте переключать нечего.
    */
   hubOnly?: boolean;
+  /**
+   * Общий переключатель этой позиции на Lieferando по снимку каталога (все
+   * строки Hub с тем же именем): нет пары в Hub или снимка — поля нет.
+   * Экран помечает расхождение с флагом сайта.
+   */
+  hub?: 'on' | 'off' | 'mixed';
+  /**
+   * Товар сайта живёт в другой категории (её имя), а здесь показан потому,
+   * что на Lieferando лежит в категории с именем как у этой.
+   */
+  guestFrom?: string;
 }
 
-/** Экран категории: строки сайта + Hub-строки без пары (hubOnly) и время снимка Hub. */
+/** Экран категории: строки сайта (+ гости по раскладке Hub) + Hub-строки без пары и время снимка Hub. */
 export interface MenuCategoryItems {
   category: MenuCategoryRow | null;
   items: MenuItemRow[];
-  /** takenAt снимка каталога Lieferando, если в списке есть Hub-строки */
+  /** takenAt снимка каталога Lieferando, если он что-то добавил экрану (строки, гости, состояние Hub) */
   hubSnapshotAt?: string | null;
 }
 
@@ -242,6 +253,11 @@ export interface MenuStopPort {
   setItemAvailable(productId: string, available: boolean): PromiseLike<MenuItemRow | null>;
   /** Включает все выключенные позиции категории (и Hub-строки без пары); возвращает включённые. */
   enableCategoryItems(categoryId: string): PromiseLike<MenuItemRow[]>;
+  /**
+   * Категория сайта, где позиция показана «гостем» по раскладке Lieferando
+   * (см. MenuItemRow.guestFrom) — чтобы после нажатия перерисовать тот же экран.
+   */
+  hubPlacementCategoryId?(productId: string): PromiseLike<string | null>;
 }
 
 /**
