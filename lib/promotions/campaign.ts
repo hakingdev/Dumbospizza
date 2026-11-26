@@ -1,10 +1,10 @@
 import type { PromotionDocument } from '../models/promotion.model';
 import { Order } from '../models/order.model';
-import { PushDevice } from '../models/push-device.model';
 import { PromotionCampaignLog } from '../models/promotion-campaign-log.model';
 import { Promotion } from '../models/promotion.model';
 import { sendEmail, isEmailConfigured } from '../email';
-import { sendFcmToTokens, isPushConfigured } from '../push-notifications';
+import { isPushConfigured } from '../push-notifications';
+import { createCampaign, loadAudienceTokens, sendCampaign } from '../push/service';
 import { formatHappyHourLabel } from './schedule';
 import { parseEmailRecipients } from './email-recipients';
 import { filterUnsubscribed } from '../email/suppression';
@@ -26,7 +26,8 @@ export interface CampaignEmailFailure {
 
 export async function getCampaignPreview(promotionId: string) {
   const emails = await getPromotionEmailRecipients();
-  const pushTokens = await PushDevice.find({ active: true }).select('token platform').lean();
+  // Рекламный push — только устройствам с promoOptIn (lib/push/validate).
+  const pushTokens = await loadAudienceTokens('promo', 'all');
   const logs = await PromotionCampaignLog.find({ promotionId })
     .sort({ createdAt: -1 })
     .limit(20)
@@ -212,25 +213,35 @@ export async function sendPromotionPushCampaign(
   promo: PromotionDocument,
   options: { triggeredBy?: 'manual' | 'cron' } = {}
 ): Promise<{ recipientCount: number; successCount: number; failureCount: number }> {
-  const devices = await PushDevice.find({ active: true }).select('token').lean();
-  const tokens = devices.map((d) => d.token).filter(Boolean);
-  const title = promo.pushTitle?.trim() || promo.name;
-  const body = promo.pushBody?.trim() || promo.description || 'Jetzt sparen — in der App bestellen!';
+  const title = (promo.pushTitle?.trim() || promo.name).slice(0, 65);
+  const body = (
+    promo.pushBody?.trim() || promo.description || 'Jetzt sparen — in der App bestellen!'
+  ).slice(0, 240);
 
-  const result = await sendFcmToTokens(tokens, {
-    title,
-    body,
-    data: {
-      type: 'promotion',
-      promotionId: String(promo._id),
-      slug: promo.slug,
+  // Тот же движок, что у вкладки «Push» в admin-v2: кампания попадает в
+  // историю, receipts собирает крон /api/cron/push-campaigns.
+  const created = await createCampaign(
+    {
+      title,
+      body,
+      imageUrl: promo.image && /^https:\/\//i.test(promo.image) ? promo.image : null,
+      kind: 'promo',
+      url: '/home',
+      promoCode: promo.promoCode?.trim() || null,
+      audience: 'all',
+      scheduledAt: null,
     },
-  });
+    options.triggeredBy === 'cron' ? 'cron:happy-hour' : 'promotion'
+  );
+  const sent = await sendCampaign(created.id);
+  const recipientCount = sent?.recipientCount ?? 0;
+  const successCount = sent?.acceptedCount ?? 0;
+  const failureCount = sent?.errorCount ?? 0;
 
-  if (options.triggeredBy !== 'cron' || result.success > 0) {
+  if (options.triggeredBy !== 'cron' || successCount > 0) {
     await Promotion.findByIdAndUpdate(promo._id, {
       pushSentAt: new Date(),
-      $inc: { pushSentCount: result.success },
+      $inc: { pushSentCount: successCount },
     });
   }
 
@@ -238,18 +249,14 @@ export async function sendPromotionPushCampaign(
     promotionId: promo._id,
     channel: 'push',
     triggeredBy: options.triggeredBy || 'manual',
-    recipientCount: tokens.length,
-    successCount: result.success,
-    failureCount: result.failure,
+    recipientCount,
+    successCount,
+    failureCount,
     subject: title,
-    error: result.errors.slice(0, 3).join('; ') || undefined,
+    error: sent?.lastError || undefined,
   });
 
-  return {
-    recipientCount: tokens.length,
-    successCount: result.success,
-    failureCount: result.failure,
-  };
+  return { recipientCount, successCount, failureCount };
 }
 
 /** Auto-notify at Happy Hour start (cron). */

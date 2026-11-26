@@ -20,6 +20,7 @@ import MarketingPage from '../admin-v2/marketing/page';
 import SettingsPage from '../admin-v2/settings/page';
 import HelpPage from '../admin-v2/help/page';
 import NewsPage from '../admin-v2/news/page';
+import PushPage from '../admin-v2/push/page';
 
 /* ------------------------------------------------------------ фикстуры */
 
@@ -278,6 +279,59 @@ const ZONES = [
 
 const BANNERS = [{ _id: 'b1', title: 'Sushi Lieferung', enabled: true, order: 1 }];
 
+const PUSH_STATE = {
+  success: true,
+  audience: {
+    promo: { all: 412, ios: 251, android: 161 },
+    info: { all: 538, ios: 320, android: 218 },
+  },
+  campaigns: [
+    {
+      id: 'push-3',
+      title: '🎃 Halloween: 2+1 auf alle Pizzen',
+      body: 'Nur heute bis 22 Uhr — die dritte Pizza geht auf uns.',
+      data: { kind: 'promo', url: '/home' },
+      audience: 'all',
+      status: 'scheduled',
+      scheduledAt: todayAt('17:00'),
+      createdAt: todayAt('11:20'),
+      recipientCount: 0,
+      acceptedCount: 0,
+      deliveredCount: 0,
+      errorCount: 0,
+    },
+    {
+      id: 'push-2',
+      title: 'Pizza-Montag: −10 % mit DUMBO10',
+      body: 'Gilt für alle Bestellungen in der App.',
+      data: { kind: 'promo', url: '/menu?category=pizza', promoCode: 'DUMBO10' },
+      audience: 'all',
+      status: 'sent',
+      sentAt: todayAt('16:00', 3),
+      createdAt: todayAt('15:58', 3),
+      recipientCount: 398,
+      acceptedCount: 396,
+      deliveredCount: 389,
+      errorCount: 9,
+      lastError: 'DeviceNotRegistered',
+    },
+    {
+      id: 'push-1',
+      title: 'Heute ab 18 Uhr geöffnet',
+      body: 'Wegen einer Lieferung öffnen wir heute etwas später.',
+      data: { kind: 'info', url: '/home' },
+      audience: 'android',
+      status: 'sent',
+      sentAt: todayAt('12:05', 6),
+      createdAt: todayAt('12:04', 6),
+      recipientCount: 201,
+      acceptedCount: 201,
+      deliveredCount: 199,
+      errorCount: 2,
+    },
+  ],
+};
+
 /* --------------------------------------------------------- мок fetch */
 
 function jsonResponse(payload: unknown): Response {
@@ -304,6 +358,7 @@ const FAIL_ROUTES: [string, (path: string) => boolean][] = [
   ['coupons', (p) => p.startsWith('/api/coupons')],
   ['banners', (p) => p.startsWith('/api/banners')],
   ['users', (p) => p.startsWith('/api/users')],
+  ['push', (p) => p.startsWith('/api/admin/push')],
 ];
 
 function shouldFail(url: string): boolean {
@@ -352,6 +407,7 @@ function matchMock(url: string, method: string): unknown | null {
   if (path.startsWith('/api/coupons')) return { success: true, coupons: COUPONS };
   if (path.startsWith('/api/delivery-zones')) return { success: true, zones: ZONES };
   if (path.startsWith('/api/banners')) return { success: true, banners: BANNERS };
+  if (path.startsWith('/api/admin/push')) return PUSH_STATE;
   return null; // products/categories/options/settings — реальные публичные GET
 }
 
@@ -398,6 +454,7 @@ export function PreviewPage({ screen, children }: { screen?: string; children?: 
   else if (screen === 'settings') page = <SettingsPage />;
   else if (screen === 'help') page = <HelpPage />;
   else if (screen === 'news') page = <NewsPage />;
+  else if (screen === 'push') page = <PushPage />;
 
   return (
     <SessionProvider session={MOCK_SESSION}>

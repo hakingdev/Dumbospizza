@@ -58,6 +58,12 @@ export const NAV_MAIN: AdminNavItem[] = [
     href: `${ADMIN_V2_BASE}/marketing`,
     icon: 'm3 11 15-6v12L3 13Z M3 11v4a2 2 0 0 0 2 2h2l1 4',
   },
+  {
+    key: 'push',
+    label: 'Push',
+    href: `${ADMIN_V2_BASE}/push`,
+    icon: 'M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9 M10.3 21a1.94 1.94 0 0 0 3.4 0',
+  },
 ];
 
 export const NAV_BOTTOM: AdminNavItem[] = [
@@ -93,7 +99,7 @@ export const MOBILE_TABS: { key: string; label: string }[] = [
 ];
 
 /** Разделы, живущие в мобильном «Ещё» (bottom sheet). */
-export const MOBILE_MORE_KEYS = ['venue', 'reviews', 'marketing', 'settings', 'help', 'news'];
+export const MOBILE_MORE_KEYS = ['venue', 'reviews', 'marketing', 'push', 'settings', 'help', 'news'];
 
 /** Активный раздел по pathname (включая зеркала экранов на /dev-admin-preview). */
 export function activeNavKey(pathname: string): string {
