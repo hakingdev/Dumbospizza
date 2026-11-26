@@ -46,6 +46,8 @@ export function buildOrderNotification(order: any) {
     desiredDeliveryTime: order.desiredDeliveryTime,
     etaMinutes: order.etaMinutes,
     etaAnalysis: order.etaAnalysis || undefined,
+    source: order.source,
+    clientInfo: order.clientInfo ?? null,
   };
 }
 

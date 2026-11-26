@@ -250,7 +250,9 @@ function orderToNotification(order: IOrder): OrderNotification {
     // Без момента назначения минуты не превратить в час готовности — а именно
     // час и остаётся верным, когда карточка повисела полчаса.
     etaSetAt: order.etaSetAt ?? null,
-    etaAnalysis: order.etaAnalysis || undefined
+    etaAnalysis: order.etaAnalysis || undefined,
+    source: order.source,
+    clientInfo: order.clientInfo ?? null
   };
 }
 

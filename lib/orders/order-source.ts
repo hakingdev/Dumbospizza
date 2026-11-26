@@ -1,7 +1,11 @@
 /**
  * Канал заказа (orders.source) и единое правило: что считать НАШИМИ деньгами.
  *
- * 'website'    — собственный сайт/приложение: наша выручка, наши бонусы, наши счёта.
+ * 'website'    — собственный сайт: наша выручка, наши бонусы, наши счёта.
+ * 'app'        — наше мобильное приложение (iOS/Android). По деньгам то же,
+ *                что сайт: фильтры ниже сравнивают только с 'lieferando', поэтому
+ *                заказы из приложения автоматически считаются нашими.
+ *                Как приложение распознаётся — lib/orders/order-client.ts.
  * 'lieferando' — заказ из чека Lieferando, распознанный ботом-диспетчером
  *                (lib/lieferando/receipt-import.ts). Деньги считает Lieferando
  *                в своём портале, поэтому такие заказы НЕ входят:
@@ -23,6 +27,7 @@ import { sql, type SQL } from 'drizzle-orm';
 
 export const WEBSITE_SOURCE = 'website';
 export const LIEFERANDO_SOURCE = 'lieferando';
+export const APP_SOURCE = 'app';
 
 /** Заказ пришёл из чека Lieferando (деньги считает Lieferando, не мы). */
 export function isLieferandoOrder(order: { source?: string | null } | null | undefined): boolean {
